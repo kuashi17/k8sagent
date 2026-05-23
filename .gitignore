@@ -1,0 +1,20 @@
+# Local logs and generated runtime artifacts
+logs/*
+!logs/.gitkeep
+generated/*
+!generated/.gitkeep
+
+# Local environment files
+.env
+.env.*
+*.local
+
+# Kubernetes local credentials or configs
+kubeconfig
+*.kubeconfig
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
