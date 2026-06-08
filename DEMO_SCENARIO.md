@@ -9,25 +9,27 @@
 ## 데모 입력 예시
 
 ```text
-BackupPolicy라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+RedisCache라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
 
-BackupPolicy는 대상 namespace, 스케줄, 보관 기간, 백업 대상 PVC 목록을 spec으로 가진다.
-status에는 마지막 백업 시간, 성공 여부, 실패 사유를 기록한다.
-Controller는 BackupPolicy 변경을 감지하고 백업 Job 생성을 조정해야 한다.
+domain은 sample.io, group은 cache, version은 v1alpha1, kind는 RedisCache로 한다.
+spec에는 size, image, storageSize를 포함한다.
+status에는 phase, readyReplicas, message를 포함한다.
+1차 MVP에서는 복잡한 Reconcile 로직 없이 Kubebuilder scaffold와 기본 타입 정의까지만 생성한다.
 ```
 
 ## 기대되는 구조화 스펙
 
 | 항목 | 예시 |
 | --- | --- |
-| Resource | `BackupPolicy` |
-| API Group | `backup.example.com` |
+| Resource | `RedisCache` |
+| Domain | `sample.io` |
+| API Group | `cache.sample.io` |
 | Version | `v1alpha1` |
-| Kind | `BackupPolicy` |
-| Spec | `targetNamespace`, `schedule`, `retentionDays`, `pvcNames` |
-| Status | `lastBackupTime`, `succeeded`, `failureReason` |
-| Reconcile 책임 | BackupPolicy 감지, 백업 Job 생성, 상태 업데이트 |
-| 권한 범위 | BackupPolicy, Job, PVC 조회 및 Job 생성/수정 |
+| Kind | `RedisCache` |
+| Spec | `size`, `image`, `storageSize` |
+| Status | `phase`, `readyReplicas`, `message` |
+| Reconcile 책임 | 1차 MVP에서는 생성하지 않음 |
+| 권한 범위 | RedisCache CRD 기본 권한 |
 
 ## 데모 흐름
 
@@ -35,11 +37,11 @@ Controller는 BackupPolicy 변경을 감지하고 백업 Job 생성을 조정해
 2. Agent가 요구사항을 구조화된 Operator 스펙으로 변환합니다.
 3. Agent가 로컬 개발환경을 점검합니다.
 4. Agent가 Kubebuilder scaffold 생성 절차를 안내합니다.
-5. Agent가 예시 API 생성 절차를 안내합니다.
-6. Agent가 CRD, Controller, RBAC, Manifest 생성 흐름을 설명합니다.
-7. Agent가 `make generate` 실행 결과를 확인합니다.
-8. Agent가 `make manifests` 실행 결과를 확인합니다.
-9. Agent가 `make test` 실행 결과를 확인합니다.
+5. Agent가 `kubebuilder init --domain sample.io --repo sample.io/redis-cache-operator` 실행 절차를 안내합니다.
+6. Agent가 `kubebuilder create api --group cache --version v1alpha1 --kind RedisCache --resource --controller=false` 실행 절차를 안내합니다.
+7. Agent가 `api/v1alpha1/rediscache_types.go`에 Spec/Status 필드를 반영합니다.
+8. Agent가 `generate`, `manifests` 실행 결과를 확인합니다.
+9. Agent가 기본 컴파일 테스트 결과를 확인합니다.
 10. 실패가 발생하면 로그를 요약하고 원인 후보와 해결 방향을 제시합니다.
 
 ## 검증 명령 예시
@@ -48,6 +50,14 @@ Controller는 BackupPolicy 변경을 감지하고 백업 Job 생성을 조정해
 make generate
 make manifests
 make test
+```
+
+현재 WSL 개발환경에서는 `make`가 설치되어 있지 않을 수 있으므로, 1차 MVP 검증에서는 다음 대체 명령도 허용합니다.
+
+```text
+controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
+controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+go test ./api/... ./cmd/... ./test/utils
 ```
 
 ## 실패 로그 분석 예시
@@ -84,6 +94,6 @@ make manifests 단계에서 controller-gen 실행 오류가 발생했습니다.
 
 - 요구사항이 구조화된 Operator 스펙으로 변환됩니다.
 - Kubebuilder 개발 절차가 단계별로 제시됩니다.
+- RedisCache API 타입과 CRD manifest가 생성됩니다.
 - 검증 명령의 실행 목적과 성공 기준이 설명됩니다.
 - 실패 로그가 원인 후보와 다음 조치 방향으로 요약됩니다.
-

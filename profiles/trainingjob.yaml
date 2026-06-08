@@ -1,0 +1,79 @@
+profileName: trainingjob
+description: >
+  GPU 학습 작업을 Kubernetes Job으로 실행하는 TrainingJob Operator MVP 검증 profile.
+  Controller는 TrainingJob Custom Resource를 감지하고 Kubernetes Job을 생성하며,
+  Pod와 PersistentVolumeClaim은 조회하거나 참조한다.
+managedResources:
+  - Job
+referencedResources:
+  - Pod
+  - PersistentVolumeClaim
+sampleDefaults:
+  metadata:
+    name: trainingjob-sample
+  spec:
+    image: busybox:latest
+    gpuCount: 1
+    pvcName: sample-pvc
+    datasetPath: /workspace/dataset
+    outputPath: /workspace/output
+e2e:
+  clusterName: trainingjob-e2e
+  samplePath: config/samples/ml_v1alpha1_trainingjob.yaml
+  customResource:
+    resource: trainingjob
+    crdName: trainingjobs.ml.ai.sample.io
+  gpuResourceName: nvidia.com/gpu
+  envNames:
+    datasetPath: DATASET_PATH
+    outputPath: OUTPUT_PATH
+  pvc:
+    nameFrom: spec.pvcName
+    mountPath: /workspace
+    volumeName: workspace
+    defaultName: sample-pvc
+    storage: 1Gi
+  setupResources:
+    - kind: PersistentVolumeClaim
+      nameFrom: spec.pvcName
+      defaultName: sample-pvc
+      storage: 1Gi
+  checks:
+    - CRD installed
+    - TrainingJob Custom Resource applied
+    - Kubernetes Job created
+    - Related Pod created or pending
+    - TrainingJob status updated
+jobSpecValidation:
+  jobNameTemplate: "{metadata.name}-job"
+  podSelectorTemplate: "job-name={metadata.name}-job"
+  checks:
+    - name: container image
+      from: spec.image
+      path: spec.template.spec.containers[0].image
+    - name: gpu limit
+      from: spec.gpuCount
+      path: spec.template.spec.containers[0].resources.limits["nvidia.com/gpu"]
+      allowAbsentWhenZero: true
+    - name: pvc claimName
+      from: spec.pvcName
+      path: spec.template.spec.volumes[].persistentVolumeClaim.claimName
+    - name: /workspace volumeMount
+      expected:
+        mountPath: /workspace
+        name: workspace
+      path: spec.template.spec.containers[0].volumeMounts[]
+    - name: DATASET_PATH env
+      from: spec.datasetPath
+      path: spec.template.spec.containers[0].env[DATASET_PATH]
+    - name: OUTPUT_PATH env
+      from: spec.outputPath
+      path: spec.template.spec.containers[0].env[OUTPUT_PATH]
+warnings:
+  gpuPending:
+    enabled: true
+    match:
+      - Insufficient nvidia.com/gpu
+      - nvidia.com/gpu
+    action: warn
+    message: Pod is Pending due to insufficient GPU resources; treated as warning.

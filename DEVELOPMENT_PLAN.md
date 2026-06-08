@@ -107,3 +107,35 @@
 8. 부분 수정 및 재생성 정책을 정의합니다.
 9. 향후 GitHub, Jenkins, Harbor, Argo CD 연계 구조를 정리합니다.
 
+## 현재 MVP 진행 상태
+
+| 단계 | 상태 | 결과 |
+| --- | --- | --- |
+| 로컬 환경 점검 | 완료 | Go, Docker, kubectl, kind, helm, kubebuilder, kustomize, git 확인 |
+| 샘플 요구사항 구조화 | 완료 | `generated/rediscache-operator-spec.yaml` 생성 |
+| Kubebuilder scaffold 생성 | 완료 | `workspace/redis-cache-operator` 생성 |
+| API 타입 정의 | 완료 | `RedisCache` Spec/Status 필드 반영 |
+| CRD manifest 생성 | 완료 | `config/crd/bases/cache.sample.io_rediscaches.yaml` 생성 |
+| 기본 컴파일 검증 | 완료 | `go test ./api/... ./cmd/... ./test/utils` 통과 |
+| Controller 구현 | 보류 | 1차 MVP에서는 복잡한 Reconcile 로직 제외 |
+| Jenkins/Harbor/Argo CD 연계 | 예정 | Phase 8에서 확장 |
+
+## 일반화 진행 상태
+
+| 단계 | 상태 | 결과 |
+| --- | --- | --- |
+| 요구사항 파일 파싱 | 완료 | TrainingJob 요구사항을 `generated/training-job-operator-spec.yaml`로 변환 |
+| 초보자용 interactive CLI | 진행 중 | 공통 질문 흐름과 입력값 검증 추가 |
+| 스펙 기반 scaffold | 완료 | `generated/training-job-operator-spec.yaml`에서 `workspace/training-job-operator` 생성 |
+| 타입/샘플/CRD 자동 반영 | 완료 | TrainingJob Spec/Status 필드와 샘플 CR 생성 |
+| 기본 검증 자동 실행 | 완료 | `make generate`, `make manifests`, `make test` 통과 |
+| TrainingJob Controller 실제 로직 | 예정 | Job/PVC/GPU/status reconcile 생성 필요 |
+
+## 다음 진행 순서
+
+1. RedisCache 요구사항을 기준으로 Agent 입력·출력 예시를 정리합니다.
+2. `make` 미설치 환경에서도 검증 가능한 대체 명령 흐름을 문서화합니다.
+3. controller-tools 버전 호환성 오류를 오류 분석 사례로 등록합니다.
+4. RedisCache Controller 구현 범위를 2차 MVP 후보로 분리합니다.
+5. GitHub/Jenkins 연계 전, 로컬 로그 수집과 오류 분류 포맷을 먼저 확정합니다.
+6. TrainingJob 스펙을 기준으로 Job 생성 Controller 템플릿을 구현합니다.

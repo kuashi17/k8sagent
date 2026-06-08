@@ -33,3 +33,8 @@
 
 요구사항 분석 결과는 `generated` 디렉터리에 구조화 스펙 형태로 저장하는 것을 목표로 합니다.
 
+## 관련 템플릿
+
+- [Operator Requirement Template](operator-requirement-template.md)
+- [Requirement Writing Guide](requirement-writing-guide.md)
+- [Plain Text Template](../requirements/template.txt)

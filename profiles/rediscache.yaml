@@ -1,0 +1,41 @@
+profileName: rediscache
+description: >
+  RedisCache Operator 예시 profile placeholder.
+  RedisCache는 StatefulSet과 Service를 관리하고 Pod와 PersistentVolumeClaim을 참조하는
+  캐시 워크로드 검증 profile로 확장할 수 있다.
+managedResources:
+  - StatefulSet
+  - Service
+referencedResources:
+  - Pod
+  - PersistentVolumeClaim
+sampleDefaults:
+  metadata:
+    name: rediscache-sample
+  spec:
+    size: 1
+    image: redis:7
+    storageSize: 1Gi
+e2e:
+  clusterName: rediscache-e2e
+  samplePath: config/samples/cache_v1alpha1_rediscache.yaml
+  checks:
+    - CRD installed
+    - RedisCache Custom Resource applied
+    - StatefulSet created
+    - Service created
+    - Pod readiness observed
+    - RedisCache status updated
+statefulSetSpecValidation:
+  statefulSetNameTemplate: "{metadata.name}"
+  serviceNameTemplate: "{metadata.name}"
+  checks:
+    - name: replicas
+      from: spec.size
+      path: spec.replicas
+    - name: container image
+      from: spec.image
+      path: spec.template.spec.containers[0].image
+    - name: storage request
+      from: spec.storageSize
+      path: spec.volumeClaimTemplates[0].spec.resources.requests.storage

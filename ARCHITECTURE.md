@@ -12,32 +12,41 @@
 User Requirement
       |
       v
-Requirement Analyzer
+operator-spec.yaml
       |
       v
-Structured Operator Spec
+Command Plan
       |
       v
-RAG Retriever + Reranker
+Kubebuilder Scaffold
       |
       v
-Agent Workflow Planner
+Artifact Patch
       |
       v
-Artifact Generator
+Validation
       |
       v
-Command Executor
+kind E2E
       |
       v
-Validation Analyzer
-      |
-      v
-Error Diagnosis / Partial Regeneration
-      |
-      v
-GitHub / Jenkins / Harbor / Argo CD Extension
+Log Analysis
 ```
+
+현재 로컬 MVP 파이프라인은 다음 산출물 흐름을 기준으로 동작합니다.
+
+```text
+requirement
+  -> generated/<kind>-operator-spec.yaml
+  -> generated/<kind>-command-plan.md
+  -> workspace/generated-operators/<kind>-operator
+  -> logs/scaffold/<timestamp>/summary.json
+  -> logs/patch/<timestamp>/summary.json
+  -> logs/e2e/<timestamp>/summary.json
+  -> logs/e2e/<timestamp>/analysis.md
+```
+
+향후 RAG Retriever, Reranker, GitHub/Jenkins/Harbor/Argo CD 연계는 이 파이프라인의 앞뒤에 붙는 확장 계층으로 둡니다.
 
 ## 주요 컴포넌트
 
@@ -53,6 +62,45 @@ GitHub / Jenkins / Harbor / Argo CD Extension
 | Error Diagnosis Agent | 오류 원인 후보, 수정 포인트, 다음 조치 방향 제시 |
 | Extension Adapter | GitHub, Jenkins, Harbor, Argo CD 연계를 위한 확장 계층 |
 
+## Core Agent와 Profile/Plugin 구분
+
+이 프로젝트는 특정 Operator를 생성하는 단일 목적 도구가 아니라 Kubebuilder 기반 Operator 개발 절차를 자동화하는 범용 Agent 시스템입니다.
+
+따라서 구현은 다음 두 계층으로 나눕니다.
+
+| 계층 | 역할 | 예 |
+| --- | --- | --- |
+| Core Agent | Operator 종류와 무관하게 공통으로 필요한 절차를 수행 | 요구사항 구조화, Kubebuilder 실행 계획, scaffold 실행, 로그 저장 |
+| Profile/Plugin | 특정 Operator 패턴의 보정, 검증, e2e 규칙을 제공 | TrainingJob Job/GPU/PVC 검증, RedisCache StatefulSet/Service 검증 |
+
+TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증용 profile/example입니다. RedisCache, BackupJob, QueueWorker, BatchProcessor 같은 다른 Operator는 별도 profile로 확장할 수 있습니다.
+
+## 현재 도구의 계층 구분
+
+| 도구 | 현재 역할 | 계층 판단 |
+| --- | --- | --- |
+| `agent/tools/spec_generator.py` | 자연어 요구사항을 `operator-spec.yaml`로 변환 | 범용 core |
+| `agent/tools/command_planner.py` | 스펙 기반 Kubebuilder 실행 계획 생성 | 범용 core |
+| `agent/tools/scaffold_runner.py` | Kubebuilder scaffold, preflight, generate/manifests/test 실행 | 범용 core |
+| `agent/tools/artifact_patcher.py` | API 타입, sample, RBAC marker 보정 | core와 TrainingJob profile 로직이 일부 섞임 |
+| `agent/tools/e2e_runner.py` | kind 기반 e2e 실행과 Job spec 검증 | 현재 TrainingJob profile 로직이 강하게 섞임 |
+| `agent/tools/log_analyzer.py` | summary/log 분석과 오류 유형 분류 | core와 TrainingJob 재실행/검증 단계명이 일부 섞임 |
+
+현재 코드는 MVP 검증을 빠르게 하기 위해 일부 profile 지식이 core 도구 안에 들어가 있습니다. 다음 리팩터링에서는 `artifact_patcher.py`, `e2e_runner.py`, `log_analyzer.py`에서 TrainingJob 관련 규칙을 `profiles/trainingjob.yaml` 또는 plugin 계층으로 분리합니다.
+
+## Profile 예시
+
+`profiles/` 디렉터리는 특정 Operator 패턴의 검증 규칙과 기본값을 정의합니다.
+
+```text
+profiles
+├── trainingjob.yaml
+└── rediscache.yaml
+```
+
+- `trainingjob.yaml`: Kubernetes Job 생성, Pod/PVC 참조, GPU limit, `/workspace` mount, `DATASET_PATH`/`OUTPUT_PATH` env 검증 규칙
+- `rediscache.yaml`: StatefulSet, Service, PVC 기반 RedisCache Operator 검증 규칙 placeholder
+
 ## 로컬 작업 공간 구조
 
 Agent 프로젝트 루트와 실제 Kubebuilder 프로젝트는 분리합니다.
@@ -61,6 +109,7 @@ Agent 프로젝트 루트와 실제 Kubebuilder 프로젝트는 분리합니다.
 C:\k8sagent
 ├── agent
 ├── docs
+├── profiles
 ├── generated
 ├── logs
 └── workspace
@@ -78,6 +127,7 @@ C:\k8sagent
 - 예시 API 생성 절차 정의
 - `make generate`, `make manifests`, `make test` 실행 흐름 정의
 - 실패 로그 분석 기준 정리
+- TrainingJob profile을 이용한 kind 기반 e2e 검증
 
 다음 항목은 1차 MVP에서 직접 구현하지 않고, 확장 가능한 구조로만 문서화합니다.
 
@@ -87,8 +137,17 @@ C:\k8sagent
 - Harbor 이미지 저장소 연계
 - Argo CD 배포 상태 확인
 - 자동 PR 생성 및 배포 파이프라인 연계
+- profile/plugin 동적 로딩 구조
 
 ## 확장 방향
+
+### Profile/Plugin 확장
+
+- profile별 sample 기본값 정의
+- profile별 하위 리소스 검증 규칙 정의
+- profile별 warning 처리 규칙 정의
+- profile별 patch 규칙과 e2e 검증 규칙 분리
+- core 도구는 `operator-spec.yaml`과 profile 설정을 읽어 공통 실행 흐름만 담당
 
 ### GitHub 연계
 
@@ -115,4 +174,3 @@ C:\k8sagent
 - 배포 반영 상태 확인
 - Sync/Health 상태 수집
 - 배포 실패 원인 분석
-

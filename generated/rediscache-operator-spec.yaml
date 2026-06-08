@@ -1,0 +1,69 @@
+project:
+  name: redis-cache-operator
+  domain: sample.io
+  module: sample.io/redis-cache-operator
+  workspace: workspace/redis-cache-operator
+
+resource:
+  group: cache
+  apiGroup: cache.sample.io
+  version: v1alpha1
+  kind: RedisCache
+  plural: rediscaches
+  scope: Namespaced
+
+spec:
+  fields:
+    - name: size
+      type: int32
+      description: Desired number of Redis replicas.
+    - name: image
+      type: string
+      description: Redis container image to run.
+    - name: storageSize
+      type: string
+      description: Requested persistent storage size.
+
+status:
+  fields:
+    - name: phase
+      type: string
+      description: Current lifecycle phase.
+    - name: readyReplicas
+      type: int32
+      description: Number of Redis replicas currently ready.
+    - name: message
+      type: string
+      description: Human-readable status details.
+
+generation:
+  kubebuilderInit:
+    - kubebuilder
+    - init
+    - --domain
+    - sample.io
+    - --repo
+    - sample.io/redis-cache-operator
+  kubebuilderCreateApi:
+    - kubebuilder
+    - create
+    - api
+    - --group
+    - cache
+    - --version
+    - v1alpha1
+    - --kind
+    - RedisCache
+    - --resource
+    - --controller=false
+
+validation:
+  controllerToolsVersion: v0.21.0
+  commands:
+    - controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
+    - controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+    - go test ./api/... ./cmd/... ./test/utils
+  notes:
+    - make is not installed in the current WSL environment.
+    - make generate and make manifests were validated with equivalent controller-gen commands.
+    - Full go test ./... includes scaffolded e2e tests that fetch remote YAML files and may fail in a restricted network sandbox.

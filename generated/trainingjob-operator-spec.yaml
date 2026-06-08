@@ -1,0 +1,149 @@
+metadata:
+  sourceFile: requirements/trainingjob.txt
+  generatedAt: '2026-05-30T21:34:52+09:00'
+  generatorVersion: 0.1.0
+project:
+  name: training-job-operator
+  domain: ai.sample.io
+  module: ai.sample.io/training-job-operator
+  workspace: workspace/generated-operators/trainingjob-operator
+api:
+  domain: ai.sample.io
+  group: ml
+  version: v1alpha1
+  kind: TrainingJob
+specFields:
+- name: image
+  type: string
+  description: Training Job에서 실행할 학습 컨테이너 이미지.
+- name: gpuCount
+  type: int32
+  description: Job 컨테이너에 nvidia.com/gpu limit으로 요청할 GPU 개수.
+- name: pvcName
+  type: string
+  description: 학습 데이터와 결과 경로를 제공할 기존 PersistentVolumeClaim 이름.
+- name: datasetPath
+  type: string
+  description: 컨테이너에 DATASET_PATH 환경변수로 전달할 입력 데이터 경로.
+- name: outputPath
+  type: string
+  description: 컨테이너에 OUTPUT_PATH 환경변수로 전달할 결과 저장 경로.
+statusFields:
+- name: phase
+  type: string
+  description: TrainingJob의 현재 진행 상태.
+- name: jobName
+  type: string
+  description: Controller가 생성하거나 조회한 Kubernetes Job 이름.
+- name: podName
+  type: string
+  description: Job이 생성한 대표 Pod 이름.
+- name: message
+  type: string
+  description: 현재 상태에 대한 설명 또는 오류 메시지.
+controller:
+  enabled: true
+  managedResources:
+  - Job
+  referencedResources:
+  - Pod
+  - PersistentVolumeClaim
+  responsibilities:
+  - Controller는 TrainingJob Custom Resource 변경을 감지한다.
+  - Controller는 TrainingJob spec을 기준으로 Kubernetes Job을 생성한다.
+  - Pod는 Controller가 직접 생성하지 않고 Kubernetes Job controller가 생성한다.
+  - PVC는 Controller가 생성하지 않고 spec.pvcName으로 기존 PersistentVolumeClaim을 참조한다.
+  - Controller는 Job과 Pod 상태를 조회하여 TrainingJob status를 갱신한다.
+  fieldMappings:
+  - from: spec.image
+    to: Job container image
+  - from: spec.gpuCount
+    to: Job container resources.limits["nvidia.com/gpu"]
+  - from: spec.pvcName
+    to: Job Pod volume PVC claimName mounted at /workspace
+  - from: spec.datasetPath
+    to: Job container environment variable DATASET_PATH
+  - from: spec.outputPath
+    to: Job container environment variable OUTPUT_PATH
+  statusRules:
+  - status.phase는 Job succeeded/failed/active 상태와 Pod phase를 기준으로 갱신한다.
+  - status.jobName은 생성 또는 조회한 Kubernetes Job 이름으로 갱신한다.
+  - status.podName은 Job이 생성한 Pod 이름으로 갱신한다.
+  - status.message는 Job과 Pod의 현재 상태 설명으로 갱신한다.
+generation:
+  kubebuilderInit:
+  - kubebuilder
+  - init
+  - --domain
+  - ai.sample.io
+  - --repo
+  - ai.sample.io/training-job-operator
+  kubebuilderCreateApi:
+  - kubebuilder
+  - create
+  - api
+  - --group
+  - ml
+  - --version
+  - v1alpha1
+  - --kind
+  - TrainingJob
+  - --resource
+  - --controller
+rbac:
+  resources:
+  - apiGroup: ml.ai.sample.io
+    resource: trainingjobs
+    verbs:
+    - get
+    - list
+    - watch
+    - update
+    - patch
+  - apiGroup: ml.ai.sample.io
+    resource: trainingjobs/status
+    verbs:
+    - get
+    - update
+    - patch
+  - apiGroup: batch
+    resource: jobs
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroup: ''
+    resource: pods
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroup: ''
+    resource: persistentvolumeclaims
+    verbs:
+    - get
+    - list
+    - watch
+validation:
+  commands:
+  - make generate
+  - make manifests
+  - make test
+e2e:
+  clusterName: trainingjob-e2e
+  sample:
+    path: config/samples/ml_v1alpha1_trainingjob.yaml
+    allowGpuPending: true
+  successCriteria:
+  - CRD 설치 성공
+  - TrainingJob Custom Resource 생성 성공
+  - Kubernetes Job 생성 확인
+  - Job spec에 image, PVC mount, dataset/output env, GPU limit 반영 확인
+  - GPU 리소스 부족으로 인한 Pod Pending은 warning으로 처리
+  - TrainingJob status 갱신 확인
+warnings: []
+errors: []

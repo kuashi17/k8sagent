@@ -3,11 +3,16 @@ logs/*
 !logs/.gitkeep
 generated/*
 !generated/.gitkeep
+!generated/*.yaml
+workspace/*
+!workspace/.gitkeep
 
 # Local environment files
 .env
 .env.*
 *.local
+.tools/
+cover.out
 
 # Kubernetes local credentials or configs
 kubeconfig
@@ -18,3 +23,6 @@ kubeconfig
 Thumbs.db
 .vscode/
 
+# Python local cache
+__pycache__/
+*.pyc

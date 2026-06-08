@@ -1,0 +1,13 @@
+TrainingJob이라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 ai.sample.io, group은 ml, version은 v1alpha1, kind는 TrainingJob으로 한다.
+
+spec에는 image:string, gpuCount:int32, pvcName:string, datasetPath:string, outputPath:string을 포함한다.
+status에는 phase:string, jobName:string, podName:string, message:string을 포함한다.
+
+Controller는 TrainingJob 변경을 감지하고 Kubernetes Job을 생성한다.
+Job의 컨테이너 image는 spec.image를 사용한다.
+GPU 요청량은 spec.gpuCount 값을 nvidia.com/gpu limits에 반영한다.
+spec.pvcName을 /workspace에 mount하고, datasetPath와 outputPath를 환경변수로 전달한다.
+
+Controller는 생성된 Job과 Pod 상태를 확인하여 status.phase, status.jobName, status.podName, status.message를 갱신한다.

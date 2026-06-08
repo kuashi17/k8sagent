@@ -1,0 +1,76 @@
+project:
+  name: training-job-operator
+  domain: ai.sample.io
+  module: ai.sample.io/training-job-operator
+  workspace: workspace/training-job-operator
+resource:
+  group: ml
+  apiGroup: ml.ai.sample.io
+  version: v1alpha1
+  kind: TrainingJob
+  plural: trainingjobs
+  scope: Namespaced
+spec:
+  fields:
+    - name: image
+      type: string
+      description: Desired image value.
+    - name: gpuCount
+      type: int32
+      description: Desired gpuCount value.
+    - name: pvcName
+      type: string
+      description: Desired pvcName value.
+    - name: datasetPath
+      type: string
+      description: Desired datasetPath value.
+    - name: outputPath
+      type: string
+      description: Desired outputPath value.
+status:
+  fields:
+    - name: phase
+      type: string
+      description: Observed phase value.
+    - name: jobName
+      type: string
+      description: Observed jobName value.
+    - name: podName
+      type: string
+      description: Observed podName value.
+    - name: message
+      type: string
+      description: Observed message value.
+controller:
+  enabled: true
+  responsibilities:
+    - 'Create or manage Kubernetes resources: Job, Pod, PVC'
+    - spec.image -> Job container image
+    - spec.gpuCount -> nvidia.com/gpu limits
+    - spec.pvcName -> /workspace volume mount
+    - spec.datasetPath/spec.outputPath -> env vars
+    - Job과 Pod 상태를 status에 반영
+generation:
+  kubebuilderInit:
+    - kubebuilder
+    - init
+    - --domain
+    - ai.sample.io
+    - --repo
+    - ai.sample.io/training-job-operator
+  kubebuilderCreateApi:
+    - kubebuilder
+    - create
+    - api
+    - --group
+    - ml
+    - --version
+    - v1alpha1
+    - --kind
+    - TrainingJob
+    - --resource
+validation:
+  commands:
+    - make generate
+    - make manifests
+    - make test

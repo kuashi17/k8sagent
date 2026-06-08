@@ -1,0 +1,73 @@
+metadata:
+  sourceFile: requirements/appconfig.txt
+  generatedAt: '2026-06-08T23:12:22+09:00'
+  generatorVersion: 0.1.0
+project:
+  name: app-config-operator
+  domain: beginner.sample.io
+  module: beginner.sample.io/app-config-operator
+api:
+  domain: beginner.sample.io
+  group: app
+  version: v1alpha1
+  kind: AppConfig
+specFields:
+- name: appName
+  type: string
+  description: 설정을 적용할 애플리케이션 이름
+- name: configData
+  type: map[string]string
+  description: ConfigMap에 저장할 설정 값
+- name: enabled
+  type: bool
+  description: 설정 활성화 여부
+statusFields:
+- name: phase
+  type: string
+  description: AppConfig의 현재 상태
+- name: configMapName
+  type: string
+  description: 생성된 ConfigMap 이름
+- name: message
+  type: string
+  description: 현재 상태 설명 또는 오류 메시지
+controller:
+  enabled: true
+  managedResources:
+  - ConfigMap
+  responsibilities:
+  - configMapName:string - 생성된 ConfigMap 이름
+  - Controller는 AppConfig Custom Resource 변경을 감지하고 ConfigMap을 생성한다
+  - ConfigMap 이름은 AppConfig 이름을 기준으로 생성한다
+  fieldMappings: []
+  statusRules:
+  - spec.enabled가 false이면 ConfigMap을 생성하지 않고 status.phase를 Disabled로 갱신한다
+  - Controller는 ConfigMap 생성 여부를 확인하여 status.phase, status.configMapName, status.message를
+    갱신한다
+rbac:
+  resources:
+  - apiGroup: app.beginner.sample.io
+    resource: appconfigs
+    verbs:
+    - get
+    - list
+    - watch
+    - update
+    - patch
+  - apiGroup: ''
+    resource: configmaps
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+validation:
+  commands:
+  - make generate
+  - make manifests
+  - make test
+warnings: []
+errors: []

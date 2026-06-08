@@ -1,0 +1,44 @@
+[Kind]라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+이 Operator의 목적은 [리소스 목적]이다.
+
+domain은 [domain], group은 [group], version은 [version], kind는 [kind]로 한다.
+
+spec에는 다음 필드를 포함한다.
+- [fieldName]:[type] - [description]
+- [fieldName]:[type] - [description]
+
+status에는 다음 필드를 포함한다.
+- [fieldName]:[type] - [description]
+- [fieldName]:[type] - [description]
+
+Controller는 [Kind] 변경을 감지한다.
+Controller는 [관리 대상 Kubernetes 리소스]를 생성/수정/삭제한다.
+
+Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다.
+- spec.[fieldName] -> [resource kind].[resource field]
+- spec.[fieldName] -> [resource kind].[resource field]
+
+Controller는 [상태 확인 대상 리소스]를 조회하여 status를 갱신한다.
+- status.[fieldName]은 [갱신 기준]을 기준으로 갱신한다.
+- status.[fieldName]은 [갱신 기준]을 기준으로 갱신한다.
+
+[Kind]가 삭제되면 ownerReference 또는 finalizer 정책에 따라 하위 리소스를 정리한다.
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- [apiGroup/resource]
+- [apiGroup/resource]
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test
+
+샘플 Custom Resource는 다음 값을 사용한다.
+apiVersion: [group].[domain]/[version]
+kind: [Kind]
+metadata:
+  name: [sample-name]
+spec:
+  [fieldName]: [sample-value]
+  [fieldName]: [sample-value]

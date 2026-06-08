@@ -1,0 +1,62 @@
+project:
+  name: redis-cache-operator
+  domain: sample.io
+  module: sample.io/redis-cache-operator
+  workspace: workspace/redis-cache-operator
+resource:
+  group: cache
+  apiGroup: cache.sample.io
+  version: v1alpha1
+  kind: RedisCache
+  plural: rediscaches
+  scope: Namespaced
+spec:
+  fields:
+    - name: size
+      type: int32
+      description: Desired size value.
+    - name: image
+      type: string
+      description: Desired image value.
+    - name: storageSize
+      type: string
+      description: Desired storageSize value.
+status:
+  fields:
+    - name: phase
+      type: string
+      description: Observed phase value.
+    - name: readyReplicas
+      type: int32
+      description: Observed readyReplicas value.
+    - name: message
+      type: string
+      description: Observed message value.
+controller:
+  enabled: true
+  responsibilities:
+    - RedisCache 변경을 감지하고 StatefulSet, Service를 생성하며 status를 갱신한다
+generation:
+  kubebuilderInit:
+    - kubebuilder
+    - init
+    - --domain
+    - sample.io
+    - --repo
+    - sample.io/redis-cache-operator
+  kubebuilderCreateApi:
+    - kubebuilder
+    - create
+    - api
+    - --group
+    - cache
+    - --version
+    - v1alpha1
+    - --kind
+    - RedisCache
+    - --resource
+validation:
+  commands:
+    - make generate
+    - make manifests
+    - make test
