@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kubebuilder Agent MVP</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Kubebuilder Agent MVP</h1>
+        <p>자연어 요구사항과 실행 로그를 Agent가 해석하고, RAG 문서와 Tool 실행 결과를 함께 요약합니다.</p>
+      </div>
+      <div class="badge">Dry-run first</div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Requirement Dry-run</h2>
+          <span>자연어 요구사항 → RAG 검색 → Tool dry-run</span>
+        </div>
+        <form method="post" action="/run-requirement">
+          <label for="requirement_text">Operator requirement</label>
+          <textarea id="requirement_text" name="requirement_text" spellcheck="false">{{ default_requirement }}</textarea>
+
+          <div class="form-grid">
+            <label>
+              Profile
+              <select name="profile">
+                {% for profile in profiles %}
+                  <option value="{{ profile.path }}" {% if selected_profile == profile.path %}selected{% endif %}>
+                    {{ profile.name }} - {{ profile.path }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Planner
+              <select name="planner">
+                {% for item in ["mock", "local", "llm"] %}
+                  <option value="{{ item }}" {% if selected_planner == item %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+
+          <button type="submit">Run Dry-run Agent</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Log Analysis</h2>
+          <span>summary.json + analysis.md + troubleshooting RAG</span>
+        </div>
+        <form method="post" action="/analyze-log">
+          <label for="log_dir">Log directory</label>
+          <input id="log_dir" name="log_dir" value="{{ default_log_dir }}">
+
+          <label>
+            Planner
+            <select name="planner">
+              {% for item in ["mock", "local", "llm"] %}
+                <option value="{{ item }}" {% if selected_planner == item %}selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <button type="submit">Analyze Log</button>
+        </form>
+
+        <div class="note">
+          <strong>Safety:</strong> 이 Web UI는 scaffold/e2e execute 버튼을 제공하지 않습니다. 실제 변경 작업은 CLI에서 명시적으로 <code>--execute</code>를 사용할 때만 수행합니다.
+        </div>
+      </section>
+
+      {% if result %}
+      <section class="panel result-panel">
+        <div class="panel-header">
+          <h2>Result</h2>
+          <span>exitCode={{ result.exit_code }}</span>
+        </div>
+
+        <div class="meta-grid">
+          <div>
+            <strong>Command</strong>
+            <code>{{ result.command }}</code>
+          </div>
+          {% if result.agent_log_dir %}
+          <div>
+            <strong>Agent logs</strong>
+            <code>{{ result.agent_log_dir }}</code>
+          </div>
+          {% endif %}
+        </div>
+
+        {% if result.agent_report %}
+        <h3>Agent Report</h3>
+        <pre class="report">{{ result.agent_report }}</pre>
+        {% endif %}
+
+        <details>
+          <summary>stdout</summary>
+          <pre>{{ result.stdout }}</pre>
+        </details>
+        <details>
+          <summary>stderr</summary>
+          <pre>{{ result.stderr }}</pre>
+        </details>
+      </section>
+      {% endif %}
+    </main>
+  </body>
+</html>
+
