@@ -110,7 +110,7 @@ logs/e2e/20260607-213346/analysis.md
 
 "여기서 중요한 점은 단순히 Python 스크립트를 순서대로 실행하는 것이 아니라는 점입니다. LangChain Agent가 요구사항이나 로그를 입력으로 받고, 관련 문서를 RAG로 검색한 뒤, 기존 자동화 도구를 Tool로 호출합니다."
 
-"심사 시연의 기본 planner는 `llm`입니다. LLM planner는 RAG 검색 결과를 입력으로 받아 요구사항 해석, 부족 정보 판단, 실행 계획 생성, 로그 분석 설명을 JSON으로 만듭니다. `mock` planner는 최종 기능이 아니라 API key나 로컬 모델 장애 시 사용하는 fallback입니다."
+"심사 시연의 planner는 `llm`입니다. LLM planner는 RAG 검색 결과를 입력으로 받아 요구사항 해석, 부족 정보 판단, 실행 계획 생성, 로그 분석 설명을 JSON으로 만듭니다. API key나 모델 설정이 없으면 다른 planner로 대체하지 않고 명확한 오류를 출력합니다."
 
 "RAG는 현재 Vector DB 대신 로컬 Markdown `knowledge-base` 검색으로 구현했습니다. Kubebuilder 기본 흐름, RBAC marker, Reconcile 패턴, troubleshooting 문서를 검색하고, Agent가 그 결과를 판단 근거로 사용합니다."
 

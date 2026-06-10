@@ -42,7 +42,7 @@ class AgentHandler(BaseHTTPRequestHandler):
         if self.path == "/run-requirement":
             requirement_text = form.get("requirement_text", "").strip()
             profile = form.get("profile", "profiles/appconfig.yaml")
-            planner = form.get("planner", "llm")
+            planner = "llm"
             run_dir = make_run_dir("requirement")
             requirement_path = run_dir / "requirement.txt"
             requirement_path.write_text(requirement_text, encoding="utf-8")
@@ -53,8 +53,6 @@ class AgentHandler(BaseHTTPRequestHandler):
                 str(requirement_path.relative_to(REPO_ROOT)),
                 "--profile",
                 profile,
-                "--planner",
-                planner,
                 "--mode",
                 "dry-run",
             ]
@@ -64,14 +62,12 @@ class AgentHandler(BaseHTTPRequestHandler):
 
         if self.path == "/analyze-log":
             log_dir = form.get("log_dir", "logs/e2e/20260607-213346").strip()
-            planner = form.get("planner", "llm")
+            planner = "llm"
             command = [
                 "python3",
                 "agent/langchain_agent.py",
                 "--analyze-log",
                 log_dir,
-                "--planner",
-                planner,
             ]
             result = run_agent(command)
             self.respond_html(render_page(selected_planner=planner, result=result))
@@ -99,7 +95,6 @@ def render_page(
 ) -> str:
     requirement = requirement_text if requirement_text is not None else read_text(REPO_ROOT / "requirements" / "appconfig.txt")
     profiles = profile_options(selected_profile)
-    planners = planner_options(selected_planner)
     result_html = render_result(result) if result else ""
     return f"""<!doctype html>
 <html lang="ko">
@@ -128,7 +123,7 @@ def render_page(
           <textarea id="requirement_text" name="requirement_text" spellcheck="false">{escape(requirement)}</textarea>
           <div class="form-grid">
             <label>Profile<select name="profile">{profiles}</select></label>
-            <label>Planner<select name="planner">{planners}</select></label>
+            <div class="field-note">Planner: <strong>llm</strong></div>
           </div>
           <button type="submit">Run Dry-run Agent</button>
         </form>
@@ -141,7 +136,7 @@ def render_page(
         <form method="post" action="/analyze-log">
           <label for="log_dir">Log directory</label>
           <input id="log_dir" name="log_dir" value="logs/e2e/20260607-213346">
-          <label>Planner<select name="planner">{planners}</select></label>
+          <div class="field-note">Planner: <strong>llm</strong></div>
           <button type="submit">Analyze Log</button>
         </form>
         <div class="note">
@@ -183,13 +178,6 @@ def profile_options(selected: str) -> str:
         selected_attr = " selected" if rel == selected else ""
         options.append(f'<option value="{escape(rel)}"{selected_attr}>{escape(label)}</option>')
     return "\n".join(options)
-
-
-def planner_options(selected: str) -> str:
-    return "\n".join(
-        f'<option value="{item}"{" selected" if item == selected else ""}>{item}</option>'
-        for item in ["llm", "local", "mock"]
-    )
 
 
 def run_agent(command: list[str]) -> dict[str, str]:

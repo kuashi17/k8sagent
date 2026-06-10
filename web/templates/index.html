@@ -36,14 +36,9 @@
                 {% endfor %}
               </select>
             </label>
-            <label>
-              Planner
-              <select name="planner">
-                {% for item in ["llm", "local", "mock"] %}
-                  <option value="{{ item }}" {% if selected_planner == item %}selected{% endif %}>{{ item }}</option>
-                {% endfor %}
-              </select>
-            </label>
+            <div class="field-note">
+              Planner: <strong>llm</strong>
+            </div>
           </div>
 
           <button type="submit">Run Dry-run Agent</button>
@@ -59,14 +54,9 @@
           <label for="log_dir">Log directory</label>
           <input id="log_dir" name="log_dir" value="{{ default_log_dir }}">
 
-          <label>
-            Planner
-            <select name="planner">
-              {% for item in ["llm", "local", "mock"] %}
-                <option value="{{ item }}" {% if selected_planner == item %}selected{% endif %}>{{ item }}</option>
-              {% endfor %}
-            </select>
-          </label>
+          <div class="field-note">
+            Planner: <strong>llm</strong>
+          </div>
 
           <button type="submit">Analyze Log</button>
         </form>

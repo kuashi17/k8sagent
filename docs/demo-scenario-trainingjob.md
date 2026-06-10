@@ -267,7 +267,7 @@ GPU Pending warning 해석:
 강조 포인트:
 
 - Agent가 단순히 로그 분석 도구를 실행하는 데서 끝나지 않고, `summary.json`, `analysis.md`, RAG 검색 문서를 함께 참조해 판단합니다.
-- 심사 시연의 기본 planner는 `llm`입니다. `mock` planner는 API key나 로컬 모델 장애 시 fallback 및 개발 테스트 용도로만 사용합니다.
+- 심사 시연의 planner는 `llm`입니다. API key나 모델 설정이 없으면 다른 planner로 대체하지 않고 명확한 오류를 출력합니다.
 - 현재 RAG는 로컬 Markdown `knowledge-base` 검색으로 구현되어 있습니다.
 - 안전을 위해 기본 흐름은 dry-run 중심이며, 실제 scaffold/e2e 실행은 별도 `--execute`가 있을 때만 수행합니다.
 

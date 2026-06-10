@@ -50,7 +50,7 @@ async def run_requirement(request: Request) -> HTMLResponse:
     form = await request.form()
     requirement_text = str(form.get("requirement_text") or "").strip()
     profile = str(form.get("profile") or "profiles/appconfig.yaml")
-    planner = str(form.get("planner") or "llm")
+    planner = "llm"
 
     run_dir = make_run_dir("requirement")
     requirement_path = run_dir / "requirement.txt"
@@ -63,8 +63,6 @@ async def run_requirement(request: Request) -> HTMLResponse:
         str(requirement_path.relative_to(REPO_ROOT)),
         "--profile",
         profile,
-        "--planner",
-        planner,
         "--mode",
         "dry-run",
     ]
@@ -76,15 +74,13 @@ async def run_requirement(request: Request) -> HTMLResponse:
 async def analyze_log(request: Request) -> HTMLResponse:
     form = await request.form()
     log_dir = str(form.get("log_dir") or "").strip()
-    planner = str(form.get("planner") or "llm")
+    planner = "llm"
 
     command = [
         "python3",
         "agent/langchain_agent.py",
         "--analyze-log",
         log_dir,
-        "--planner",
-        planner,
     ]
     result = run_agent_command(command)
     return render_result(request, result, selected_planner=planner)

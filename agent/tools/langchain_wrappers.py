@@ -14,7 +14,7 @@ from typing import Any
 
 try:  # Optional dependency for future real LangChain Agent execution.
     from langchain_core.tools import Tool
-except ImportError:  # pragma: no cover - optional dependency is not required for mock planner.
+except ImportError:  # pragma: no cover - optional dependency is not required for CLI wrapping.
     Tool = None  # type: ignore[assignment]
 
 
@@ -149,8 +149,8 @@ def log_analyzer(log_dir: str, output: str | None = None) -> dict[str, Any]:
 def as_langchain_tools() -> list[Any]:
     """Return LangChain Tool objects when langchain-core is installed.
 
-    The MVP mock planner calls the Python functions directly. This adapter
-    makes the same wrappers usable by a future LangChain ReAct/tool-calling
+    The current Agent orchestrator calls these Python functions directly.
+    This adapter makes the same wrappers usable by a future LangChain ReAct/tool-calling
     Agent without changing the existing CLI tools.
     """
 

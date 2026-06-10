@@ -334,15 +334,13 @@ generated/redis-cache-operator-spec.yaml
 
 기존 CLI 도구 위에 LangChain-style Agent Orchestrator를 추가했습니다.
 
-심사/시연의 기본 planner는 `llm`입니다. Agent는 요구사항을 요약하고, `knowledge-base` 문서를 검색한 뒤, LLM planner가 실행 계획을 JSON으로 생성하고, 기존 CLI 도구를 Tool wrapper로 호출합니다.
-
-`mock` planner는 최종 기능이 아니라 개발/테스트/오프라인 fallback용 안전장치입니다. API key, 네트워크, rate limit, 로컬 모델 장애가 있어도 최소 시연 흐름을 유지하기 위해 남겨둡니다.
+본 시스템은 LLM planner 기반 Agent 구조를 사용합니다. Agent는 요구사항을 요약하고, `knowledge-base` 문서를 검색한 뒤, LLM planner가 실행 계획을 JSON으로 생성하고, 기존 CLI 도구를 Tool wrapper로 호출합니다.
 
 RAG는 현재 로컬 Markdown `knowledge-base` 검색으로 구현되어 있습니다. Vector DB와 Reranker는 이후 확장 지점입니다.
 
 MVP는 안전을 위해 기본 dry-run 중심입니다. 실제 scaffold, patch, e2e 실행은 별도 `--execute`가 명시될 때만 수행합니다.
 
-LLM planner를 사용하려면 선택 의존성과 OpenAI API key가 필요합니다.
+LLM planner를 사용하려면 선택 의존성과 OpenAI API key가 필요합니다. `OPENAI_API_KEY`가 없거나 LLM 호출이 실패하면 다른 planner로 대체하지 않고 명확한 오류를 출력합니다.
 
 ```bash
 pip install -r requirements.txt
@@ -350,44 +348,12 @@ export OPENAI_API_KEY=<your-api-key>
 export OPENAI_MODEL=gpt-4.1-mini
 ```
 
-`OPENAI_API_KEY`가 없거나 `langchain-openai`가 설치되어 있지 않으면 Agent는 명확한 메시지를 출력하고 `mock` planner로 fallback합니다. fallback 발생 여부는 `logs/agent/<timestamp>/summary.json`, `agent-report.md`, `llm-output.json`에 저장됩니다.
-
-Open model을 로컬에서 사용하려면 Ollama provider를 사용할 수 있습니다.
-
-```bash
-ollama serve
-ollama pull llama3.1
-
-export LLM_PROVIDER=local
-export LOCAL_LLM_MODEL=llama3.1
-export LOCAL_LLM_BASE_URL=http://localhost:11434
-
-python3 agent/langchain_agent.py \
-  --requirement requirements/appconfig.txt \
-  --profile profiles/appconfig.yaml \
-  --planner local \
-  --mode dry-run
-```
-
-Ollama가 실행 중이 아니거나 모델이 없으면 Agent는 명확한 메시지를 출력하고 `mock` planner로 fallback합니다.
-
 대표 실행 예시 1: requirement 기반 dry-run
 
 ```bash
 python3 agent/langchain_agent.py \
   --requirement requirements/appconfig.txt \
   --profile profiles/appconfig.yaml \
-  --planner llm \
-  --mode dry-run
-```
-
-오프라인 fallback 검증이 필요할 때만 `mock` planner를 명시합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/appconfig.txt \
-  --profile profiles/appconfig.yaml \
-  --planner mock \
   --mode dry-run
 ```
 
@@ -411,16 +377,7 @@ Agent 실행 결과에는 다음 항목이 포함됩니다.
 
 ```bash
 python3 agent/langchain_agent.py \
-  --analyze-log logs/e2e/20260607-213346 \
-  --planner llm
-```
-
-오프라인 fallback 검증이 필요할 때만 `mock` planner를 명시합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --analyze-log logs/e2e/20260607-213346 \
-  --planner mock
+  --analyze-log logs/e2e/20260607-213346
 ```
 
 TrainingJob e2e 로그의 GPU Pending 케이스는 `succeeded-with-warning`으로 분류됩니다. Controller가 Job을 생성하지 못한 오류가 아니라, kind 클러스터에 `nvidia.com/gpu` 리소스가 없어 Pod가 Pending 상태로 남은 케이스이기 때문입니다.
@@ -455,7 +412,7 @@ Web UI에서 할 수 있는 작업:
 
 - 자연어 requirement 기반 Agent dry-run
 - AppConfig, RedisCache, TrainingJob profile 선택
-- planner 선택: `mock`, `local`, `llm`
+- LLM planner 기반 실행
 - 기존 e2e 로그 분석
 - Agent report, stdout, stderr 확인
 
