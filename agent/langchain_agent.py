@@ -139,6 +139,7 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
         "logAnalyzerResult": analyzer_result,
         "retrievedKnowledge": retrieved,
         "llmAnalysis": planner_result.get("llmOutput") or {},
+        "ragEvidence": extract_list(planner_result.get("llmOutput") or {}, "ragEvidence"),
         "warnings": source_summary.get("warnings") or [],
         "errors": errors,
     }
@@ -301,6 +302,9 @@ def build_requirement_summary(
         "retrievedKnowledge": context["retrievedKnowledge"],
         "selectedProfile": context["selectedProfile"],
         "llmPlan": planner_result.get("llmOutput") or {},
+        "llmReasoning": extract_list(planner_result.get("llmOutput") or {}, "reasoning"),
+        "ragEvidence": extract_list(planner_result.get("llmOutput") or {}, "ragEvidence"),
+        "toolCallPlan": extract_tool_call_plan(planner_result.get("llmOutput") or {}),
         "generatedFiles": context["generatedFiles"],
         "toolResults": tool_results,
         "warnings": collect_warnings(tool_results, context),
@@ -441,6 +445,15 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     if summary.get("llmPlan"):
         lines.extend(["", "## LLM Planner Output", "", "```json", json.dumps(summary["llmPlan"], indent=2, ensure_ascii=False), "```"])
 
+    lines.extend(["", "## AI Reasoning", ""])
+    lines.extend([f"- {item}" for item in summary.get("llmReasoning") or []] or ["- LLM reasoning was not generated."])
+
+    lines.extend(["", "## RAG Evidence Used By LLM", ""])
+    lines.extend(format_rag_evidence(summary.get("ragEvidence") or []))
+
+    lines.extend(["", "## Tool Call Plan From LLM", ""])
+    lines.extend(format_tool_call_plan(summary.get("toolCallPlan") or []))
+
     profile = summary["selectedProfile"]
     lines.extend(
         [
@@ -505,6 +518,13 @@ def render_log_analysis_report(summary: dict[str, Any]) -> str:
         "",
     ]
     lines.extend([f"- {item}" for item in llm_analysis.get("evidence") or []] or ["- No LLM evidence was generated."])
+
+    lines.extend(["", "## RAG Evidence Used By LLM", ""])
+    lines.extend(format_rag_evidence(summary.get("ragEvidence") or []))
+
+    if llm_analysis.get("explanationForBeginner"):
+        lines.extend(["", "## Beginner Explanation", "", llm_analysis["explanationForBeginner"]])
+
     lines.extend(["", "## Warnings", ""])
     lines.extend([f"- {item}" for item in summary["warnings"]] or ["- none"])
     if llm_analysis:
@@ -536,6 +556,49 @@ def format_retrieved_docs(items: list[dict[str, Any]]) -> list[str]:
     lines = []
     for item in items:
         lines.append(f"- `{item['path']}`: {item['title']} ({', '.join(item['matchedKeywords'])})")
+    return lines
+
+
+def extract_list(data: dict[str, Any], key: str) -> list[Any]:
+    value = data.get(key) if isinstance(data, dict) else []
+    return value if isinstance(value, list) else []
+
+
+def extract_tool_call_plan(data: dict[str, Any]) -> list[dict[str, Any]]:
+    value = data.get("toolCalls") if isinstance(data, dict) else []
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def format_rag_evidence(items: list[Any]) -> list[str]:
+    if not items:
+        return ["- No explicit RAG evidence mapping was generated."]
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            lines.append(f"- {item}")
+            continue
+        path = item.get("documentPath") or item.get("path") or "unknown"
+        title = item.get("title") or "untitled"
+        used_for = item.get("usedFor") or item.get("reason") or "not specified"
+        evidence_type = item.get("evidenceType") or "unknown"
+        lines.append(f"- `{path}`: {title}")
+        lines.append(f"  - used for: {used_for}")
+        lines.append(f"  - evidence type: `{evidence_type}`")
+    return lines
+
+
+def format_tool_call_plan(items: list[dict[str, Any]]) -> list[str]:
+    if not items:
+        return ["- No supported Tool call plan was generated."]
+    lines: list[str] = []
+    for item in items:
+        tool = item.get("tool") or "unknown"
+        mode = item.get("mode") or "unspecified"
+        reason = item.get("reason") or "No reason provided."
+        lines.append(f"- `{tool}` mode=`{mode}`")
+        lines.append(f"  - reason: {reason}")
     return lines
 
 

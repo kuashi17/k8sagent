@@ -362,12 +362,17 @@ Agent 실행 결과에는 다음 항목이 포함됩니다.
 - Requirement Summary
 - Missing Information Check
 - Retrieved Knowledge
+- LLM Planner Output
+- AI Reasoning
+- RAG Evidence Used By LLM
+- Tool Call Plan From LLM
 - Selected Profile
-- Planned Steps
 - Tool Execution Results
 - Generated Files
 - Warnings / Errors
 - Next Recommended Actions
+
+특히 `RAG Evidence Used By LLM` 섹션은 검색된 문서가 어떤 판단에 사용되었는지 보여줍니다. 예를 들어 `rbac-marker.md`가 RBAC 권한 추론에 사용되었는지, `reconcile-pattern.md`가 Controller 동작 계획에 사용되었는지 확인할 수 있습니다.
 
 기본은 dry-run이며, 실제 scaffold, patch, e2e 변경 작업은 `--execute`가 명시되지 않으면 수행하지 않습니다. 실행 결과는 `logs/agent/<timestamp>/summary.json`과 `logs/agent/<timestamp>/agent-report.md`에 저장됩니다.
 

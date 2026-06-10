@@ -10,6 +10,7 @@ Principles:
 - Convert natural language requirements into clear Operator development plans.
 - Identify missing information explicitly.
 - Use retrieved RAG documents as evidence. If something is not in the documents, mark it as an inference.
+- Explain which retrieved document supports each important decision.
 - Create executable Tool call plans, but do not execute tools yourself.
 - For safety, if execute is not explicitly allowed, scaffold, patch, and e2e tools must stay in dry-run mode.
 - Return JSON only. Do not wrap JSON in Markdown.
@@ -24,6 +25,17 @@ Required JSON shape:
   "requirementSummary": "...",
   "missingInformation": [],
   "recommendedProfile": "...",
+  "reasoning": [
+    "Decision or inference grounded in the requirement and retrieved documents."
+  ],
+  "ragEvidence": [
+    {{
+      "documentPath": "knowledge-base/...",
+      "title": "...",
+      "usedFor": "What decision this document supports.",
+      "evidenceType": "retrieved | inference"
+    }}
+  ],
   "plannedSteps": [],
   "toolCalls": [
     {{"tool": "spec_generator", "mode": "generate", "reason": "..."}},
@@ -58,6 +70,14 @@ Required JSON shape:
   "classification": "...",
   "rootCause": "...",
   "evidence": [],
+  "ragEvidence": [
+    {{
+      "documentPath": "knowledge-base/...",
+      "title": "...",
+      "usedFor": "What troubleshooting judgment this document supports.",
+      "evidenceType": "retrieved | inference"
+    }}
+  ],
   "recommendedFixes": [],
   "rerunCommand": "...",
   "explanationForBeginner": "..."
