@@ -42,7 +42,7 @@ class AgentHandler(BaseHTTPRequestHandler):
         if self.path == "/run-requirement":
             requirement_text = form.get("requirement_text", "").strip()
             profile = form.get("profile", "profiles/appconfig.yaml")
-            planner = form.get("planner", "mock")
+            planner = form.get("planner", "llm")
             run_dir = make_run_dir("requirement")
             requirement_path = run_dir / "requirement.txt"
             requirement_path.write_text(requirement_text, encoding="utf-8")
@@ -64,7 +64,7 @@ class AgentHandler(BaseHTTPRequestHandler):
 
         if self.path == "/analyze-log":
             log_dir = form.get("log_dir", "logs/e2e/20260607-213346").strip()
-            planner = form.get("planner", "mock")
+            planner = form.get("planner", "llm")
             command = [
                 "python3",
                 "agent/langchain_agent.py",
@@ -94,7 +94,7 @@ class AgentHandler(BaseHTTPRequestHandler):
 def render_page(
     requirement_text: str | None = None,
     selected_profile: str = "profiles/appconfig.yaml",
-    selected_planner: str = "mock",
+    selected_planner: str = "llm",
     result: dict[str, str] | None = None,
 ) -> str:
     requirement = requirement_text if requirement_text is not None else read_text(REPO_ROOT / "requirements" / "appconfig.txt")
@@ -188,7 +188,7 @@ def profile_options(selected: str) -> str:
 def planner_options(selected: str) -> str:
     return "\n".join(
         f'<option value="{item}"{" selected" if item == selected else ""}>{item}</option>'
-        for item in ["mock", "local", "llm"]
+        for item in ["llm", "local", "mock"]
     )
 
 

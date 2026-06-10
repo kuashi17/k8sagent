@@ -15,6 +15,8 @@
 - Job spec validation 구현
 - `log_analyzer.py` 기반 성공/경고 분석 리포트 생성
 - LangChain-style Agent Orchestrator 구현
+- LLM planner 구조 구현 및 심사 시연 기본 planner를 `llm`으로 정리
+- mock planner는 개발/테스트/오프라인 fallback 용도로 유지
 - 기존 CLI 도구를 Agent Tool wrapper로 호출하는 구조 구현
 - 로컬 Markdown `knowledge-base` 기반 RAG 검색 구현
 - Agent 기반 requirement dry-run 구현
@@ -78,7 +80,7 @@ Agent 로그 분석 결과:
 ```bash
 python3 agent/langchain_agent.py \
   --analyze-log logs/e2e/20260607-213346 \
-  --planner mock
+  --planner llm
 ```
 
 - `log_analyzer.py` Tool 호출 성공
@@ -105,7 +107,7 @@ TrainingJob status:
 - `artifact_patcher.py`에 sample 값과 RBAC 보강 로직이 profile과 분리되어 있지 않음
 - `log_analyzer.py`의 추천 명령과 evidence 수집 일부가 TrainingJob 흐름에 묶여 있음
 - RAG는 현재 로컬 Markdown 검색이며 Vector DB/Reranker는 아직 미적용
-- LLM 기반 Semantic Parsing은 아직 미적용이며 현재 planner는 규칙 기반 `mock` 모드
+- 실제 LLM 품질 검증은 API key 또는 Ollama local model 실행 환경에서 추가 검증 필요
 - Jenkins, Harbor, Argo CD 연계는 문서화 단계
 - 실패 로그 분석은 규칙 기반이며, 더 많은 실패 사례 축적이 필요함
 
@@ -117,7 +119,7 @@ TrainingJob status:
 - PVC not found, ImagePullBackOff, RBAC forbidden 등 의도적 실패 시나리오 검증
 - RedisCache profile 기반 e2e 시나리오 추가
 - 문서화된 profile 구조를 실제 코드 로딩 구조로 연결
-- `mock` planner를 ChatOpenAI 또는 로컬 LLM planner로 교체할 수 있는 실행 모드 확장
+- LLM planner의 prompt, JSON schema, fallback 정책 고도화
 - RAG 검색을 Vector DB와 Reranker 기반으로 고도화
 
 ## 2차 확장 항목

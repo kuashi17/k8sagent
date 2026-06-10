@@ -50,7 +50,7 @@ async def run_requirement(request: Request) -> HTMLResponse:
     form = await request.form()
     requirement_text = str(form.get("requirement_text") or "").strip()
     profile = str(form.get("profile") or "profiles/appconfig.yaml")
-    planner = str(form.get("planner") or "mock")
+    planner = str(form.get("planner") or "llm")
 
     run_dir = make_run_dir("requirement")
     requirement_path = run_dir / "requirement.txt"
@@ -76,7 +76,7 @@ async def run_requirement(request: Request) -> HTMLResponse:
 async def analyze_log(request: Request) -> HTMLResponse:
     form = await request.form()
     log_dir = str(form.get("log_dir") or "").strip()
-    planner = str(form.get("planner") or "mock")
+    planner = str(form.get("planner") or "llm")
 
     command = [
         "python3",
@@ -121,7 +121,7 @@ def render_result(
     result: dict[str, Any],
     requirement_text: str | None = None,
     selected_profile: str = "profiles/appconfig.yaml",
-    selected_planner: str = "mock",
+    selected_planner: str = "llm",
 ) -> HTMLResponse:
     return templates.TemplateResponse(
         "index.html",
@@ -197,4 +197,3 @@ def compact(value: str, limit: int = 120) -> str:
 
 def escape(value: Any) -> str:
     return html.escape(str(value))
-

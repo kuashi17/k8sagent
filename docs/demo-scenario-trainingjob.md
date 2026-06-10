@@ -245,7 +245,7 @@ python3 agent/tools/log_analyzer.py \
 ```bash
 python3 agent/langchain_agent.py \
   --analyze-log logs/e2e/20260607-213346 \
-  --planner mock
+  --planner llm
 ```
 
 기대 결과:
@@ -267,7 +267,7 @@ GPU Pending warning 해석:
 강조 포인트:
 
 - Agent가 단순히 로그 분석 도구를 실행하는 데서 끝나지 않고, `summary.json`, `analysis.md`, RAG 검색 문서를 함께 참조해 판단합니다.
-- `mock` planner는 현재 규칙 기반이지만 LangChain Agent 구조 위에서 동작하며, 향후 ChatOpenAI 또는 로컬 LLM planner로 교체할 수 있습니다.
+- 심사 시연의 기본 planner는 `llm`입니다. `mock` planner는 API key나 로컬 모델 장애 시 fallback 및 개발 테스트 용도로만 사용합니다.
 - 현재 RAG는 로컬 Markdown `knowledge-base` 검색으로 구현되어 있습니다.
 - 안전을 위해 기본 흐름은 dry-run 중심이며, 실제 scaffold/e2e 실행은 별도 `--execute`가 있을 때만 수행합니다.
 

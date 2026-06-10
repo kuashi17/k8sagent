@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """LangChain-style Agent orchestrator for the Kubebuilder automation MVP.
 
-The default planner is `mock`, a deterministic planner that demonstrates the
-Agent loop without requiring an external LLM API. The code is structured so a
-future planner can replace the mock planner with ChatOpenAI or a local LLM.
+The primary demo planner is `llm`. The deterministic `mock` planner remains as
+a development, offline-test, and failure fallback path.
 """
 
 from __future__ import annotations
@@ -34,10 +33,10 @@ def main() -> int:
     parser.add_argument("--log-dir", help="Existing logs/scaffold, logs/patch, or logs/e2e directory to analyze.")
     parser.add_argument("--analyze-log", help="Alias of --log-dir. Analyze an existing execution log with RAG context.")
     parser.add_argument("--profile", help="Profile YAML path.")
-    parser.add_argument("--planner", default="mock", choices=["mock", "llm", "local"], help="Planner type. mock is the safe default.")
+    parser.add_argument("--planner", default="llm", choices=["llm", "local", "mock"], help="Planner type. llm is the primary demo mode; mock is fallback/test mode.")
     parser.add_argument("--mode", default="dry-run", choices=["dry-run", "execute"], help="Agent mode. Defaults to dry-run.")
     parser.add_argument("--workspace", default="workspace/generated-operators", help="Scaffold workspace parent.")
-    parser.add_argument("--execute", action="store_true", help="Allow real execution for mutating tools. Not used by the mock dry-run flow.")
+    parser.add_argument("--execute", action="store_true", help="Allow real execution for mutating tools. Without this flag, mutating tools remain dry-run.")
     args = parser.parse_args()
 
     if args.analyze_log and not args.log_dir:
