@@ -82,7 +82,9 @@ RAG Evidence Used By LLM
 환경변수:
 
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL`, 기본값 `gpt-4.1-mini`
+- `OPENAI_MODEL`, 기본값 `gpt-5.4-mini`
+
+모델은 직접 `kubectl`, `make`, `python` 명령을 실행하지 않는다. 모델은 요구사항 해석, RAG 근거 연결, Tool 호출 계획, 로그 분석 판단을 JSON으로 생성하는 판단 엔진 역할만 수행한다. 실제 실행은 `agent/tools/langchain_wrappers.py`의 허용된 Tool wrapper가 담당한다.
 
 LLM planner 역할:
 

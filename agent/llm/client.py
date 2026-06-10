@@ -15,11 +15,11 @@ class LLMUnavailable(RuntimeError):
 
 @dataclass
 class LLMConfig:
-    model: str = "gpt-4.1-mini"
+    model: str = "gpt-5.4-mini"
 
 
 def config_from_env(model: str | None = None) -> LLMConfig:
-    return LLMConfig(model=model or os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"))
+    return LLMConfig(model=model or os.environ.get("OPENAI_MODEL", "gpt-5.4-mini"))
 
 
 def chat_json(system_prompt: str, user_prompt: str, config: LLMConfig | None = None) -> str:

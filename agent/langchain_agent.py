@@ -630,7 +630,7 @@ def write_agent_artifacts(
 
 
 def make_agent_log_dir() -> Path:
-    log_dir = Path("logs") / "agent" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = Path("logs") / "agent" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 
