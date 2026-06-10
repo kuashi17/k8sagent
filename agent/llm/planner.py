@@ -10,6 +10,14 @@ from agent.llm.client import LLMConfig, chat_json
 from agent.llm.prompts import LOG_ANALYSIS_PLANNER_PROMPT, REQUIREMENT_PLANNER_PROMPT, SYSTEM_PROMPT
 
 
+class LLMOutputParseError(ValueError):
+    """Raised when a local LLM response cannot be parsed as JSON."""
+
+    def __init__(self, message: str, raw_output: str):
+        super().__init__(message)
+        self.raw_output = raw_output
+
+
 def plan_requirement_with_llm(
     requirement_text: str,
     retrieved_docs: list[dict[str, Any]],
@@ -57,17 +65,28 @@ def analyze_log_with_llm(
 
 def parse_json_object(raw: str) -> dict[str, Any]:
     text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if not match:
-            raise
-        data = json.loads(match.group(0))
-    if not isinstance(data, dict):
-        raise ValueError("LLM output must be a JSON object.")
-    return data
+    candidates = [text]
 
+    code_block = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+    if code_block:
+        candidates.append(code_block.group(1).strip())
+
+    first = text.find("{")
+    last = text.rfind("}")
+    if first != -1 and last != -1 and first < last:
+        candidates.append(text[first : last + 1])
+
+    data: Any = None
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            break
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    else:
+        raise LLMOutputParseError(f"LLM output could not be parsed as JSON: {last_error}", raw)
+
+    if not isinstance(data, dict):
+        raise LLMOutputParseError("LLM output must be a JSON object.", raw)
+    return data

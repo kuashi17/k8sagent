@@ -77,12 +77,14 @@ RAG Evidence Used By LLM
 
 현재 지원 provider:
 
-- `openai`: `langchain-openai`의 `ChatOpenAI` wrapper 사용
+- `local`: Ollama OpenAI-compatible endpoint 사용
 
 환경변수:
 
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`, 기본값 `gpt-5.4-mini`
+- `LOCAL_LLM_BASE_URL`, 기본값 `http://localhost:11434/v1`
+- `LOCAL_LLM_MODEL`, 기본값 `qwen2.5-coder:7b`
+
+본 시스템은 외부 API 기반 LLM을 사용하지 않는다. 사내 예제 코드, Kubernetes 로그, YAML 산출물, 오류 로그, RAG 문서는 로컬 환경 안에서 처리된다. 이 구조는 내부망/폐쇄망 환경을 고려한 로컬 실행형 AI Agent 구조다.
 
 모델은 직접 `kubectl`, `make`, `python` 명령을 실행하지 않는다. 모델은 요구사항 해석, RAG 근거 연결, Tool 호출 계획, 로그 분석 판단을 JSON으로 생성하는 판단 엔진 역할만 수행한다. 실제 실행은 `agent/tools/langchain_wrappers.py`의 허용된 Tool wrapper가 담당한다.
 
@@ -98,12 +100,13 @@ LLM planner 역할:
 
 LLM은 명령을 직접 실행하지 않는다. 실제 실행은 기존 Tool wrapper가 담당하며, `--execute`가 명시되지 않으면 scaffold, patch, e2e는 dry-run 중심으로 제한된다.
 
-LLM 호출에 실패하거나 API key가 없으면 Agent는 다른 planner로 대체하지 않는다. 대신 실패 원인과 필요한 환경변수를 출력하고, `logs/agent/<timestamp>/summary.json`, `agent-report.md`, `llm-output.json`에 기록한다.
+LLM 호출에 실패하거나 Ollama 서버/모델이 준비되지 않으면 Agent는 다른 provider로 대체하지 않는다. 대신 실패 원인과 필요한 환경변수를 출력하고, `logs/agent/<timestamp>/summary.json`, `agent-report.md`, `llm-output.json`, `llm-raw-output.txt`에 기록한다.
 
 LLM 입출력 파일:
 
 - `llm-input.json`
 - `llm-output.json`
+- `llm-raw-output.txt`
 - `retrieved-docs.json`
 - `tool-results.json`
 

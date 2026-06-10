@@ -17,8 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agent.llm.client import LLMUnavailable, REQUIRED_ENV_MESSAGE  # noqa: E402
-from agent.llm.planner import analyze_log_with_llm, plan_requirement_with_llm  # noqa: E402
+from agent.llm.client import LLMUnavailable, config_from_env  # noqa: E402
+from agent.llm.planner import LLMOutputParseError, analyze_log_with_llm, plan_requirement_with_llm  # noqa: E402
 from agent.rag.retriever import search as retrieve_knowledge  # noqa: E402
 from agent.tools import langchain_wrappers as tools  # noqa: E402
 
@@ -96,10 +96,10 @@ def call_requirement_planner(
             args.mode,
         )
         return llm_result(True, exact_input, output, raw)
-    except (LLMUnavailable, Exception) as exc:  # noqa: BLE001
-        message = str(exc) or REQUIRED_ENV_MESSAGE
+    except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
+        message = str(exc) or "Local LLM planner failed."
         print(f"LLM planner failed: {message}")
-        return llm_result(False, llm_input, {}, "", message)
+        return llm_result(False, llm_input, {}, raw_from_exception(exc), message)
 
 
 def run_log_analysis_agent(args: argparse.Namespace) -> int:
@@ -131,6 +131,7 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
         "mode": "log-analysis",
         "planner": "llm",
         "llmPlannerUsed": planner_result["llmPlannerUsed"],
+        "localLLM": planner_result.get("localLLM") or {},
         "llmError": planner_result["error"],
         "sourceLogDir": str(source_log_dir),
         "sourceSummary": str(source_summary_path),
@@ -165,10 +166,10 @@ def call_log_planner(
     try:
         output, exact_input, raw = analyze_log_with_llm(source_summary, analysis_text, retrieved)
         return llm_result(True, exact_input, output, raw)
-    except (LLMUnavailable, Exception) as exc:  # noqa: BLE001
-        message = str(exc) or REQUIRED_ENV_MESSAGE
+    except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
+        message = str(exc) or "Local LLM planner failed."
         print(f"LLM planner failed: {message}")
-        return llm_result(False, llm_input, {}, "", message)
+        return llm_result(False, llm_input, {}, raw_from_exception(exc), message)
 
 
 def llm_result(
@@ -182,6 +183,10 @@ def llm_result(
         "requestedPlanner": "llm",
         "effectivePlanner": "llm" if used else "none",
         "llmPlannerUsed": used,
+        "localLLM": {
+            "baseUrl": config_from_env().base_url,
+            "model": config_from_env().model,
+        },
         "llmInput": llm_input,
         "llmOutput": output,
         "rawOutput": raw,
@@ -293,6 +298,7 @@ def build_requirement_summary(
         "profile": args.profile or "",
         "planner": "llm",
         "llmPlannerUsed": planner_result["llmPlannerUsed"],
+        "localLLM": planner_result.get("localLLM") or {},
         "llmError": planner_result["error"],
         "agentMode": args.mode,
         "executeAllowed": bool(args.execute),
@@ -404,7 +410,7 @@ def next_actions(
     if any(result["exitCode"] != 0 for result in tool_results):
         actions.insert(0, "실패한 Tool의 stderr와 생성된 summary를 먼저 확인합니다.")
     if planner_result["error"]:
-        actions.append(REQUIRED_ENV_MESSAGE)
+        actions.append("Ollama local LLM 서버와 모델 상태를 확인합니다.")
     if not actions:
         actions = [
             f"검토: {context['generatedFiles']['commandPlan']}",
@@ -421,6 +427,8 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
         "## Planner",
         "",
         "- Planner: `llm`",
+        f"- Local LLM endpoint: `{summary.get('localLLM', {}).get('baseUrl') or 'unknown'}`",
+        f"- Local LLM model: `{summary.get('localLLM', {}).get('model') or 'unknown'}`",
         f"- LLM planner used: `{summary.get('llmPlannerUsed')}`",
         f"- LLM error: `{summary.get('llmError') or 'none'}`",
         "",
@@ -503,6 +511,8 @@ def render_log_analysis_report(summary: dict[str, Any]) -> str:
         "## Planner",
         "",
         "- Planner: `llm`",
+        f"- Local LLM endpoint: `{summary.get('localLLM', {}).get('baseUrl') or 'unknown'}`",
+        f"- Local LLM model: `{summary.get('localLLM', {}).get('model') or 'unknown'}`",
         f"- LLM planner used: `{summary.get('llmPlannerUsed')}`",
         f"- LLM error: `{summary.get('llmError') or 'none'}`",
         "",
@@ -544,7 +554,7 @@ def render_log_analysis_report(summary: dict[str, Any]) -> str:
             "",
         ]
     )
-    lines.extend([f"- {item}" for item in llm_analysis.get("recommendedFixes") or []] or ["- Check LLM error and required environment variables."])
+    lines.extend([f"- {item}" for item in llm_analysis.get("recommendedFixes") or []] or ["- Check Ollama local LLM server and model availability."])
     if llm_analysis.get("rerunCommand"):
         lines.append(f"- Recommended re-run: `{llm_analysis['rerunCommand']}`")
     return "\n".join(lines) + "\n"
@@ -615,6 +625,7 @@ def write_agent_artifacts(
         json.dumps(
             {
                 "planner": "llm",
+                "localLLM": planner_result.get("localLLM"),
                 "llmPlannerUsed": planner_result.get("llmPlannerUsed"),
                 "error": planner_result.get("error"),
                 "output": planner_result.get("llmOutput") or {},
@@ -627,6 +638,11 @@ def write_agent_artifacts(
     )
     (log_dir / "retrieved-docs.json").write_text(json.dumps(retrieved_docs, indent=2, ensure_ascii=False), encoding="utf-8")
     (log_dir / "tool-results.json").write_text(json.dumps(tool_results, indent=2, ensure_ascii=False), encoding="utf-8")
+    (log_dir / "llm-raw-output.txt").write_text(planner_result.get("rawOutput") or "", encoding="utf-8")
+
+
+def raw_from_exception(exc: Exception) -> str:
+    return str(getattr(exc, "raw_output", "") or "")
 
 
 def make_agent_log_dir() -> Path:
