@@ -7,7 +7,12 @@ import re
 from typing import Any
 
 from agent.llm.client import LLMConfig, chat_json
-from agent.llm.prompts import LOG_ANALYSIS_PLANNER_PROMPT, REQUIREMENT_PLANNER_PROMPT, SYSTEM_PROMPT
+from agent.llm.prompts import (
+    LOG_ANALYSIS_PLANNER_PROMPT,
+    REQUIREMENT_PLANNER_PROMPT,
+    SYSTEM_PROMPT,
+    TOOL_RESULT_EVALUATION_PROMPT,
+)
 
 
 class LLMOutputParseError(ValueError):
@@ -65,6 +70,46 @@ def analyze_log_with_llm(
     )
     raw = chat_json(SYSTEM_PROMPT, prompt, config)
     return normalize_log_analysis_output(parse_json_object(raw), compact_summary), llm_input, raw
+
+
+def evaluate_tool_results_with_llm(
+    requirement_summary: dict[str, Any],
+    planned_steps: list[Any],
+    tool_calls: list[dict[str, Any]],
+    validated_tool_calls: list[dict[str, Any]],
+    rejected_tool_calls: list[dict[str, Any]],
+    tool_results: list[dict[str, Any]],
+    generated_files: dict[str, Any],
+    warnings: list[str],
+    errors: list[str],
+    config: LLMConfig | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    compact_results = compact_tool_results(tool_results)
+    llm_input = {
+        "mode": "tool-result-evaluation",
+        "requirementSummary": requirement_summary,
+        "plannedSteps": planned_steps,
+        "toolCalls": tool_calls,
+        "validatedToolCalls": validated_tool_calls,
+        "rejectedToolCalls": rejected_tool_calls,
+        "toolResults": compact_results,
+        "generatedFiles": generated_files,
+        "warnings": warnings,
+        "errors": errors,
+    }
+    prompt = TOOL_RESULT_EVALUATION_PROMPT.format(
+        requirement_summary=json.dumps(requirement_summary, ensure_ascii=False, indent=2),
+        planned_steps=json.dumps(planned_steps, ensure_ascii=False, indent=2),
+        tool_calls=json.dumps(tool_calls, ensure_ascii=False, indent=2),
+        validated_tool_calls=json.dumps(validated_tool_calls, ensure_ascii=False, indent=2),
+        rejected_tool_calls=json.dumps(rejected_tool_calls, ensure_ascii=False, indent=2),
+        tool_results=json.dumps(compact_results, ensure_ascii=False, indent=2),
+        generated_files=json.dumps(generated_files, ensure_ascii=False, indent=2),
+        warnings=json.dumps(warnings, ensure_ascii=False, indent=2),
+        errors=json.dumps(errors, ensure_ascii=False, indent=2),
+    )
+    raw = chat_json(SYSTEM_PROMPT, prompt, config)
+    return normalize_tool_result_evaluation(parse_json_object(raw), llm_input), llm_input, raw
 
 
 def parse_json_object(raw: str) -> dict[str, Any]:
@@ -138,6 +183,117 @@ def compact_execution_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "profileConfig": summary.get("profileConfig") or {},
         "steps": steps[:80],
     }
+
+
+def compact_tool_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compacted = []
+    for item in results:
+        stdout = str(item.get("stdout") or "")
+        stderr = str(item.get("stderr") or "")
+        compacted.append(
+            {
+                "tool": item.get("tool"),
+                "command": item.get("command"),
+                "cwd": item.get("cwd"),
+                "status": item.get("status"),
+                "exitCode": item.get("exitCode"),
+                "stdoutSummary": tail_text(stdout, 1800),
+                "stderrSummary": tail_text(stderr, 1800),
+            }
+        )
+    return compacted
+
+
+def tail_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[-limit:]
+
+
+def normalize_tool_result_evaluation(data: dict[str, Any], llm_input: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(data)
+    tool_results = llm_input.get("toolResults") or []
+    rejected = llm_input.get("rejectedToolCalls") or []
+    errors = llm_input.get("errors") or []
+    warnings = llm_input.get("warnings") or []
+
+    decision = str(normalized.get("executionDecision") or normalized.get("decision") or "").strip()
+    if decision not in {"succeeded", "failed", "partially-succeeded"}:
+        if any(item.get("exitCode") not in (0, None) for item in tool_results) or errors:
+            decision = "failed"
+        elif rejected:
+            decision = "partially-succeeded"
+        else:
+            decision = "succeeded"
+        normalized["executionDecision"] = decision
+
+    completed = normalized.get("completedSteps")
+    if not isinstance(completed, list):
+        normalized["completedSteps"] = [
+            str(item.get("tool")) for item in tool_results if item.get("exitCode") == 0 and item.get("tool")
+        ]
+    else:
+        normalized["completedSteps"] = stringify_items(completed, preferred_keys=["tool", "name", "step"])
+
+    failed = normalized.get("failedSteps")
+    if not isinstance(failed, list):
+        failed_steps = [
+            str(item.get("tool")) for item in tool_results if item.get("exitCode") not in (0, None) and item.get("tool")
+        ]
+        failed_steps.extend(str(item.get("tool") or item.get("reason") or "rejected tool call") for item in rejected)
+        normalized["failedSteps"] = failed_steps
+    else:
+        normalized["failedSteps"] = stringify_items(failed, preferred_keys=["tool", "name", "step", "reason"])
+
+    artifacts = normalized.get("generatedArtifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        generated_files = llm_input.get("generatedFiles") or {}
+        normalized["generatedArtifacts"] = [str(value) for value in generated_files.values() if value]
+    else:
+        normalized["generatedArtifacts"] = stringify_items(artifacts, preferred_keys=["path", "name"])
+
+    evidence = normalized.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        normalized["evidence"] = [
+            f"{item.get('tool')} exitCode={item.get('exitCode')} status={item.get('status')}" for item in tool_results
+        ]
+    else:
+        normalized["evidence"] = stringify_items(evidence, preferred_keys=["summary", "tool", "path", "name"])
+
+    if not isinstance(normalized.get("warnings"), list):
+        normalized["warnings"] = list(warnings)
+    if not isinstance(normalized.get("recommendedNextActions"), list):
+        if decision == "succeeded":
+            normalized["recommendedNextActions"] = ["생성된 operator-spec.yaml과 command plan을 검토한 뒤 scaffold execute 단계로 진행합니다."]
+        elif decision == "partially-succeeded":
+            normalized["recommendedNextActions"] = ["거부된 Tool 호출 이유를 확인하고, 안전 조건을 만족하도록 계획을 조정합니다."]
+        else:
+            normalized["recommendedNextActions"] = ["실패한 Tool의 stderr와 관련 로그를 확인한 뒤 해당 단계부터 재실행합니다."]
+
+    if not normalized.get("beginnerSummary"):
+        normalized["beginnerSummary"] = (
+            "요구사항을 구조화하고 실행 계획을 만든 뒤, 허용된 Tool을 안전 모드로 실행했습니다. "
+            "각 Tool의 exitCode와 생성 파일을 기준으로 최종 상태를 판단했습니다."
+        )
+
+    return normalized
+
+
+def stringify_items(items: list[Any], preferred_keys: list[str]) -> list[str]:
+    values: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            selected = ""
+            for key in preferred_keys:
+                if item.get(key):
+                    selected = str(item[key])
+                    break
+            if not selected:
+                selected = json.dumps(item, ensure_ascii=False)
+            values.append(selected)
+        else:
+            values.append(str(item))
+    return values
 
 
 def normalize_log_analysis_output(data: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:

@@ -102,3 +102,57 @@ analysis.md:
 Retrieved troubleshooting docs:
 {retrieved_docs}
 """
+
+
+TOOL_RESULT_EVALUATION_PROMPT = """\
+Evaluate executed Tool results and return a final execution summary JSON object.
+
+Required JSON shape:
+{{
+  "executionDecision": "succeeded | failed | partially-succeeded",
+  "completedSteps": [],
+  "failedSteps": [],
+  "generatedArtifacts": [],
+  "evidence": [],
+  "warnings": [],
+  "recommendedNextActions": [],
+  "beginnerSummary": "..."
+}}
+
+Strict output rules:
+- Use exactly the keys in the required JSON shape.
+- Decide "succeeded" only when all executed Tools succeeded and there are no rejected Tool calls or critical errors.
+- Decide "partially-succeeded" when some Tools succeeded but some Tool calls were rejected or not executed.
+- Decide "failed" when any executed Tool failed or a critical error exists.
+- Use concrete evidence from exitCode, status, generated files, stdout/stderr summaries, and rejected Tool calls.
+- Explain the result for a beginner in one short paragraph.
+- Return JSON only.
+
+Context:
+Initial requirement summary:
+{requirement_summary}
+
+Initial planned steps:
+{planned_steps}
+
+Initial tool calls:
+{tool_calls}
+
+Validated Tool calls:
+{validated_tool_calls}
+
+Rejected Tool calls:
+{rejected_tool_calls}
+
+Executed Tool results:
+{tool_results}
+
+Generated files:
+{generated_files}
+
+Warnings:
+{warnings}
+
+Errors:
+{errors}
+"""

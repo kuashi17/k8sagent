@@ -18,7 +18,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.llm.client import LLMUnavailable, config_from_env  # noqa: E402
-from agent.llm.planner import LLMOutputParseError, analyze_log_with_llm, plan_requirement_with_llm  # noqa: E402
+from agent.llm.planner import (  # noqa: E402
+    LLMOutputParseError,
+    analyze_log_with_llm,
+    evaluate_tool_results_with_llm,
+    plan_requirement_with_llm,
+)
 from agent.rag.retriever import search as retrieve_knowledge  # noqa: E402
 from agent.tools import langchain_wrappers as tools  # noqa: E402
 
@@ -58,22 +63,83 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
 
     planner_result = call_requirement_planner(args, requirement_text, context)
     if planner_result["error"]:
-        summary = build_requirement_summary(args, context, planner_result, [])
-        write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], [])
+        execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "toolResults": []}
+        final_result = empty_final_result(planner_result["error"])
+        summary = build_requirement_summary(args, context, planner_result, execution, final_result)
+        write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result)
         report = render_requirement_report(summary)
         (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
         print(report)
         print(f"\nAgent logs: {log_dir}")
         return 2
 
-    tool_results = execute_planned_tools(context, args.mode, args.execute, planner_result)
-    summary = build_requirement_summary(args, context, planner_result, tool_results)
-    write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], tool_results)
+    execution = execute_planned_tools(context, args.mode, args.execute, planner_result)
+    initial_errors = collect_errors(execution["toolResults"])
+    if planner_result["error"]:
+        initial_errors.append(planner_result["error"])
+    final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
+    summary = build_requirement_summary(args, context, planner_result, execution, final_result)
+    write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result)
     report = render_requirement_report(summary)
     (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
     print(report)
     print(f"\nAgent logs: {log_dir}")
     return 0 if not summary["errors"] else 1
+
+
+def call_final_evaluator(
+    context: dict[str, Any],
+    planner_result: dict[str, Any],
+    execution: dict[str, list[dict[str, Any]]],
+    warnings: list[str],
+    errors: list[str],
+) -> dict[str, Any]:
+    llm_output = planner_result.get("llmOutput") or {}
+    llm_input = {
+        "mode": "tool-result-evaluation",
+        "requirementSummary": context["requirementSummary"],
+        "plannedSteps": llm_output.get("plannedSteps") or [],
+        "toolCalls": extract_tool_call_plan(llm_output),
+        "validatedToolCalls": execution["validatedToolCalls"],
+        "rejectedToolCalls": execution["rejectedToolCalls"],
+        "toolResults": execution["toolResults"],
+        "generatedFiles": context["generatedFiles"],
+        "warnings": warnings,
+        "errors": errors,
+    }
+    try:
+        output, exact_input, raw = evaluate_tool_results_with_llm(
+            context["requirementSummary"],
+            llm_output.get("plannedSteps") or [],
+            extract_tool_call_plan(llm_output),
+            execution["validatedToolCalls"],
+            execution["rejectedToolCalls"],
+            execution["toolResults"],
+            context["generatedFiles"],
+            warnings,
+            errors,
+        )
+        return llm_result(True, exact_input, output, raw)
+    except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
+        message = str(exc) or "Local LLM final evaluation failed."
+        print(f"Final LLM evaluation failed: {message}")
+        return llm_result(False, llm_input, {}, raw_from_exception(exc), message)
+
+
+def empty_final_result(error: str) -> dict[str, Any]:
+    return {
+        "requestedPlanner": "llm",
+        "effectivePlanner": "none",
+        "llmPlannerUsed": False,
+        "localLLM": {
+            "baseUrl": config_from_env().base_url,
+            "model": config_from_env().model,
+        },
+        "llmInput": {},
+        "llmOutput": {},
+        "rawOutput": "",
+        "error": error,
+    }
 
 
 def call_requirement_planner(
@@ -229,23 +295,63 @@ def execute_planned_tools(
     mode: str,
     allow_execute: bool,
     planner_result: dict[str, Any],
-) -> list[dict[str, Any]]:
+) -> dict[str, list[dict[str, Any]]]:
     generated = context["generatedFiles"]
     mutating_execute = mode == "execute" and allow_execute
     supported_calls = {
-        "spec_generator": lambda: tools.spec_generator(context["requirement"], generated["operatorSpec"]),
-        "command_planner": lambda: tools.command_planner(generated["operatorSpec"], generated["commandPlan"], context["workspace"]),
-        "scaffold_runner": lambda: tools.scaffold_runner(generated["operatorSpec"], context["workspace"], execute=mutating_execute),
-        "artifact_patcher": lambda: tools.artifact_patcher(generated["operatorSpec"], "", context["selectedProfile"].get("path"), execute=mutating_execute),
-        "e2e_runner": lambda: tools.e2e_runner(generated["operatorSpec"], context["selectedProfile"].get("path"), execute=mutating_execute),
+        "spec_generator": {
+            "mutating": False,
+            "requiredArgs": ["requirement", "output"],
+            "arguments": {"requirement": context["requirement"], "output": generated["operatorSpec"]},
+            "call": lambda: tools.spec_generator(context["requirement"], generated["operatorSpec"]),
+        },
+        "command_planner": {
+            "mutating": False,
+            "requiredArgs": ["input", "output", "workspace"],
+            "arguments": {"input": generated["operatorSpec"], "output": generated["commandPlan"], "workspace": context["workspace"]},
+            "call": lambda: tools.command_planner(generated["operatorSpec"], generated["commandPlan"], context["workspace"]),
+        },
+        "scaffold_runner": {
+            "mutating": True,
+            "requiredArgs": ["input", "workspace"],
+            "arguments": {
+                "input": generated["operatorSpec"],
+                "workspace": context["workspace"],
+                "execute": mutating_execute,
+            },
+            "call": lambda: tools.scaffold_runner(generated["operatorSpec"], context["workspace"], execute=mutating_execute),
+        },
+        "artifact_patcher": {
+            "mutating": True,
+            "requiredArgs": ["input", "project"],
+            "arguments": {
+                "input": generated["operatorSpec"],
+                "project": "",
+                "profile": context["selectedProfile"].get("path"),
+                "execute": mutating_execute,
+            },
+            "call": lambda: tools.artifact_patcher(generated["operatorSpec"], "", context["selectedProfile"].get("path"), execute=mutating_execute),
+        },
+        "e2e_runner": {
+            "mutating": True,
+            "requiredArgs": ["input"],
+            "arguments": {
+                "input": generated["operatorSpec"],
+                "profile": context["selectedProfile"].get("path"),
+                "execute": mutating_execute,
+            },
+            "call": lambda: tools.e2e_runner(generated["operatorSpec"], context["selectedProfile"].get("path"), execute=mutating_execute),
+        },
     }
-    calls = planned_tool_calls(planner_result, supported_calls)
-    if not calls:
+    validated, rejected = validate_planned_tool_calls(planner_result, supported_calls, mode, allow_execute)
+    if not validated:
         print("\nLLM planner did not request any supported Tool calls.")
-        return []
+        return {"validatedToolCalls": [], "rejectedToolCalls": rejected, "toolResults": []}
 
     results: list[dict[str, Any]] = []
-    for name, call in calls:
+    for item in validated:
+        name = item["tool"]
+        call = supported_calls[name]["call"]
         print(f"\nCalling tool: {name}")
         result = call()
         result["tool"] = name
@@ -253,44 +359,84 @@ def execute_planned_tools(
         print(f"exitCode={result['exitCode']} status={result['status']}")
         if result["exitCode"] != 0:
             break
-    return results
+    return {"validatedToolCalls": validated, "rejectedToolCalls": rejected, "toolResults": results}
+
+
+def validate_planned_tool_calls(
+    planner_result: dict[str, Any],
+    supported_calls: dict[str, Any],
+    mode: str,
+    allow_execute: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    output = planner_result.get("llmOutput") or {}
+    requested = output.get("toolCalls") if isinstance(output, dict) else None
+    if not isinstance(requested, list):
+        return [], [{"tool": "", "reason": "LLM output did not include a toolCalls list.", "raw": requested}]
+
+    validated: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in requested:
+        if not isinstance(item, dict):
+            rejected.append({"tool": "", "reason": "Tool call is not a JSON object.", "raw": item})
+            continue
+        tool_name = str(item.get("tool") or "")
+        requested_mode = str(item.get("mode") or "dry-run")
+        if tool_name not in supported_calls:
+            rejected.append({"tool": tool_name, "reason": "Tool is not in the Agent allowlist.", "raw": item})
+            continue
+        if tool_name in seen:
+            rejected.append({"tool": tool_name, "reason": "Duplicate Tool call was skipped.", "raw": item})
+            continue
+        if requested_mode not in {"generate", "dry-run", "execute"}:
+            rejected.append({"tool": tool_name, "reason": f"Unsupported mode: {requested_mode}", "raw": item})
+            continue
+        seen.add(tool_name)
+        spec = supported_calls[tool_name]
+        arguments = dict(spec["arguments"])
+        missing = [name for name in spec["requiredArgs"] if arguments.get(name) in (None, "")]
+        if missing:
+            rejected.append({"tool": tool_name, "reason": "Missing required arguments: " + ", ".join(missing), "raw": item})
+            continue
+        effective_mode = "execute" if spec["mutating"] and mode == "execute" and allow_execute else requested_mode
+        if spec["mutating"] and not allow_execute:
+            effective_mode = "dry-run"
+        validated.append(
+            {
+                "tool": tool_name,
+                "requestedMode": requested_mode,
+                "effectiveMode": effective_mode,
+                "reason": item.get("reason") or "",
+                "arguments": arguments,
+                "mutating": bool(spec["mutating"]),
+                "executeAllowed": bool(allow_execute),
+            }
+        )
+    return validated, rejected
 
 
 def planned_tool_calls(
     planner_result: dict[str, Any],
     supported_calls: dict[str, Any],
 ) -> list[tuple[str, Any]]:
-    output = planner_result.get("llmOutput") or {}
-    requested = output.get("toolCalls") if isinstance(output, dict) else None
-    if not isinstance(requested, list):
-        return []
-
-    ordered: list[tuple[str, Any]] = []
-    seen: set[str] = set()
-    for item in requested:
-        if not isinstance(item, dict):
-            continue
-        tool_name = str(item.get("tool") or "")
-        if tool_name not in supported_calls or tool_name in seen:
-            continue
-        seen.add(tool_name)
-        ordered.append((tool_name, supported_calls[tool_name]))
-    return ordered
+    validated, _ = validate_planned_tool_calls(planner_result, supported_calls, "dry-run", False)
+    return [(item["tool"], supported_calls[item["tool"]]) for item in validated]
 
 
 def build_requirement_summary(
     args: argparse.Namespace,
     context: dict[str, Any],
     planner_result: dict[str, Any],
-    tool_results: list[dict[str, Any]],
+    execution: dict[str, list[dict[str, Any]]],
+    final_result: dict[str, Any],
 ) -> dict[str, Any]:
+    tool_results = execution["toolResults"]
     errors = collect_errors(tool_results)
     if planner_result["error"]:
         errors.append(planner_result["error"])
-    if planner_result["llmPlannerUsed"] and not planned_tool_calls(
-        planner_result,
-        {"spec_generator": None, "command_planner": None, "scaffold_runner": None, "artifact_patcher": None, "e2e_runner": None},
-    ):
+    if final_result.get("error"):
+        errors.append(final_result["error"])
+    if planner_result["llmPlannerUsed"] and not execution["validatedToolCalls"]:
         errors.append("LLM output did not include supported toolCalls.")
     return {
         "mode": "requirement-planning",
@@ -311,11 +457,19 @@ def build_requirement_summary(
         "llmReasoning": extract_list(planner_result.get("llmOutput") or {}, "reasoning"),
         "ragEvidence": extract_list(planner_result.get("llmOutput") or {}, "ragEvidence"),
         "toolCallPlan": extract_tool_call_plan(planner_result.get("llmOutput") or {}),
+        "validatedToolCalls": execution["validatedToolCalls"],
+        "rejectedToolCalls": execution["rejectedToolCalls"],
         "generatedFiles": context["generatedFiles"],
         "toolResults": tool_results,
+        "finalLLM": {
+            "llmPlannerUsed": final_result.get("llmPlannerUsed"),
+            "localLLM": final_result.get("localLLM") or {},
+            "error": final_result.get("error") or "",
+            "output": final_result.get("llmOutput") or {},
+        },
         "warnings": collect_warnings(tool_results, context),
         "errors": errors,
-        "nextRecommendedActions": next_actions(context, tool_results, planner_result),
+        "nextRecommendedActions": next_actions(context, tool_results, planner_result, final_result),
     }
 
 
@@ -404,7 +558,11 @@ def next_actions(
     context: dict[str, Any],
     tool_results: list[dict[str, Any]],
     planner_result: dict[str, Any],
+    final_result: dict[str, Any] | None = None,
 ) -> list[str]:
+    final_actions = ((final_result or {}).get("llmOutput") or {}).get("recommendedNextActions") or []
+    if final_actions:
+        return [str(item) for item in final_actions if item]
     llm_actions = (planner_result.get("llmOutput") or {}).get("nextActions") or []
     actions = [str(item) for item in llm_actions if item]
     if any(result["exitCode"] != 0 for result in tool_results):
@@ -462,6 +620,13 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     lines.extend(["", "## Tool Call Plan From LLM", ""])
     lines.extend(format_tool_call_plan(summary.get("toolCallPlan") or []))
 
+    lines.extend(["", "## Tool Call Validation", ""])
+    lines.extend(format_validated_tool_calls(summary.get("validatedToolCalls") or []))
+    rejected = summary.get("rejectedToolCalls") or []
+    if rejected:
+        lines.extend(["", "## Rejected Tool Calls", ""])
+        lines.extend(format_rejected_tool_calls(rejected))
+
     profile = summary["selectedProfile"]
     lines.extend(
         [
@@ -482,6 +647,24 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
             lines.append(f"  - command: `{' '.join(result['command'])}`")
     else:
         lines.append("- No tools were executed.")
+
+    final_output = (summary.get("finalLLM") or {}).get("output") or {}
+    lines.extend(["", "## Final LLM Evaluation", ""])
+    if final_output:
+        lines.extend(
+            [
+                f"- executionDecision: `{final_output.get('executionDecision') or 'unknown'}`",
+                f"- completedSteps: `{', '.join(str(item) for item in final_output.get('completedSteps') or []) or 'none'}`",
+                f"- failedSteps: `{', '.join(str(item) for item in final_output.get('failedSteps') or []) or 'none'}`",
+                "",
+                "```json",
+                json.dumps(final_output, indent=2, ensure_ascii=False),
+                "```",
+            ]
+        )
+    else:
+        final_error = (summary.get("finalLLM") or {}).get("error") or "Final LLM evaluation was not generated."
+        lines.append(f"- {final_error}")
 
     generated = summary["generatedFiles"]
     lines.extend(
@@ -612,14 +795,53 @@ def format_tool_call_plan(items: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def format_validated_tool_calls(items: list[dict[str, Any]]) -> list[str]:
+    if not items:
+        return ["- No Tool calls were validated."]
+    lines: list[str] = []
+    for item in items:
+        lines.append(
+            f"- `{item.get('tool')}` requested=`{item.get('requestedMode')}` effective=`{item.get('effectiveMode')}`"
+        )
+        if item.get("mutating") and not item.get("executeAllowed"):
+            lines.append("  - mutating Tool was forced to dry-run because --execute was not provided.")
+    return lines
+
+
+def format_rejected_tool_calls(items: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        tool = item.get("tool") or "unknown"
+        reason = item.get("reason") or "not specified"
+        lines.append(f"- `{tool}`: {reason}")
+    return lines
+
+
 def write_agent_artifacts(
     log_dir: Path,
     summary: dict[str, Any],
     planner_result: dict[str, Any],
     retrieved_docs: list[dict[str, Any]],
-    tool_results: list[dict[str, Any]],
+    execution_or_results: dict[str, list[dict[str, Any]]] | list[dict[str, Any]],
+    final_result: dict[str, Any] | None = None,
 ) -> None:
+    if isinstance(execution_or_results, dict):
+        execution = execution_or_results
+        tool_results = execution.get("toolResults") or []
+    else:
+        execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "toolResults": execution_or_results}
+        tool_results = execution_or_results
+
     (log_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    (log_dir / "initial-plan.json").write_text(json.dumps(planner_result.get("llmOutput") or {}, indent=2, ensure_ascii=False), encoding="utf-8")
+    (log_dir / "validated-tool-calls.json").write_text(
+        json.dumps(execution.get("validatedToolCalls") or [], indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (log_dir / "rejected-tool-calls.json").write_text(
+        json.dumps(execution.get("rejectedToolCalls") or [], indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     (log_dir / "llm-input.json").write_text(json.dumps(planner_result.get("llmInput") or {}, indent=2, ensure_ascii=False), encoding="utf-8")
     (log_dir / "llm-output.json").write_text(
         json.dumps(
@@ -639,6 +861,26 @@ def write_agent_artifacts(
     (log_dir / "retrieved-docs.json").write_text(json.dumps(retrieved_docs, indent=2, ensure_ascii=False), encoding="utf-8")
     (log_dir / "tool-results.json").write_text(json.dumps(tool_results, indent=2, ensure_ascii=False), encoding="utf-8")
     (log_dir / "llm-raw-output.txt").write_text(planner_result.get("rawOutput") or "", encoding="utf-8")
+    if final_result is not None:
+        (log_dir / "final-llm-input.json").write_text(
+            json.dumps(final_result.get("llmInput") or {}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "final-llm-output.json").write_text(
+            json.dumps(
+                {
+                    "planner": "llm",
+                    "localLLM": final_result.get("localLLM"),
+                    "llmPlannerUsed": final_result.get("llmPlannerUsed"),
+                    "error": final_result.get("error"),
+                    "output": final_result.get("llmOutput") or {},
+                    "rawOutput": final_result.get("rawOutput") or "",
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
 
 def raw_from_exception(exc: Exception) -> str:
