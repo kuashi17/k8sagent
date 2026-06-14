@@ -24,6 +24,303 @@ Kubebuilder 기반 Operator 개발 자동화를 위한 AI 기반 생성·검증 
 - 필요 시 특정 산출물만 부분 수정하거나 재생성할 수 있는 구조를 지향합니다.
 - GitHub, Jenkins, Harbor, Argo CD 연계까지 확장 가능한 구조로 설계합니다.
 
+## 한눈에 보는 전체 구조
+
+이 프로젝트는 크게 세 계층으로 구성됩니다.
+
+| 계층 | 역할 | 대표 파일 |
+| --- | --- | --- |
+| AI Agent 계층 | 사용자의 자연어 요구사항을 읽고, RAG 문서를 검색하고, Local LLM이 실행 계획과 결과 판단을 생성 | `agent/langchain_agent.py`, `agent/llm/*`, `agent/rag/retriever.py` |
+| Tool 계층 | Agent가 호출하는 실제 자동화 도구. 스펙 생성, 실행 계획 생성, scaffold, patch, 검증, 로그 분석을 담당 | `agent/tools/*.py` |
+| 산출물/검증 계층 | 생성된 spec, Kubebuilder 프로젝트, 실행 로그, Agent 리포트를 저장 | `generated/`, `workspace/`, `logs/` |
+
+핵심 개념은 다음과 같습니다.
+
+- **LLM은 명령을 직접 실행하지 않습니다.** LLM은 요구사항을 해석하고 어떤 Tool을 호출할지 계획합니다.
+- **실제 명령 실행은 Tool wrapper가 담당합니다.** 허용된 Tool만 실행하고, 위험한 명령은 실행하지 않습니다.
+- **기본은 dry-run입니다.** 실제 scaffold, patch, e2e 실행은 사용자가 `--execute`를 명시할 때만 수행합니다.
+- **RAG 문서는 모두 로컬 Markdown입니다.** `knowledge-base/` 아래 문서를 검색해 LLM 입력에 포함합니다.
+- **LLM provider는 Ollama local만 사용합니다.** 내부 코드, YAML, Kubernetes 로그를 외부 API로 보내지 않는 구조입니다.
+
+## 전체 흐름도
+
+사용자가 보는 가장 큰 흐름은 다음과 같습니다.
+
+```text
+자연어 요구사항
+  -> RAG 문서 검색
+  -> Local LLM planner
+  -> Tool 호출 계획 생성
+  -> Tool allowlist / 인자 검증
+  -> 기존 자동화 Tool 실행
+  -> Tool 실행 결과 수집
+  -> Local LLM 최종 평가
+  -> report / summary / 로그 저장
+```
+
+GitHub에서 Mermaid가 보이는 환경이라면 아래 흐름도도 함께 확인할 수 있습니다.
+
+```mermaid
+flowchart TD
+    A["사용자 자연어 요구사항"] --> B["agent/langchain_agent.py"]
+    B --> C["RAG 검색: knowledge-base Markdown"]
+    C --> D["Local LLM Planner: Ollama"]
+    D --> E["Tool 호출 계획 JSON"]
+    E --> F["Tool Allowlist 및 인자 검증"]
+    F --> G["Tool Wrapper 실행"]
+
+    G --> H1["spec_generator.py"]
+    G --> H2["command_planner.py"]
+    G --> H3["scaffold_runner.py"]
+    G --> H4["artifact_patcher.py"]
+    G --> H5["validation: make generate/manifests/test"]
+    G --> H6["e2e_runner.py"]
+    G --> H7["log_analyzer.py"]
+
+    H1 --> I["generated/operator-spec.yaml"]
+    H2 --> J["generated/command-plan.md"]
+    H3 --> K["workspace/generated-operators/<operator>"]
+    H4 --> L["API types, sample YAML, RBAC marker"]
+    H5 --> M["CRD/RBAC/generated code 검증"]
+    H6 --> N["kind 기반 실제 Kubernetes 검증"]
+    H7 --> O["analysis.md"]
+
+    I --> P["Tool 실행 결과 수집"]
+    J --> P
+    K --> P
+    L --> P
+    M --> P
+    N --> P
+    O --> P
+
+    P --> Q["Local LLM 최종 결과 요약"]
+    Q --> R["logs/agent/<timestamp>/agent-report.md"]
+    Q --> S["logs/agent/<timestamp>/summary.json"]
+```
+
+## 사용자 입장에서 보는 실행 흐름
+
+초보자가 이 시스템을 사용할 때는 아래 순서로 이해하면 됩니다.
+
+| 단계 | 사용자가 하는 일 | Agent/Tool이 하는 일 | 생성되는 결과 |
+| --- | --- | --- | --- |
+| 1 | “어떤 Operator를 만들고 싶은지” 자연어로 작성 | requirement 파일을 읽음 | `requirements/*.txt` |
+| 2 | Agent dry-run 실행 | RAG 검색 후 LLM이 요구사항 요약, 누락 정보, Tool 계획 생성 | `logs/agent/<timestamp>/llm-output.json` |
+| 3 | 구조화 스펙 생성 | `spec_generator.py`가 requirement를 `operator-spec.yaml`로 변환 | `generated/<kind>-operator-spec.yaml` |
+| 4 | 실행 계획 생성 | `command_planner.py`가 Kubebuilder 명령 순서와 목적을 Markdown으로 작성 | `generated/<kind>-command-plan.md` |
+| 5 | scaffold dry-run | `scaffold_runner.py`가 실제 실행될 Kubebuilder 명령을 미리 보여줌 | dry-run 출력, `logs/scaffold/*` |
+| 6 | scaffold execute | `kubebuilder init`, `kubebuilder create api`, `make generate`, `make manifests`, `make test` 실행 | `workspace/generated-operators/<operator>` |
+| 7 | 산출물 보정 | `artifact_patcher.py`가 spec/status 필드, sample YAML, RBAC marker 반영 | API 타입, sample YAML, RBAC marker |
+| 8 | make 검증 | `make generate`, `make manifests`, `make test`로 컴파일/manifest 검증 | 검증 로그 |
+| 9 | e2e 검증 | kind 클러스터에서 CRD 설치, CR 생성, 하위 리소스 생성 확인 | `logs/e2e/<timestamp>/summary.json` |
+| 10 | 로그 분석 | `log_analyzer.py`와 LLM이 실패/경고/성공을 설명 | `analysis.md`, `agent-report.md` |
+| 11 | 실패 복구 계획 | LLM recovery plan을 policy validator가 검증 | `validated-recovery-plan.json` |
+
+## Agent 내부 처리 흐름
+
+`agent/langchain_agent.py`는 전체 오케스트레이터입니다. 내부에서는 다음 순서로 동작합니다.
+
+```text
+1. 입력 확인
+   - --requirement 또는 --analyze-log 확인
+   - --profile 확인
+   - --mode dry-run 또는 execute 확인
+
+2. RAG 검색
+   - knowledge-base/kubebuilder-guides
+   - knowledge-base/troubleshooting
+   - knowledge-base/examples
+
+3. Local LLM 호출
+   - requirement summary 생성
+   - missing information 점검
+   - planned steps 생성
+   - toolCalls 생성
+   - risks / nextActions 생성
+
+4. Tool 호출 검증
+   - 허용 Tool인지 확인
+   - workspace 경로가 repo 밖인지 확인
+   - --execute가 없으면 변경 작업은 dry-run으로 강제
+   - 잘못된 Tool은 rejectedToolCalls에 기록
+
+5. Tool 실행
+   - spec_generator
+   - command_planner
+   - scaffold_runner
+   - artifact_patcher
+   - validation
+   - e2e_runner
+   - log_analyzer
+
+6. 최종 LLM 평가
+   - Tool exitCode 확인
+   - 생성 산출물 확인
+   - warning/error 요약
+   - beginnerSummary 생성
+
+7. 실패 시 recovery planning
+   - failure-context.json 생성
+   - troubleshooting RAG 검색
+   - LLM recovery plan 생성
+   - Recovery Policy Validator로 allowlist/근본 원인 검증
+   - 사용자 승인 전에는 복구 Tool 실행 안 함
+```
+
+## Tool별 역할
+
+| Tool | 파일 | 입력 | 출력 | 실제 변경 여부 |
+| --- | --- | --- | --- | --- |
+| Requirement Planner | `agent/langchain_agent.py` | requirement, profile | LLM 계획, Tool 호출 계획 | 기본적으로 변경 없음 |
+| RAG Retriever | `agent/rag/retriever.py` | 검색어 | 관련 Markdown 문서 발췌 | 변경 없음 |
+| LLM Client | `agent/llm/client.py` | prompt JSON | LLM JSON 응답 | 변경 없음 |
+| Spec Generator | `agent/tools/spec_generator.py` | `requirements/*.txt` | `generated/*-operator-spec.yaml` | 파일 생성 |
+| Command Planner | `agent/tools/command_planner.py` | `operator-spec.yaml` | `generated/*-command-plan.md` | 파일 생성 |
+| Scaffold Runner | `agent/tools/scaffold_runner.py` | `operator-spec.yaml` | Kubebuilder 프로젝트 | `--execute`일 때만 생성 |
+| Artifact Patcher | `agent/tools/artifact_patcher.py` | spec, project, profile | API 타입, sample, RBAC 보정 | `--execute`일 때만 수정 |
+| Validation Tool | `agent/tools/langchain_wrappers.py` 내부 | project, targets | `make generate/manifests/test` 결과 | 빌드 산출물 생성 가능 |
+| E2E Runner | `agent/tools/e2e_runner.py` | project, sample, profile | kind e2e 결과 | `--execute`일 때만 클러스터 조작 |
+| Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
+| Recovery Validator | `agent/langchain_agent.py` 내부 | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
+
+## 산출물 위치
+
+실행 후 어디를 보면 되는지 헷갈릴 때는 이 표를 보면 됩니다.
+
+| 위치 | 의미 | 예시 |
+| --- | --- | --- |
+| `requirements/` | 사용자가 작성한 자연어 요구사항 | `requirements/appconfig.txt` |
+| `profiles/` | 예시별 기본값, e2e 규칙, 검증 규칙 | `profiles/appconfig.yaml` |
+| `knowledge-base/` | RAG 검색에 쓰이는 로컬 지식 문서 | `knowledge-base/kubebuilder-guides/basic-flow.md` |
+| `generated/` | Agent가 만든 구조화 스펙과 실행 계획 | `generated/appconfig-operator-spec.yaml` |
+| `workspace/generated-operators/` | Kubebuilder 프로젝트 실제 생성 위치 | `workspace/generated-operators/app-config-operator` |
+| `logs/agent/` | Agent 실행 리포트, LLM 입출력, Tool 결과 | `logs/agent/<timestamp>/agent-report.md` |
+| `logs/scaffold/` | scaffold_runner 실행 로그 | `logs/scaffold/<timestamp>/summary.json` |
+| `logs/patch/` | artifact_patcher 실행 로그 | `logs/patch/<timestamp>/summary.json` |
+| `logs/e2e/` | kind e2e 실행 로그 | `logs/e2e/<timestamp>/summary.json` |
+
+## 주요 로그 파일 의미
+
+Agent를 실행하면 `logs/agent/<timestamp>/` 아래에 여러 파일이 생깁니다.
+
+| 파일 | 의미 |
+| --- | --- |
+| `agent-report.md` | 사람이 읽는 최종 리포트 |
+| `summary.json` | 전체 실행 결과를 기계가 읽기 좋은 형태로 저장 |
+| `llm-input.json` | LLM에 전달한 입력 |
+| `llm-output.json` | LLM이 생성한 JSON 계획 또는 판단 |
+| `llm-raw-output.txt` | 로컬 모델의 원문 응답 |
+| `retrieved-docs.json` | RAG로 검색된 문서 목록 |
+| `initial-plan.json` | 최초 LLM Tool 계획 |
+| `validated-tool-calls.json` | allowlist 검증을 통과한 Tool 호출 |
+| `rejected-tool-calls.json` | 거부된 Tool 호출 |
+| `tool-results.json` | 실제 Tool 실행 결과 |
+| `final-llm-input.json` | Tool 결과를 다시 LLM에 전달한 입력 |
+| `final-llm-output.json` | Tool 실행 후 LLM의 최종 판단 |
+| `failure-context.json` | 실패 시 실패 단계, 명령, stdout/stderr 요약 |
+| `validated-recovery-plan.json` | policy validator가 보정한 최종 복구 계획 |
+| `rejected-recovery-tool-calls.json` | 거부된 복구 Tool과 이유 |
+
+## 성공 흐름과 실패 흐름
+
+정상 흐름은 다음과 같습니다.
+
+```text
+Requirement
+  -> LLM 계획 성공
+  -> Tool 검증 성공
+  -> spec 생성 성공
+  -> command plan 생성 성공
+  -> scaffold 성공
+  -> artifact patch 성공
+  -> make generate/manifests/test 성공
+  -> final LLM 판단: succeeded
+```
+
+실패 흐름은 다음과 같습니다.
+
+```text
+Tool 실행 실패
+  -> failedTool / failedStep / exitCode 수집
+  -> stdout/stderr 마지막 100줄 저장
+  -> troubleshooting RAG 검색
+  -> LLM recovery plan 생성
+  -> Recovery Policy Validator가 allowlist와 원인 관련성 검증
+  -> validatedRecoveryToolCalls 생성
+  -> status: waiting-for-user-approval
+```
+
+중요한 점은 **복구 계획은 자동 실행되지 않는다**는 것입니다. Agent는 “무엇을 고쳐야 하는지”와 “어떤 Tool을 다시 실행해야 하는지”까지만 제안하고, 실제 수정은 사용자 승인 후에 진행합니다.
+
+## 대표 사용 시나리오
+
+### 시나리오 A: 초보자용 AppConfig Operator dry-run
+
+이 시나리오는 실제 파일 변경을 최소화하면서 전체 Agent 흐름을 이해하기 좋습니다.
+
+```bash
+python3 agent/langchain_agent.py \
+  --requirement requirements/appconfig.txt \
+  --profile profiles/appconfig.yaml \
+  --mode dry-run
+```
+
+확인할 것:
+
+- `logs/agent/<timestamp>/agent-report.md`
+- `logs/agent/<timestamp>/llm-output.json`
+- `generated/appconfig-operator-spec.yaml`
+- `generated/appconfig-command-plan.md`
+
+### 시나리오 B: AppConfig Operator 실제 scaffold/patch/validation
+
+실제 Kubebuilder 프로젝트 생성까지 진행합니다.
+
+```bash
+python3 agent/langchain_agent.py \
+  --requirement requirements/appconfig.txt \
+  --profile profiles/appconfig.yaml \
+  --mode execute \
+  --execute
+```
+
+확인할 것:
+
+- `workspace/generated-operators/app-config-operator`
+- `api/v1alpha1/appconfig_types.go`
+- `config/samples/app_v1alpha1_appconfig.yaml`
+- `config/rbac/role.yaml`
+- `make generate`, `make manifests`, `make test` 결과
+
+### 시나리오 C: TrainingJob e2e 로그 AI 분석
+
+이미 생성된 e2e 로그를 분석하고 warning을 판단합니다.
+
+```bash
+python3 agent/langchain_agent.py \
+  --analyze-log logs/e2e/20260607-213346
+```
+
+확인할 것:
+
+- `decision`: `succeeded-with-warning`
+- GPU Pending이 Controller 오류가 아니라 kind 환경 warning으로 분류되는지
+- `recommendedFixes`
+- `explanationForBeginner`
+
+### 시나리오 D: 실패 복구 계획 생성
+
+잘못된 타입, RBAC 누락, PVC 없음 같은 실패가 발생하면 Agent가 복구 계획을 생성합니다.
+
+```text
+예: brokenValue:notatype
+  -> make generate 실패
+  -> classification: invalid-field-type
+  -> requirement_editor -> spec_generator -> artifact_patcher -> validation 순서 제안
+  -> controller-gen, go_version_checker 같은 부적절한 Tool은 거부
+  -> status: waiting-for-user-approval
+```
+
 ## 1차 MVP 범위
 
 1차 MVP는 전체 자동화 시스템을 한 번에 구현하지 않고, 로컬 실행형 Agent 흐름을 검증하는 데 집중합니다.
@@ -42,22 +339,30 @@ Kubebuilder 기반 Operator 개발 자동화를 위한 AI 기반 생성·검증 
 ## 디렉터리 구조
 
 ```text
-C:\k8sagent
+/home/ch0618/k8sagent
 ├── README.md
 ├── PROJECT_GOAL.md
 ├── ARCHITECTURE.md
 ├── DEMO_SCENARIO.md
 ├── DEVELOPMENT_PLAN.md
-├── docs
-├── agent
-│   ├── prompts
-│   ├── workflows
-│   └── policies
-├── scripts
-├── examples
-├── generated
-├── logs
-└── workspace
+├── docs/
+├── knowledge-base/
+├── agent/
+│   ├── langchain_agent.py
+│   ├── llm/
+│   ├── rag/
+│   ├── tools/
+│   ├── prompts/
+│   ├── workflows/
+│   └── policies/
+├── profiles/
+├── requirements/
+├── scripts/
+├── examples/
+├── generated/
+├── logs/
+├── workspace/
+└── web/
 ```
 
 ## 디렉터리 역할
@@ -65,15 +370,22 @@ C:\k8sagent
 | 경로 | 목적 |
 | --- | --- |
 | `docs` | 요구사항, Agent 흐름, 검증 흐름, 오류 대응 가이드 문서 |
+| `knowledge-base` | RAG 검색에 사용하는 Kubebuilder 가이드, troubleshooting, 예시 문서 |
+| `agent/langchain_agent.py` | 전체 Agent 오케스트레이터 |
+| `agent/llm` | Ollama local LLM client, prompt, planner |
+| `agent/rag` | 로컬 Markdown RAG 검색기 |
+| `agent/tools` | 기존 CLI 자동화 도구와 Tool wrapper |
 | `agent/prompts` | 요구사항 분석, 생성, 검증 분석, 오류 진단용 프롬프트 초안 |
 | `agent/workflows` | 환경 점검, scaffold 생성, generate/manifests/test 흐름 정의 |
 | `agent/policies` | 명령 실행, 파일 수정, 부분 재생성 정책 |
+| `profiles` | AppConfig, TrainingJob, RedisCache 등 profile과 sample/e2e 규칙 |
+| `requirements` | 사용자가 작성하는 자연어 Operator 요구사항 |
 | `scripts` | 이후 로컬 환경 점검 및 검증 실행 스크립트 위치 |
 | `examples` | 샘플 Operator 요구사항 및 데모 입력 예시 |
-| `profiles` | TrainingJob, RedisCache 등 Operator 예시 profile과 검증 규칙 |
 | `generated` | Agent가 생성하는 중간 산출물 또는 스펙 저장 위치 |
 | `logs` | 명령 실행 결과와 실패 로그 저장 위치 |
 | `workspace` | 실제 Kubebuilder 프로젝트가 생성될 작업 공간 |
+| `web` | 초보자 입력과 심사용 시연을 위한 Web UI |
 
 ## Core Agent와 Profile 구조
 
