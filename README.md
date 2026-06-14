@@ -348,14 +348,14 @@ pip install -r requirements.txt
 # Linux/WSL에서 Ollama가 없다면 먼저 설치합니다.
 curl -fsSL https://ollama.com/install.sh | sh
 
-ollama pull qwen2.5-coder:7b
-ollama run qwen2.5-coder:7b
+ollama pull qwen2.5-coder:3b
+ollama run qwen2.5-coder:3b
 
 export LOCAL_LLM_BASE_URL=http://localhost:11434/v1
-export LOCAL_LLM_MODEL=qwen2.5-coder:7b
+export LOCAL_LLM_MODEL=qwen2.5-coder:3b
 ```
 
-`LOCAL_LLM_BASE_URL`을 지정하지 않으면 기본값은 `http://localhost:11434/v1`입니다. `LOCAL_LLM_MODEL`을 지정하지 않으면 기본값은 `qwen2.5-coder:7b`입니다.
+`LOCAL_LLM_BASE_URL`을 지정하지 않으면 기본값은 `http://localhost:11434/v1`입니다. `LOCAL_LLM_MODEL`을 지정하지 않으면 기본값은 `qwen2.5-coder:3b`입니다.
 
 대표 실행 예시 1: requirement 기반 dry-run
 

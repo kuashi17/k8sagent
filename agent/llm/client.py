@@ -7,10 +7,11 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
 
 
 DEFAULT_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1"
-DEFAULT_LOCAL_LLM_MODEL = "qwen2.5-coder:7b"
+DEFAULT_LOCAL_LLM_MODEL = "qwen2.5-coder:3b"
 
 
 class LLMUnavailable(RuntimeError):
@@ -39,7 +40,7 @@ def config_from_env(model: str | None = None) -> LLMConfig:
 
 def chat_json(system_prompt: str, user_prompt: str, config: LLMConfig | None = None) -> str:
     cfg = config or config_from_env()
-    endpoint = f"{cfg.base_url.rstrip('/')}/chat/completions"
+    endpoint = f"{request_base_url(cfg.base_url).rstrip('/')}/chat/completions"
     payload = {
         "model": cfg.model,
         "messages": [
@@ -87,3 +88,15 @@ def local_connection_error(cfg: LLMConfig) -> str:
         f"먼저 `ollama serve` 또는 `ollama run {cfg.model}`을 실행하세요. "
         f"현재 LOCAL_LLM_BASE_URL={cfg.base_url}, LOCAL_LLM_MODEL={cfg.model}"
     )
+
+
+def request_base_url(base_url: str) -> str:
+    """Use IPv4 loopback for localhost to avoid WSL IPv6 connection-refused cases."""
+
+    parsed = urlsplit(base_url)
+    if parsed.hostname != "localhost":
+        return base_url
+    netloc = "127.0.0.1"
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))

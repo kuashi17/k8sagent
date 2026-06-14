@@ -82,7 +82,7 @@ RAG Evidence Used By LLM
 환경변수:
 
 - `LOCAL_LLM_BASE_URL`, 기본값 `http://localhost:11434/v1`
-- `LOCAL_LLM_MODEL`, 기본값 `qwen2.5-coder:7b`
+- `LOCAL_LLM_MODEL`, 기본값 `qwen2.5-coder:3b`
 
 본 시스템은 외부 API 기반 LLM을 사용하지 않는다. 사내 예제 코드, Kubernetes 로그, YAML 산출물, 오류 로그, RAG 문서는 로컬 환경 안에서 처리된다. 이 구조는 내부망/폐쇄망 환경을 고려한 로컬 실행형 AI Agent 구조다.
 

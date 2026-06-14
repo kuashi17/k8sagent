@@ -83,6 +83,15 @@ Required JSON shape:
   "explanationForBeginner": "..."
 }}
 
+Strict output rules:
+- Use exactly the keys in the required JSON shape.
+- Do not replace "decision" with "type".
+- Do not replace "rootCause" with "cause".
+- Do not replace "recommendedFixes" with "resolution".
+- If the run passed but warnings exist, set decision to "succeeded-with-warning".
+- If jobSpecValidation.passed is true and the warning is GPU shortage, explain that the Controller and Job spec are valid and the Pod is Pending because the local cluster has no GPU.
+- Return JSON only.
+
 Context:
 summary.json:
 {summary_json}
