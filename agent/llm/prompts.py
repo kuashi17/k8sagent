@@ -169,3 +169,58 @@ Warnings:
 Errors:
 {errors}
 """
+
+
+RECOVERY_PLANNER_PROMPT = """\
+Create a recovery plan JSON object for a failed Kubebuilder Operator automation run.
+
+Required JSON shape:
+{{
+  "decision": "recovery-required | manual-review-required | unrecoverable",
+  "classification": "...",
+  "rootCause": "...",
+  "evidence": [],
+  "proposedFixes": [],
+  "recoveryToolCalls": [
+    {{
+      "tool": "...",
+      "mode": "dry-run | execute",
+      "reason": "...",
+      "requiresApproval": true
+    }}
+  ],
+  "rerunFromStep": "...",
+  "risks": [],
+  "beginnerSummary": "..."
+}}
+
+Strict output rules:
+- Do not propose automatic execution.
+- Every recoveryToolCalls item must include "requiresApproval": true.
+- Prefer the smallest safe recovery step.
+- If the failure is caused by invalid Go types or generated code, explain the exact file or field when evidence is available.
+- If evidence is insufficient, set decision to "manual-review-required".
+- Return JSON only.
+
+Context:
+Initial requirement summary:
+{requirement_summary}
+
+Initial Tool plan:
+{tool_plan}
+
+Successful Tool results:
+{successful_tool_results}
+
+Failed Tool result:
+{failed_tool_result}
+
+Failure context:
+{failure_context}
+
+Retrieved troubleshooting docs:
+{retrieved_docs}
+
+Agent mode:
+{agent_mode}
+"""

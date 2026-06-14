@@ -9,6 +9,7 @@ from typing import Any
 from agent.llm.client import LLMConfig, chat_json
 from agent.llm.prompts import (
     LOG_ANALYSIS_PLANNER_PROMPT,
+    RECOVERY_PLANNER_PROMPT,
     REQUIREMENT_PLANNER_PROMPT,
     SYSTEM_PROMPT,
     TOOL_RESULT_EVALUATION_PROMPT,
@@ -110,6 +111,42 @@ def evaluate_tool_results_with_llm(
     )
     raw = chat_json(SYSTEM_PROMPT, prompt, config)
     return normalize_tool_result_evaluation(parse_json_object(raw), llm_input), llm_input, raw
+
+
+def plan_recovery_with_llm(
+    requirement_summary: dict[str, Any],
+    tool_plan: list[dict[str, Any]],
+    successful_tool_results: list[dict[str, Any]],
+    failed_tool_result: dict[str, Any],
+    failure_context: dict[str, Any],
+    retrieved_docs: list[dict[str, Any]],
+    agent_mode: str,
+    config: LLMConfig | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    compact_success = compact_tool_results(successful_tool_results)
+    compact_failed = compact_tool_results([failed_tool_result])[0] if failed_tool_result else {}
+    compact_docs = compact_retrieved_docs(retrieved_docs, excerpt_limit=700)
+    llm_input = {
+        "mode": "recovery-planning",
+        "requirementSummary": requirement_summary,
+        "toolPlan": tool_plan,
+        "successfulToolResults": compact_success,
+        "failedToolResult": compact_failed,
+        "failureContext": failure_context,
+        "retrievedDocs": compact_docs,
+        "agentMode": agent_mode,
+    }
+    prompt = RECOVERY_PLANNER_PROMPT.format(
+        requirement_summary=json.dumps(requirement_summary, ensure_ascii=False, indent=2),
+        tool_plan=json.dumps(tool_plan, ensure_ascii=False, indent=2),
+        successful_tool_results=json.dumps(compact_success, ensure_ascii=False, indent=2),
+        failed_tool_result=json.dumps(compact_failed, ensure_ascii=False, indent=2),
+        failure_context=json.dumps(failure_context, ensure_ascii=False, indent=2),
+        retrieved_docs=json.dumps(compact_docs, ensure_ascii=False, indent=2),
+        agent_mode=agent_mode,
+    )
+    raw = chat_json(SYSTEM_PROMPT, prompt, config)
+    return normalize_recovery_plan(parse_json_object(raw), failure_context), llm_input, raw
 
 
 def parse_json_object(raw: str) -> dict[str, Any]:
@@ -318,6 +355,100 @@ def normalize_tool_result_evaluation(data: dict[str, Any], llm_input: dict[str, 
         )
 
     return normalized
+
+
+def normalize_recovery_plan(data: dict[str, Any], failure_context: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(data)
+    decision = str(normalized.get("decision") or "").strip()
+    if decision not in {"recovery-required", "manual-review-required", "unrecoverable"}:
+        decision = "recovery-required" if failure_context.get("failedTool") else "manual-review-required"
+    normalized["decision"] = decision
+
+    if not normalized.get("classification"):
+        normalized["classification"] = classify_failure_context(failure_context)
+    if not normalized.get("rootCause"):
+        stderr = str(failure_context.get("stderrTail") or "")
+        stdout = str(failure_context.get("stdoutTail") or "")
+        normalized["rootCause"] = first_nonempty_line(stderr) or first_nonempty_line(stdout) or "실패 로그에서 원인을 명확히 찾지 못했습니다."
+    if not isinstance(normalized.get("evidence"), list) or not normalized["evidence"]:
+        evidence = []
+        if failure_context.get("failedTool"):
+            evidence.append(f"failedTool={failure_context.get('failedTool')}")
+        if failure_context.get("exitCode") is not None:
+            evidence.append(f"exitCode={failure_context.get('exitCode')}")
+        if failure_context.get("failedStep"):
+            evidence.append(f"failedStep={failure_context.get('failedStep')}")
+        normalized["evidence"] = evidence
+    if not isinstance(normalized.get("proposedFixes"), list) or not normalized["proposedFixes"]:
+        normalized["proposedFixes"] = default_recovery_fixes(normalized["classification"])
+
+    calls = normalized.get("recoveryToolCalls")
+    if not isinstance(calls, list):
+        calls = []
+    safe_calls = []
+    for item in calls:
+        if not isinstance(item, dict):
+            continue
+        item = dict(item)
+        item["requiresApproval"] = True
+        safe_calls.append(item)
+    if not safe_calls:
+        failed_tool = failure_context.get("failedTool") or "validation"
+        safe_calls = [
+            {
+                "tool": failed_tool,
+                "mode": "dry-run",
+                "reason": "Validate the proposed fix after the user approves changes.",
+                "requiresApproval": True,
+            }
+        ]
+    normalized["recoveryToolCalls"] = safe_calls
+
+    if not normalized.get("rerunFromStep"):
+        normalized["rerunFromStep"] = str(failure_context.get("failedTool") or failure_context.get("failedStep") or "failed step")
+    risks = normalized.get("risks")
+    if not isinstance(risks, list):
+        normalized["risks"] = ["복구 Tool은 사용자 승인 전 실행되지 않습니다."]
+    if not normalized.get("beginnerSummary"):
+        normalized["beginnerSummary"] = "Agent가 실패 단계와 로그를 분석했고, 자동 수정 없이 복구 계획만 작성했습니다."
+    return normalized
+
+
+def classify_failure_context(failure_context: dict[str, Any]) -> str:
+    text = " ".join(
+        [
+            str(failure_context.get("failedTool") or ""),
+            str(failure_context.get("failedStep") or ""),
+            str(failure_context.get("stdoutTail") or ""),
+            str(failure_context.get("stderrTail") or ""),
+        ]
+    ).lower()
+    if "undefined" in text or "notatype" in text or "cannot use" in text:
+        return "go-build-test-failure"
+    if "forbidden" in text or "rbac" in text:
+        return "rbac-forbidden"
+    if "no such file" in text or "not found" in text:
+        return "missing-artifact"
+    if "make" in text:
+        return "make-validation-failure"
+    return "unknown"
+
+
+def default_recovery_fixes(classification: str) -> list[str]:
+    if classification == "go-build-test-failure":
+        return ["operator-spec.yaml의 필드 타입을 Go/Kubernetes CRD에서 지원되는 타입으로 수정한 뒤 artifact patch와 validation을 다시 실행합니다."]
+    if classification == "rbac-forbidden":
+        return ["controller RBAC marker와 config/rbac/role.yaml에 필요한 resource/verbs가 있는지 확인합니다."]
+    if classification == "missing-artifact":
+        return ["scaffold가 성공적으로 생성한 프로젝트 경로와 artifact_patcher의 --project 경로가 일치하는지 확인합니다."]
+    return ["실패한 Tool의 stderr/stdout 로그를 확인하고 해당 단계부터 복구합니다."]
+
+
+def first_nonempty_line(text: str) -> str:
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
 
 
 def infer_validation_results(tool_results: list[dict[str, Any]]) -> dict[str, str]:

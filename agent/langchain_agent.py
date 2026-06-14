@@ -22,6 +22,7 @@ from agent.llm.planner import (  # noqa: E402
     LLMOutputParseError,
     analyze_log_with_llm,
     evaluate_tool_results_with_llm,
+    plan_recovery_with_llm,
     plan_requirement_with_llm,
 )
 from agent.rag.retriever import search as retrieve_knowledge  # noqa: E402
@@ -63,7 +64,7 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
 
     planner_result = call_requirement_planner(args, requirement_text, context)
     if planner_result["error"]:
-        execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "toolResults": []}
+        execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "deferredToolCalls": [], "toolResults": []}
         final_result = empty_final_result(planner_result["error"])
         summary = build_requirement_summary(args, context, planner_result, execution, final_result)
         write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result)
@@ -77,9 +78,15 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     initial_errors = collect_errors(execution["toolResults"])
     if planner_result["error"]:
         initial_errors.append(planner_result["error"])
-    final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
-    summary = build_requirement_summary(args, context, planner_result, execution, final_result)
-    write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result)
+    recovery_result = None
+    failure_context = detect_failure_context(context, planner_result, execution, args)
+    if failure_context:
+        recovery_result = call_recovery_planner(context, planner_result, execution, failure_context, args)
+        final_result = empty_final_result("Execution failed; recovery plan generated and waiting for user approval.")
+    else:
+        final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
+    summary = build_requirement_summary(args, context, planner_result, execution, final_result, recovery_result, failure_context)
+    write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result, recovery_result)
     report = render_requirement_report(summary)
     (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
     print(report)
@@ -102,6 +109,7 @@ def call_final_evaluator(
         "toolCalls": extract_tool_call_plan(llm_output),
         "validatedToolCalls": execution["validatedToolCalls"],
         "rejectedToolCalls": execution["rejectedToolCalls"],
+        "deferredToolCalls": execution.get("deferredToolCalls") or [],
         "toolResults": execution["toolResults"],
         "generatedFiles": context["generatedFiles"],
         "warnings": warnings,
@@ -124,6 +132,46 @@ def call_final_evaluator(
         message = str(exc) or "Local LLM final evaluation failed."
         print(f"Final LLM evaluation failed: {message}")
         return llm_result(False, llm_input, {}, raw_from_exception(exc), message)
+
+
+def call_recovery_planner(
+    context: dict[str, Any],
+    planner_result: dict[str, Any],
+    execution: dict[str, list[dict[str, Any]]],
+    failure_context: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    query = build_failure_rag_query(failure_context)
+    retrieved = retrieve_knowledge(query, limit=8)[:3]
+    successful = [item for item in execution["toolResults"] if item.get("exitCode") == 0]
+    failed = failure_context.get("failedResult") or {}
+    llm_input = {
+        "mode": "recovery-planning",
+        "requirementSummary": context["requirementSummary"],
+        "toolPlan": extract_tool_call_plan(planner_result.get("llmOutput") or {}),
+        "successfulToolResults": successful,
+        "failedToolResult": failed,
+        "failureContext": scrub_failure_context(failure_context),
+        "retrievedDocs": retrieved,
+        "agentMode": args.mode,
+    }
+    try:
+        output, exact_input, raw = plan_recovery_with_llm(
+            context["requirementSummary"],
+            extract_tool_call_plan(planner_result.get("llmOutput") or {}),
+            successful,
+            failed,
+            scrub_failure_context(failure_context),
+            retrieved,
+            args.mode,
+        )
+        result = llm_result(True, exact_input, output, raw)
+    except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
+        message = str(exc) or "Local LLM recovery planning failed."
+        print(f"Recovery LLM planning failed: {message}")
+        result = llm_result(False, llm_input, {}, raw_from_exception(exc), message)
+    result["retrievedTroubleshootingDocs"] = retrieved
+    return result
 
 
 def empty_final_result(error: str) -> dict[str, Any]:
@@ -358,10 +406,10 @@ def execute_planned_tools(
             "call": lambda: tools.e2e_runner(generated["operatorSpec"], context["selectedProfile"].get("path"), execute=mutating_execute),
         },
     }
-    validated, rejected = validate_planned_tool_calls(planner_result, supported_calls, mode, allow_execute)
+    validated, rejected, deferred = validate_planned_tool_calls(planner_result, supported_calls, mode, allow_execute)
     if not validated:
         print("\nLLM planner did not request any supported Tool calls.")
-        return {"validatedToolCalls": [], "rejectedToolCalls": rejected, "toolResults": []}
+        return {"validatedToolCalls": [], "rejectedToolCalls": rejected, "deferredToolCalls": deferred, "toolResults": []}
 
     results: list[dict[str, Any]] = []
     for item in validated:
@@ -374,7 +422,143 @@ def execute_planned_tools(
         print(f"exitCode={result['exitCode']} status={result['status']}")
         if result["exitCode"] != 0:
             break
-    return {"validatedToolCalls": validated, "rejectedToolCalls": rejected, "toolResults": results}
+    return {"validatedToolCalls": validated, "rejectedToolCalls": rejected, "deferredToolCalls": deferred, "toolResults": results}
+
+
+def detect_failure_context(
+    context: dict[str, Any],
+    planner_result: dict[str, Any],
+    execution: dict[str, list[dict[str, Any]]],
+    args: argparse.Namespace,
+) -> dict[str, Any] | None:
+    if execution["rejectedToolCalls"]:
+        return {
+            "failedTool": "tool-validation",
+            "failedStep": "rejectedToolCalls",
+            "exitCode": 2,
+            "command": [],
+            "stdoutTail": "",
+            "stderrTail": json.dumps(execution["rejectedToolCalls"], ensure_ascii=False),
+            "generatedArtifacts": existing_artifacts(context),
+            "missingArtifacts": missing_artifacts(context),
+            "previousSuccessfulSteps": successful_step_names(execution["toolResults"]),
+            "workspace": context["workspace"],
+            "targetProjectDir": context["targetProjectDir"],
+            "failedResult": {
+                "tool": "tool-validation",
+                "exitCode": 2,
+                "status": "failed",
+                "stderr": json.dumps(execution["rejectedToolCalls"], ensure_ascii=False),
+            },
+        }
+
+    for result in execution["toolResults"]:
+        if result.get("exitCode") != 0:
+            failed_step = failed_validation_step(result)
+            return {
+                "failedTool": result.get("tool"),
+                "failedStep": failed_step or result.get("tool"),
+                "exitCode": result.get("exitCode"),
+                "command": result.get("command"),
+                "stdoutTail": tail_lines(str(result.get("stdout") or ""), 100),
+                "stderrTail": tail_lines(str(result.get("stderr") or ""), 100),
+                "generatedArtifacts": existing_artifacts(context),
+                "missingArtifacts": missing_artifacts(context),
+                "previousSuccessfulSteps": successful_step_names(execution["toolResults"], stop_at=result.get("tool")),
+                "workspace": context["workspace"],
+                "targetProjectDir": context["targetProjectDir"],
+                "agentMode": args.mode,
+                "failedResult": result,
+            }
+
+    missing = missing_artifacts(context)
+    if args.mode == "execute" and missing:
+        return {
+            "failedTool": "artifact-check",
+            "failedStep": "expected artifact missing",
+            "exitCode": 2,
+            "command": [],
+            "stdoutTail": "",
+            "stderrTail": "Missing expected artifacts: " + ", ".join(missing),
+            "generatedArtifacts": existing_artifacts(context),
+            "missingArtifacts": missing,
+            "previousSuccessfulSteps": successful_step_names(execution["toolResults"]),
+            "workspace": context["workspace"],
+            "targetProjectDir": context["targetProjectDir"],
+            "agentMode": args.mode,
+            "failedResult": {
+                "tool": "artifact-check",
+                "exitCode": 2,
+                "status": "failed",
+                "stderr": "Missing expected artifacts: " + ", ".join(missing),
+            },
+        }
+    return None
+
+
+def failed_validation_step(result: dict[str, Any]) -> str:
+    if result.get("tool") != "validation":
+        return ""
+    for step in result.get("steps") or []:
+        if step.get("exitCode") != 0:
+            return f"make {step.get('target')}"
+    return "validation"
+
+
+def successful_step_names(results: list[dict[str, Any]], stop_at: str | None = None) -> list[str]:
+    names = []
+    for item in results:
+        if stop_at and item.get("tool") == stop_at:
+            break
+        if item.get("exitCode") == 0 and item.get("tool"):
+            names.append(str(item["tool"]))
+    return names
+
+
+def expected_artifacts(context: dict[str, Any]) -> list[str]:
+    target = Path(context["targetProjectDir"])
+    kind = context["requirementSummary"].get("kind") or ""
+    version = context["requirementSummary"].get("version") or "v1alpha1"
+    group = context["requirementSummary"].get("group") or ""
+    lower_kind = kind.lower()
+    return [
+        context["generatedFiles"]["operatorSpec"],
+        context["generatedFiles"]["commandPlan"],
+        str(target / "api" / version / f"{lower_kind}_types.go"),
+        str(target / "config" / "crd"),
+        str(target / "config" / "rbac" / "role.yaml"),
+        str(target / "config" / "samples" / f"{group}_{version}_{lower_kind}.yaml"),
+    ]
+
+
+def existing_artifacts(context: dict[str, Any]) -> list[str]:
+    return [path for path in expected_artifacts(context) if Path(path).exists()]
+
+
+def missing_artifacts(context: dict[str, Any]) -> list[str]:
+    return [path for path in expected_artifacts(context) if not Path(path).exists()]
+
+
+def tail_lines(text: str, count: int) -> str:
+    lines = text.splitlines()
+    return "\n".join(lines[-count:])
+
+
+def scrub_failure_context(context: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in context.items() if key != "failedResult"}
+
+
+def build_failure_rag_query(failure_context: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            "Kubebuilder Operator failure recovery",
+            str(failure_context.get("failedTool") or ""),
+            str(failure_context.get("failedStep") or ""),
+            str(failure_context.get("exitCode") or ""),
+            str(failure_context.get("stdoutTail") or ""),
+            str(failure_context.get("stderrTail") or ""),
+        ]
+    )
 
 
 def validate_planned_tool_calls(
@@ -382,14 +566,15 @@ def validate_planned_tool_calls(
     supported_calls: dict[str, Any],
     mode: str,
     allow_execute: bool,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     output = planner_result.get("llmOutput") or {}
     requested = output.get("toolCalls") if isinstance(output, dict) else None
     if not isinstance(requested, list):
-        return [], [{"tool": "", "reason": "LLM output did not include a toolCalls list.", "raw": requested}]
+        return [], [{"tool": "", "reason": "LLM output did not include a toolCalls list.", "raw": requested}], []
 
     validated: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+    deferred: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in requested:
         if not isinstance(item, dict):
@@ -401,10 +586,10 @@ def validate_planned_tool_calls(
             rejected.append({"tool": tool_name, "reason": "Tool is not in the Agent allowlist.", "raw": item})
             continue
         if mode == "dry-run" and tool_name in {"artifact_patcher", "validation"}:
-            rejected.append(
+            deferred.append(
                 {
                     "tool": tool_name,
-                    "reason": "Skipped in Agent dry-run because this Tool requires a scaffolded project directory.",
+                    "reason": "Deferred in Agent dry-run because this Tool requires a scaffolded project directory.",
                     "raw": item,
                 }
             )
@@ -440,14 +625,14 @@ def validate_planned_tool_calls(
                 "executeAllowed": bool(allow_execute),
             }
         )
-    return validated, rejected
+    return validated, rejected, deferred
 
 
 def planned_tool_calls(
     planner_result: dict[str, Any],
     supported_calls: dict[str, Any],
 ) -> list[tuple[str, Any]]:
-    validated, _ = validate_planned_tool_calls(planner_result, supported_calls, "dry-run", False)
+    validated, _, _ = validate_planned_tool_calls(planner_result, supported_calls, "dry-run", False)
     return [(item["tool"], supported_calls[item["tool"]]) for item in validated]
 
 
@@ -457,6 +642,8 @@ def build_requirement_summary(
     planner_result: dict[str, Any],
     execution: dict[str, list[dict[str, Any]]],
     final_result: dict[str, Any],
+    recovery_result: dict[str, Any] | None = None,
+    failure_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     tool_results = execution["toolResults"]
     errors = collect_errors(tool_results)
@@ -464,8 +651,12 @@ def build_requirement_summary(
         errors.append(planner_result["error"])
     if final_result.get("error"):
         errors.append(final_result["error"])
+    if failure_context and "Execution failed; recovery plan generated" in errors:
+        pass
     if planner_result["llmPlannerUsed"] and not execution["validatedToolCalls"]:
         errors.append("LLM output did not include supported toolCalls.")
+    if failure_context:
+        errors = [item for item in errors if item != "Execution failed; recovery plan generated and waiting for user approval."]
     return {
         "mode": "requirement-planning",
         "requirement": context["requirement"],
@@ -487,6 +678,7 @@ def build_requirement_summary(
         "toolCallPlan": extract_tool_call_plan(planner_result.get("llmOutput") or {}),
         "validatedToolCalls": execution["validatedToolCalls"],
         "rejectedToolCalls": execution["rejectedToolCalls"],
+        "deferredToolCalls": execution.get("deferredToolCalls") or [],
         "generatedFiles": context["generatedFiles"],
         "toolResults": tool_results,
         "finalLLM": {
@@ -494,6 +686,15 @@ def build_requirement_summary(
             "localLLM": final_result.get("localLLM") or {},
             "error": final_result.get("error") or "",
             "output": final_result.get("llmOutput") or {},
+        },
+        "failureContext": scrub_failure_context(failure_context) if failure_context else {},
+        "recovery": {
+            "waitingForUserApproval": bool(failure_context),
+            "llmPlannerUsed": (recovery_result or {}).get("llmPlannerUsed"),
+            "localLLM": (recovery_result or {}).get("localLLM") or {},
+            "error": (recovery_result or {}).get("error") or "",
+            "plan": (recovery_result or {}).get("llmOutput") or {},
+            "retrievedTroubleshootingDocs": (recovery_result or {}).get("retrievedTroubleshootingDocs") or [],
         },
         "warnings": collect_warnings(tool_results, context),
         "errors": errors,
@@ -732,6 +933,10 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     if rejected:
         lines.extend(["", "## Rejected Tool Calls", ""])
         lines.extend(format_rejected_tool_calls(rejected))
+    deferred = summary.get("deferredToolCalls") or []
+    if deferred:
+        lines.extend(["", "## Deferred Tool Calls", ""])
+        lines.extend(format_rejected_tool_calls(deferred))
 
     profile = summary["selectedProfile"]
     lines.extend(
@@ -753,6 +958,39 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
             lines.append(f"  - command: `{' '.join(result['command'])}`")
     else:
         lines.append("- No tools were executed.")
+
+    recovery = summary.get("recovery") or {}
+    if recovery.get("waitingForUserApproval"):
+        plan = recovery.get("plan") or {}
+        lines.extend(
+            [
+                "",
+                "## Recovery Plan",
+                "",
+                "- Status: `Waiting for user approval`",
+                f"- decision: `{plan.get('decision') or 'unknown'}`",
+                f"- classification: `{plan.get('classification') or 'unknown'}`",
+                f"- rootCause: {plan.get('rootCause') or 'unknown'}",
+                "",
+                "### Evidence",
+                "",
+            ]
+        )
+        lines.extend([f"- {item}" for item in plan.get("evidence") or []] or ["- No evidence was generated."])
+        lines.extend(["", "### Proposed Fixes", ""])
+        lines.extend([f"- {item}" for item in plan.get("proposedFixes") or []] or ["- No proposed fixes were generated."])
+        lines.extend(["", "### Recovery Tool Calls", ""])
+        recovery_calls = plan.get("recoveryToolCalls") or []
+        if recovery_calls:
+            for item in recovery_calls:
+                if isinstance(item, dict):
+                    lines.append(
+                        f"- `{item.get('tool')}` mode=`{item.get('mode')}` requiresApproval=`{item.get('requiresApproval')}`"
+                    )
+                    lines.append(f"  - reason: {item.get('reason') or 'not specified'}")
+        else:
+            lines.append("- No recovery Tool calls were generated.")
+        lines.extend(["", "No recovery Tool was executed. Waiting for user approval."])
 
     final_output = (summary.get("finalLLM") or {}).get("output") or {}
     lines.extend(["", "## Final LLM Evaluation", ""])
@@ -931,6 +1169,7 @@ def write_agent_artifacts(
     retrieved_docs: list[dict[str, Any]],
     execution_or_results: dict[str, list[dict[str, Any]]] | list[dict[str, Any]],
     final_result: dict[str, Any] | None = None,
+    recovery_result: dict[str, Any] | None = None,
 ) -> None:
     if isinstance(execution_or_results, dict):
         execution = execution_or_results
@@ -947,6 +1186,10 @@ def write_agent_artifacts(
     )
     (log_dir / "rejected-tool-calls.json").write_text(
         json.dumps(execution.get("rejectedToolCalls") or [], indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (log_dir / "deferred-tool-calls.json").write_text(
+        json.dumps(execution.get("deferredToolCalls") or [], indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     (log_dir / "llm-input.json").write_text(json.dumps(planner_result.get("llmInput") or {}, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -987,6 +1230,23 @@ def write_agent_artifacts(
                 indent=2,
                 ensure_ascii=False,
             ),
+            encoding="utf-8",
+        )
+    recovery = summary.get("recovery") or {}
+    failure_context = summary.get("failureContext") or {}
+    if failure_context or recovery_result is not None:
+        (log_dir / "failure-context.json").write_text(json.dumps(failure_context, indent=2, ensure_ascii=False), encoding="utf-8")
+        (log_dir / "retrieved-troubleshooting-docs.json").write_text(
+            json.dumps(recovery.get("retrievedTroubleshootingDocs") or [], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "recovery-llm-input.json").write_text(
+            json.dumps((recovery_result or {}).get("llmInput") or {}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "recovery-llm-raw-output.txt").write_text((recovery_result or {}).get("rawOutput") or "", encoding="utf-8")
+        (log_dir / "recovery-plan.json").write_text(
+            json.dumps(recovery.get("plan") or {}, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
