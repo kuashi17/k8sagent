@@ -190,18 +190,39 @@ def compact_tool_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for item in results:
         stdout = str(item.get("stdout") or "")
         stderr = str(item.get("stderr") or "")
-        compacted.append(
-            {
-                "tool": item.get("tool"),
-                "command": item.get("command"),
-                "cwd": item.get("cwd"),
-                "status": item.get("status"),
-                "exitCode": item.get("exitCode"),
-                "stdoutSummary": tail_text(stdout, 1800),
-                "stderrSummary": tail_text(stderr, 1800),
-            }
-        )
+        compacted_item = {
+            "tool": item.get("tool"),
+            "command": item.get("command"),
+            "cwd": item.get("cwd"),
+            "status": item.get("status"),
+            "exitCode": item.get("exitCode"),
+            "stdoutSummary": summarize_tool_stdout(str(item.get("tool") or ""), stdout),
+            "stderrSummary": tail_text(stderr, 500),
+        }
+        if item.get("steps"):
+            compacted_item["steps"] = [
+                {
+                    "target": step.get("target"),
+                    "status": step.get("status"),
+                    "exitCode": step.get("exitCode"),
+                }
+                for step in item.get("steps") or []
+            ]
+        compacted.append(compacted_item)
     return compacted
+
+
+def summarize_tool_stdout(tool: str, stdout: str) -> str:
+    if tool == "validation":
+        return "Validation Tool ran the allowlisted make targets. See steps for per-target status."
+    lines = [line for line in stdout.splitlines() if line.strip()]
+    selected = []
+    for line in lines:
+        if any(marker in line for marker in ("Spec written:", "Command plan written:", "Artifact patch completed:", "Logs:", "Target project directory:", "Dry-run mode")):
+            selected.append(line)
+    if selected:
+        return "\n".join(selected[:12])
+    return tail_text(stdout, 500)
 
 
 def tail_text(text: str, limit: int) -> str:
@@ -246,11 +267,31 @@ def normalize_tool_result_evaluation(data: dict[str, Any], llm_input: dict[str, 
         normalized["failedSteps"] = stringify_items(failed, preferred_keys=["tool", "name", "step", "reason"])
 
     artifacts = normalized.get("generatedArtifacts")
+    generated_files = llm_input.get("generatedFiles") or {}
+    generated_paths = [str(value) for value in generated_files.values() if value]
     if not isinstance(artifacts, list) or not artifacts:
-        generated_files = llm_input.get("generatedFiles") or {}
-        normalized["generatedArtifacts"] = [str(value) for value in generated_files.values() if value]
+        normalized["generatedArtifacts"] = generated_paths
     else:
-        normalized["generatedArtifacts"] = stringify_items(artifacts, preferred_keys=["path", "name"])
+        artifact_values = stringify_items(artifacts, preferred_keys=["path", "name"])
+        for path in generated_paths:
+            if path not in artifact_values:
+                artifact_values.append(path)
+        normalized["generatedArtifacts"] = artifact_values
+
+    validation_results = normalized.get("validationResults")
+    inferred_validation = infer_validation_results(tool_results)
+    if not isinstance(validation_results, dict):
+        normalized["validationResults"] = inferred_validation
+    else:
+        if all(value == "skipped" for value in inferred_validation.values()):
+            normalized["validationResults"] = inferred_validation
+        else:
+            inferred = inferred_validation
+            normalized["validationResults"] = {
+                "makeGenerate": normalize_validation_status(validation_results.get("makeGenerate"), inferred["makeGenerate"]),
+                "makeManifests": normalize_validation_status(validation_results.get("makeManifests"), inferred["makeManifests"]),
+                "makeTest": normalize_validation_status(validation_results.get("makeTest"), inferred["makeTest"]),
+            }
 
     evidence = normalized.get("evidence")
     if not isinstance(evidence, list) or not evidence:
@@ -277,6 +318,26 @@ def normalize_tool_result_evaluation(data: dict[str, Any], llm_input: dict[str, 
         )
 
     return normalized
+
+
+def infer_validation_results(tool_results: list[dict[str, Any]]) -> dict[str, str]:
+    result = {"makeGenerate": "skipped", "makeManifests": "skipped", "makeTest": "skipped"}
+    key_by_target = {"generate": "makeGenerate", "manifests": "makeManifests", "test": "makeTest"}
+    for item in tool_results:
+        if item.get("tool") != "validation":
+            continue
+        for step in item.get("steps") or []:
+            target = step.get("target")
+            key = key_by_target.get(str(target))
+            if key:
+                result[key] = "succeeded" if step.get("exitCode") == 0 else "failed"
+    return result
+
+
+def normalize_validation_status(value: Any, fallback: str) -> str:
+    if value in {"succeeded", "failed", "skipped"}:
+        return str(value)
+    return fallback
 
 
 def stringify_items(items: list[Any], preferred_keys: list[str]) -> list[str]:

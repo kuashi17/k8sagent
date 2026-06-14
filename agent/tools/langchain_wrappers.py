@@ -139,6 +139,43 @@ def e2e_runner(
     return run_command(command)
 
 
+def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]:
+    allowed = ["generate", "manifests", "test"]
+    requested = targets or allowed
+    invalid = [target for target in requested if target not in allowed]
+    if invalid:
+        return {
+            "command": ["make", *requested],
+            "cwd": str(REPO_ROOT / project),
+            "stdout": "",
+            "stderr": "Unsupported make targets: " + ", ".join(invalid),
+            "exitCode": 2,
+            "status": "failed",
+            "steps": [],
+        }
+
+    results = []
+    for target in requested:
+        result = run_command(["make", target], cwd=REPO_ROOT / project)
+        result["target"] = target
+        results.append(result)
+        if result["exitCode"] != 0:
+            break
+
+    stdout = "\n".join(f"## make {item['target']}\n{item['stdout']}" for item in results)
+    stderr = "\n".join(f"## make {item['target']}\n{item['stderr']}" for item in results if item.get("stderr"))
+    exit_code = results[-1]["exitCode"] if results else 0
+    return {
+        "command": ["make", *requested],
+        "cwd": str(REPO_ROOT / project),
+        "stdout": stdout,
+        "stderr": stderr,
+        "exitCode": exit_code,
+        "status": "succeeded" if exit_code == 0 else "failed",
+        "steps": results,
+    }
+
+
 def log_analyzer(log_dir: str, output: str | None = None) -> dict[str, Any]:
     command = ["python3", "agent/tools/log_analyzer.py", "--log-dir", log_dir]
     if output:

@@ -40,7 +40,9 @@ Required JSON shape:
   "toolCalls": [
     {{"tool": "spec_generator", "mode": "generate", "reason": "..."}},
     {{"tool": "command_planner", "mode": "dry-run", "reason": "..."}},
-    {{"tool": "scaffold_runner", "mode": "dry-run", "reason": "..."}}
+    {{"tool": "scaffold_runner", "mode": "dry-run | execute", "reason": "..."}},
+    {{"tool": "artifact_patcher", "mode": "dry-run | execute", "reason": "..."}},
+    {{"tool": "validation", "mode": "dry-run | execute", "reason": "Run only make generate, make manifests, and make test."}}
   ],
   "risks": [],
   "nextActions": []
@@ -58,6 +60,12 @@ Profile summary:
 
 Safety mode:
 {safety_mode}
+
+Tool planning rules:
+- For dry-run mode, include spec_generator, command_planner, and scaffold_runner in dry-run mode.
+- For execute mode, include spec_generator, command_planner, scaffold_runner, artifact_patcher, and validation.
+- validation means the fixed allowlisted sequence: make generate, make manifests, make test.
+- Do not invent shell commands or tools outside the listed Tool names.
 """
 
 
@@ -113,6 +121,11 @@ Required JSON shape:
   "completedSteps": [],
   "failedSteps": [],
   "generatedArtifacts": [],
+  "validationResults": {{
+    "makeGenerate": "succeeded | failed | skipped",
+    "makeManifests": "succeeded | failed | skipped",
+    "makeTest": "succeeded | failed | skipped"
+  }},
   "evidence": [],
   "warnings": [],
   "recommendedNextActions": [],

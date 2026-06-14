@@ -283,6 +283,7 @@ def build_requirement_context(
             "managedResources": profile.get("managedResources") or [],
         },
         "workspace": workspace,
+        "targetProjectDir": str(Path(workspace) / infer_project_name(kind, f"generated/{kind_slug}-operator-spec.yaml")),
         "generatedFiles": {
             "operatorSpec": f"generated/{kind_slug}-operator-spec.yaml",
             "commandPlan": f"generated/{kind_slug}-command-plan.md",
@@ -326,11 +327,25 @@ def execute_planned_tools(
             "requiredArgs": ["input", "project"],
             "arguments": {
                 "input": generated["operatorSpec"],
-                "project": "",
+                "project": context["targetProjectDir"],
                 "profile": context["selectedProfile"].get("path"),
                 "execute": mutating_execute,
             },
-            "call": lambda: tools.artifact_patcher(generated["operatorSpec"], "", context["selectedProfile"].get("path"), execute=mutating_execute),
+            "call": lambda: tools.artifact_patcher(
+                generated["operatorSpec"],
+                context["targetProjectDir"],
+                context["selectedProfile"].get("path"),
+                execute=mutating_execute,
+            ),
+        },
+        "validation": {
+            "mutating": False,
+            "requiredArgs": ["project"],
+            "arguments": {
+                "project": context["targetProjectDir"],
+                "targets": ["generate", "manifests", "test"],
+            },
+            "call": lambda: tools.validation(context["targetProjectDir"], ["generate", "manifests", "test"]),
         },
         "e2e_runner": {
             "mutating": True,
@@ -380,10 +395,19 @@ def validate_planned_tool_calls(
         if not isinstance(item, dict):
             rejected.append({"tool": "", "reason": "Tool call is not a JSON object.", "raw": item})
             continue
-        tool_name = str(item.get("tool") or "")
-        requested_mode = str(item.get("mode") or "dry-run")
+        tool_name = normalize_tool_name(str(item.get("tool") or ""))
+        requested_mode = normalize_tool_mode(str(item.get("mode") or "dry-run"), mode)
         if tool_name not in supported_calls:
             rejected.append({"tool": tool_name, "reason": "Tool is not in the Agent allowlist.", "raw": item})
+            continue
+        if mode == "dry-run" and tool_name in {"artifact_patcher", "validation"}:
+            rejected.append(
+                {
+                    "tool": tool_name,
+                    "reason": "Skipped in Agent dry-run because this Tool requires a scaffolded project directory.",
+                    "raw": item,
+                }
+            )
             continue
         if tool_name in seen:
             rejected.append({"tool": tool_name, "reason": "Duplicate Tool call was skipped.", "raw": item})
@@ -397,6 +421,10 @@ def validate_planned_tool_calls(
         missing = [name for name in spec["requiredArgs"] if arguments.get(name) in (None, "")]
         if missing:
             rejected.append({"tool": tool_name, "reason": "Missing required arguments: " + ", ".join(missing), "raw": item})
+            continue
+        path_error = validate_tool_paths(tool_name, arguments)
+        if path_error:
+            rejected.append({"tool": tool_name, "reason": path_error, "raw": item})
             continue
         effective_mode = "execute" if spec["mutating"] and mode == "execute" and allow_execute else requested_mode
         if spec["mutating"] and not allow_execute:
@@ -528,6 +556,84 @@ def find_value(text: str, pattern: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def infer_project_name(kind: str, spec_path: str) -> str:
+    path = Path(spec_path)
+    if path.is_file():
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                project = data.get("project") or {}
+                if project.get("name"):
+                    return str(project["name"])
+        except yaml.YAMLError:
+            pass
+    if not kind:
+        return "operator"
+    return camel_to_kebab(kind) + "-operator"
+
+
+def camel_to_kebab(value: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "-", value).lower()
+
+
+def normalize_tool_name(value: str) -> str:
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "scaffold": "scaffold_runner",
+        "scaffold_runner_dry_run": "scaffold_runner",
+        "patch": "artifact_patcher",
+        "artifact_patch": "artifact_patcher",
+        "validate": "validation",
+        "make": "validation",
+        "make_generate": "validation",
+        "make_manifests": "validation",
+        "make_test": "validation",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def normalize_tool_mode(value: str, agent_mode: str) -> str:
+    normalized = value.strip().lower()
+    if "|" in normalized:
+        options = {part.strip() for part in normalized.split("|")}
+        if agent_mode == "execute" and "execute" in options:
+            return "execute"
+        if "dry-run" in options:
+            return "dry-run"
+    aliases = {
+        "dry_run": "dry-run",
+        "dryrun": "dry-run",
+        "plan": "dry-run",
+        "generate": "generate",
+        "execute": "execute",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def validate_tool_paths(tool_name: str, arguments: dict[str, Any]) -> str:
+    path_keys = ["workspace", "project"]
+    for key in path_keys:
+        value = arguments.get(key)
+        if value and not is_inside_repo(Path(str(value))):
+            return f"{key} path is outside the project root: {value}"
+    if tool_name == "validation":
+        targets = arguments.get("targets") or []
+        invalid = [target for target in targets if target not in {"generate", "manifests", "test"}]
+        if invalid:
+            return "Unsupported validation targets: " + ", ".join(str(item) for item in invalid)
+    return ""
+
+
+def is_inside_repo(path: Path) -> bool:
+    resolved = (Path.cwd() / path).resolve() if not path.is_absolute() else path.resolve()
+    root = Path.cwd().resolve()
+    try:
+        resolved.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def build_log_rag_query(summary: dict[str, Any], analysis_text: str) -> str:
     return "\n".join(
         [
@@ -656,6 +762,7 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
                 f"- executionDecision: `{final_output.get('executionDecision') or 'unknown'}`",
                 f"- completedSteps: `{', '.join(str(item) for item in final_output.get('completedSteps') or []) or 'none'}`",
                 f"- failedSteps: `{', '.join(str(item) for item in final_output.get('failedSteps') or []) or 'none'}`",
+                f"- validationResults: `{json.dumps(final_output.get('validationResults') or {}, ensure_ascii=False)}`",
                 "",
                 "```json",
                 json.dumps(final_output, indent=2, ensure_ascii=False),
@@ -860,6 +967,7 @@ def write_agent_artifacts(
     )
     (log_dir / "retrieved-docs.json").write_text(json.dumps(retrieved_docs, indent=2, ensure_ascii=False), encoding="utf-8")
     (log_dir / "tool-results.json").write_text(json.dumps(tool_results, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_tool_output_logs(log_dir, tool_results)
     (log_dir / "llm-raw-output.txt").write_text(planner_result.get("rawOutput") or "", encoding="utf-8")
     if final_result is not None:
         (log_dir / "final-llm-input.json").write_text(
@@ -881,6 +989,24 @@ def write_agent_artifacts(
             ),
             encoding="utf-8",
         )
+
+
+def write_tool_output_logs(log_dir: Path, tool_results: list[dict[str, Any]]) -> None:
+    for index, result in enumerate(tool_results, start=1):
+        tool = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(result.get("tool") or f"tool-{index}")).strip("-")
+        prefix = f"{index:02d}-{tool}"
+        (log_dir / f"{prefix}.stdout.log").write_text(str(result.get("stdout") or ""), encoding="utf-8")
+        (log_dir / f"{prefix}.stderr.log").write_text(str(result.get("stderr") or ""), encoding="utf-8")
+        for step_index, step in enumerate(result.get("steps") or [], start=1):
+            target = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(step.get("target") or step_index)).strip("-")
+            (log_dir / f"{prefix}-{step_index:02d}-{target}.stdout.log").write_text(
+                str(step.get("stdout") or ""),
+                encoding="utf-8",
+            )
+            (log_dir / f"{prefix}-{step_index:02d}-{target}.stderr.log").write_text(
+                str(step.get("stderr") or ""),
+                encoding="utf-8",
+            )
 
 
 def raw_from_exception(exc: Exception) -> str:
