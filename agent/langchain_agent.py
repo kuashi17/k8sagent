@@ -29,6 +29,30 @@ from agent.rag.retriever import search as retrieve_knowledge  # noqa: E402
 from agent.tools import langchain_wrappers as tools  # noqa: E402
 
 
+RECOVERY_TOOL_ALLOWLIST = {
+    "requirement_editor",
+    "spec_generator",
+    "command_planner",
+    "scaffold_runner",
+    "artifact_patcher",
+    "validation",
+    "log_analyzer",
+}
+SUPPORTED_FIELD_TYPES = {
+    "string",
+    "bool",
+    "boolean",
+    "int",
+    "int32",
+    "int64",
+    "float32",
+    "float64",
+    "[]string",
+    "map[string]string",
+    "metav1.Time",
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the LLM-based Kubebuilder Agent orchestrator.")
     parser.add_argument("--requirement", help="Natural language requirement file.")
@@ -170,6 +194,12 @@ def call_recovery_planner(
         message = str(exc) or "Local LLM recovery planning failed."
         print(f"Recovery LLM planning failed: {message}")
         result = llm_result(False, llm_input, {}, raw_from_exception(exc), message)
+        output = {}
+    policy = validate_recovery_plan(output, scrub_failure_context(failure_context), context)
+    result["rawRecoveryPlan"] = output
+    result["llmOutput"] = policy["validatedRecoveryPlan"]
+    result["policyEvaluation"] = policy["policyEvaluation"]
+    result["rejectedRecoveryToolCalls"] = policy["rejectedRecoveryToolCalls"]
     result["retrievedTroubleshootingDocs"] = retrieved
     return result
 
@@ -561,6 +591,224 @@ def build_failure_rag_query(failure_context: dict[str, Any]) -> str:
     )
 
 
+def validate_recovery_plan(raw_plan: dict[str, Any], failure_context: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    unsupported = detect_unsupported_field_types(context)
+    classification = policy_classification(raw_plan, failure_context, unsupported)
+    rejected = validate_raw_recovery_calls(raw_plan, classification)
+
+    if classification == "invalid-field-type" and unsupported:
+        field = unsupported[0]
+        evidence_refs = [
+            f"operatorSpec:{field['section']}.{field['name']}",
+            f"failedTool:{failure_context.get('failedTool')}",
+            f"failedStep:{failure_context.get('failedStep')}",
+        ]
+        validated_calls = [
+            {
+                "tool": "requirement_editor",
+                "mode": "execute",
+                "reason": f"Replace unsupported type {field['type']} with a supported Go type.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "The natural-language requirement no longer contains an unsupported field type.",
+                "verificationStep": "Review the edited requirement before regenerating the operator spec.",
+            },
+            {
+                "tool": "spec_generator",
+                "mode": "execute",
+                "reason": "Regenerate operator spec after the approved type correction.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "operator-spec.yaml contains only supported field types.",
+                "verificationStep": "Inspect specFields/statusFields in the regenerated operator-spec.yaml.",
+            },
+            {
+                "tool": "artifact_patcher",
+                "mode": "execute",
+                "reason": "Apply the corrected API type to generated Kubebuilder artifacts.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "Go API types compile with the corrected field type.",
+                "verificationStep": "Run the validation Tool after patching.",
+            },
+            {
+                "tool": "validation",
+                "mode": "execute",
+                "targets": ["make generate", "make manifests", "make test"],
+                "reason": "Verify generated code, manifests, and tests after the approved correction.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "make generate, make manifests, and make test succeed.",
+                "verificationStep": "Check validationResults for all succeeded.",
+            },
+        ]
+        root_cause = f"{field['name']} field uses unsupported type: {field['type']}"
+        proposed = [
+            f"Change {field['name']} from {field['type']} to one of: {', '.join(sorted(SUPPORTED_FIELD_TYPES))}.",
+            "Regenerate the operator spec, patch artifacts, then run make generate/manifests/test.",
+        ]
+        rerun_from = "requirement correction"
+    elif classification == "gpu-insufficient":
+        validated_calls = []
+        root_cause = raw_plan.get("rootCause") or "GPU resource is unavailable in the current cluster."
+        proposed = [
+            "Use a gpuCount 0 test sample for local kind validation.",
+            "Run on a GPU-capable cluster when validating GPU scheduling.",
+        ]
+        rerun_from = "manual review"
+    else:
+        validated_calls = generic_validated_recovery_calls(classification, failure_context)
+        root_cause = raw_plan.get("rootCause") or failure_context.get("stderrTail") or "Recovery requires manual review."
+        proposed = raw_plan.get("proposedFixes") if isinstance(raw_plan.get("proposedFixes"), list) else ["Review failure-context.json and approve the smallest safe recovery step."]
+        rerun_from = str(failure_context.get("failedTool") or "failed step")
+
+    validated_plan = {
+        "decision": "manual-review-required" if classification in {"unknown", "image-pull"} else "recovery-required",
+        "classification": classification,
+        "rootCause": root_cause,
+        "evidence": raw_plan.get("evidence") if isinstance(raw_plan.get("evidence"), list) else default_recovery_evidence(failure_context, unsupported),
+        "proposedFixes": proposed,
+        "validatedRecoveryToolCalls": validated_calls,
+        "rejectedRecoveryToolCalls": rejected,
+        "rerunFromStep": rerun_from,
+        "risks": raw_plan.get("risks") if isinstance(raw_plan.get("risks"), list) else ["Recovery calls require user approval before execution."],
+        "beginnerSummary": raw_plan.get("beginnerSummary") or "Agent validated the LLM recovery proposal against local policy and is waiting for user approval.",
+        "status": "waiting-for-user-approval",
+    }
+    return {
+        "validatedRecoveryPlan": validated_plan,
+        "rejectedRecoveryToolCalls": rejected,
+        "policyEvaluation": {
+            "classification": classification,
+            "unsupportedFieldTypes": unsupported,
+            "allowlist": sorted(RECOVERY_TOOL_ALLOWLIST),
+            "rawRecoveryToolCalls": raw_plan.get("recoveryToolCalls") or [],
+            "validatedRecoveryToolCalls": validated_calls,
+            "rejectedRecoveryToolCalls": rejected,
+            "status": "waiting-for-user-approval",
+        },
+    }
+
+
+def detect_unsupported_field_types(context: dict[str, Any]) -> list[dict[str, str]]:
+    spec_path = Path(context["generatedFiles"]["operatorSpec"])
+    if not spec_path.is_file():
+        return []
+    try:
+        spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return []
+    if not isinstance(spec, dict):
+        return []
+    unsupported = []
+    for section_name, key in (("specFields", "specFields"), ("statusFields", "statusFields")):
+        for field in spec.get(key) or []:
+            if not isinstance(field, dict):
+                continue
+            field_type = str(field.get("type") or "")
+            if field_type and field_type not in SUPPORTED_FIELD_TYPES:
+                unsupported.append({"section": section_name, "name": str(field.get("name") or ""), "type": field_type})
+    return unsupported
+
+
+def policy_classification(raw_plan: dict[str, Any], failure_context: dict[str, Any], unsupported: list[dict[str, str]]) -> str:
+    if unsupported:
+        return "invalid-field-type"
+    text = " ".join(
+        [
+            str(raw_plan.get("classification") or ""),
+            str(raw_plan.get("rootCause") or ""),
+            str(failure_context.get("stderrTail") or ""),
+            str(failure_context.get("stdoutTail") or ""),
+        ]
+    ).lower()
+    if "forbidden" in text or "rbac" in text:
+        return "rbac-forbidden"
+    if "pvc" in text and "not found" in text:
+        return "pvc-not-found"
+    if "gpu" in text or "nvidia.com/gpu" in text:
+        return "gpu-insufficient"
+    if "imagepull" in text or "image pull" in text:
+        return "image-pull"
+    return "unknown"
+
+
+def validate_raw_recovery_calls(raw_plan: dict[str, Any], classification: str) -> list[dict[str, str]]:
+    rejected = []
+    raw_calls = raw_plan.get("recoveryToolCalls") or []
+    if not isinstance(raw_calls, list):
+        return rejected
+    for item in raw_calls:
+        if not isinstance(item, dict):
+            rejected.append({"tool": "unknown", "reason": "Recovery Tool call is not an object."})
+            continue
+        tool = str(item.get("tool") or "")
+        normalized = normalize_tool_name(tool)
+        if normalized not in RECOVERY_TOOL_ALLOWLIST:
+            rejected.append({"tool": tool, "reason": rejected_recovery_reason(tool, classification)})
+    return rejected
+
+
+def rejected_recovery_reason(tool: str, classification: str) -> str:
+    if tool == "controller-gen" and classification == "invalid-field-type":
+        return "Not in recovery allowlist and rerunning alone does not correct the invalid field type."
+    if tool == "go_version_checker" and classification == "invalid-field-type":
+        return "No evidence that the Go version caused this failure."
+    return "Not in recovery allowlist."
+
+
+def generic_validated_recovery_calls(classification: str, failure_context: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence_refs = [f"failedTool:{failure_context.get('failedTool')}", f"failedStep:{failure_context.get('failedStep')}"]
+    if classification == "rbac-forbidden":
+        return [
+            {
+                "tool": "artifact_patcher",
+                "mode": "execute",
+                "reason": "Update RBAC markers and manifests after user approval.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "RBAC resources and verbs match controller needs.",
+                "verificationStep": "Run validation with make manifests and make test.",
+            },
+            {
+                "tool": "validation",
+                "mode": "execute",
+                "targets": ["make manifests", "make test"],
+                "reason": "Verify RBAC manifests and tests after patching.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "RBAC manifests regenerate and tests pass.",
+                "verificationStep": "Check validationResults.",
+            },
+        ]
+    if classification == "pvc-not-found":
+        return [
+            {
+                "tool": "validation",
+                "mode": "dry-run",
+                "reason": "Re-run validation after the sample or PVC reference is corrected by the user.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "PVC reference is valid for the target environment.",
+                "verificationStep": "Run e2e manually after approval.",
+            }
+        ]
+    return []
+
+
+def default_recovery_evidence(failure_context: dict[str, Any], unsupported: list[dict[str, str]]) -> list[str]:
+    evidence = []
+    if unsupported:
+        evidence.extend(f"{item['section']}.{item['name']} type={item['type']}" for item in unsupported)
+    if failure_context.get("failedTool"):
+        evidence.append(f"failedTool={failure_context.get('failedTool')}")
+    if failure_context.get("failedStep"):
+        evidence.append(f"failedStep={failure_context.get('failedStep')}")
+    if failure_context.get("exitCode") is not None:
+        evidence.append(f"exitCode={failure_context.get('exitCode')}")
+    return evidence
+
+
 def validate_planned_tool_calls(
     planner_result: dict[str, Any],
     supported_calls: dict[str, Any],
@@ -693,7 +941,10 @@ def build_requirement_summary(
             "llmPlannerUsed": (recovery_result or {}).get("llmPlannerUsed"),
             "localLLM": (recovery_result or {}).get("localLLM") or {},
             "error": (recovery_result or {}).get("error") or "",
+            "rawPlan": (recovery_result or {}).get("rawRecoveryPlan") or {},
             "plan": (recovery_result or {}).get("llmOutput") or {},
+            "policyEvaluation": (recovery_result or {}).get("policyEvaluation") or {},
+            "rejectedRecoveryToolCalls": (recovery_result or {}).get("rejectedRecoveryToolCalls") or [],
             "retrievedTroubleshootingDocs": (recovery_result or {}).get("retrievedTroubleshootingDocs") or [],
         },
         "warnings": collect_warnings(tool_results, context),
@@ -979,8 +1230,8 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
         lines.extend([f"- {item}" for item in plan.get("evidence") or []] or ["- No evidence was generated."])
         lines.extend(["", "### Proposed Fixes", ""])
         lines.extend([f"- {item}" for item in plan.get("proposedFixes") or []] or ["- No proposed fixes were generated."])
-        lines.extend(["", "### Recovery Tool Calls", ""])
-        recovery_calls = plan.get("recoveryToolCalls") or []
+        lines.extend(["", "### Validated Recovery Tool Calls", ""])
+        recovery_calls = plan.get("validatedRecoveryToolCalls") or plan.get("recoveryToolCalls") or []
         if recovery_calls:
             for item in recovery_calls:
                 if isinstance(item, dict):
@@ -988,8 +1239,18 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
                         f"- `{item.get('tool')}` mode=`{item.get('mode')}` requiresApproval=`{item.get('requiresApproval')}`"
                     )
                     lines.append(f"  - reason: {item.get('reason') or 'not specified'}")
+                    if item.get("expectedEffect"):
+                        lines.append(f"  - expectedEffect: {item.get('expectedEffect')}")
+                    if item.get("verificationStep"):
+                        lines.append(f"  - verificationStep: {item.get('verificationStep')}")
         else:
             lines.append("- No recovery Tool calls were generated.")
+        rejected_recovery = plan.get("rejectedRecoveryToolCalls") or recovery.get("rejectedRecoveryToolCalls") or []
+        if rejected_recovery:
+            lines.extend(["", "### Rejected Recovery Tool Calls", ""])
+            for item in rejected_recovery:
+                if isinstance(item, dict):
+                    lines.append(f"- `{item.get('tool')}`: {item.get('reason')}")
         lines.extend(["", "No recovery Tool was executed. Waiting for user approval."])
 
     final_output = (summary.get("finalLLM") or {}).get("output") or {}
@@ -1240,6 +1501,10 @@ def write_agent_artifacts(
             json.dumps(recovery.get("retrievedTroubleshootingDocs") or [], indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        (log_dir / "raw-recovery-plan.json").write_text(
+            json.dumps(recovery.get("rawPlan") or {}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
         (log_dir / "recovery-llm-input.json").write_text(
             json.dumps((recovery_result or {}).get("llmInput") or {}, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -1247,6 +1512,18 @@ def write_agent_artifacts(
         (log_dir / "recovery-llm-raw-output.txt").write_text((recovery_result or {}).get("rawOutput") or "", encoding="utf-8")
         (log_dir / "recovery-plan.json").write_text(
             json.dumps(recovery.get("plan") or {}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "validated-recovery-plan.json").write_text(
+            json.dumps(recovery.get("plan") or {}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "rejected-recovery-tool-calls.json").write_text(
+            json.dumps(recovery.get("rejectedRecoveryToolCalls") or [], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "recovery-policy-evaluation.json").write_text(
+            json.dumps(recovery.get("policyEvaluation") or {}, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
