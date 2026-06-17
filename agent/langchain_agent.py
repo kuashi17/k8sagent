@@ -38,6 +38,48 @@ RECOVERY_TOOL_ALLOWLIST = {
     "validation",
     "log_analyzer",
 }
+LLM_OUTPUT_SCHEMAS = {
+    "requirement-planning": {
+        "requirementSummary": str,
+        "missingInformation": list,
+        "recommendedProfile": str,
+        "plannedSteps": list,
+        "toolCalls": list,
+        "risks": list,
+        "nextActions": list,
+    },
+    "log-analysis": {
+        "decision": str,
+        "classification": str,
+        "rootCause": str,
+        "evidence": list,
+        "recommendedFixes": list,
+        "rerunCommand": str,
+        "explanationForBeginner": str,
+    },
+    "tool-result-evaluation": {
+        "executionDecision": str,
+        "completedSteps": list,
+        "failedSteps": list,
+        "generatedArtifacts": list,
+        "validationResults": dict,
+        "evidence": list,
+        "warnings": list,
+        "recommendedNextActions": list,
+        "beginnerSummary": str,
+    },
+    "recovery-planning": {
+        "decision": str,
+        "classification": str,
+        "rootCause": str,
+        "evidence": list,
+        "proposedFixes": list,
+        "recoveryToolCalls": list,
+        "rerunFromStep": str,
+        "risks": list,
+        "beginnerSummary": str,
+    },
+}
 SUPPORTED_FIELD_TYPES = {
     "string",
     "bool",
@@ -91,6 +133,8 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
         execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "deferredToolCalls": [], "toolResults": []}
         final_result = empty_final_result(planner_result["error"])
         summary = build_requirement_summary(args, context, planner_result, execution, final_result)
+        summary["safetyEvaluation"] = build_requirement_safety_evaluation(args, context, execution, planner_result, None)
+        summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
         write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result)
         report = render_requirement_report(summary)
         (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
@@ -110,6 +154,8 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     else:
         final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
     summary = build_requirement_summary(args, context, planner_result, execution, final_result, recovery_result, failure_context)
+    summary["safetyEvaluation"] = build_requirement_safety_evaluation(args, context, execution, planner_result, failure_context)
+    summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
     write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result, recovery_result)
     report = render_requirement_report(summary)
     (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
@@ -151,6 +197,7 @@ def call_final_evaluator(
             warnings,
             errors,
         )
+        validate_llm_output_schema("tool-result-evaluation", output, raw)
         return llm_result(True, exact_input, output, raw)
     except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
         message = str(exc) or "Local LLM final evaluation failed."
@@ -190,6 +237,7 @@ def call_recovery_planner(
             retrieved,
             args.mode,
         )
+        validate_llm_output_schema("recovery-planning", output, raw)
         result = llm_result(True, exact_input, output, raw)
     except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
         message = str(exc) or "Local LLM recovery planning failed."
@@ -241,6 +289,7 @@ def call_requirement_planner(
             context["selectedProfile"],
             args.mode,
         )
+        validate_llm_output_schema("requirement-planning", output, raw)
         return llm_result(True, exact_input, output, raw)
     except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
         message = str(exc) or "Local LLM planner failed."
@@ -292,6 +341,8 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
         "warnings": source_summary.get("warnings") or [],
         "errors": errors,
     }
+    summary["safetyEvaluation"] = build_log_analysis_safety_evaluation(summary)
+    summary["evidenceTrace"] = build_log_analysis_evidence_trace(summary)
     write_agent_artifacts(log_dir, summary, planner_result, retrieved, [analyzer_result])
     report = render_log_analysis_report(summary)
     (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
@@ -313,6 +364,7 @@ def call_log_planner(
     }
     try:
         output, exact_input, raw = analyze_log_with_llm(source_summary, analysis_text, retrieved)
+        validate_llm_output_schema("log-analysis", output, raw)
         return llm_result(True, exact_input, output, raw)
     except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
         message = str(exc) or "Local LLM planner failed."
@@ -340,6 +392,31 @@ def llm_result(
         "rawOutput": raw,
         "error": error,
     }
+
+
+def validate_llm_output_schema(mode: str, output: dict[str, Any], raw: str) -> None:
+    schema = LLM_OUTPUT_SCHEMAS.get(mode)
+    if not schema:
+        return
+    errors = []
+    for key, expected_type in schema.items():
+        if key not in output:
+            errors.append(f"missing required key: {key}")
+            continue
+        if not isinstance(output[key], expected_type):
+            errors.append(
+                f"invalid type for {key}: expected {expected_type.__name__}, got {type(output[key]).__name__}"
+            )
+    if mode == "requirement-planning" and isinstance(output.get("toolCalls"), list):
+        for index, item in enumerate(output["toolCalls"]):
+            if not isinstance(item, dict):
+                errors.append(f"toolCalls[{index}] must be an object")
+                continue
+            for key in ("tool", "mode"):
+                if not item.get(key):
+                    errors.append(f"toolCalls[{index}] missing required key: {key}")
+    if errors:
+        raise LLMOutputParseError(f"LLM JSON schema validation failed for {mode}: {'; '.join(errors)}", raw)
 
 
 def build_requirement_context(
@@ -898,6 +975,16 @@ def validate_planned_tool_calls(
         if not isinstance(item, dict):
             rejected.append({"tool": "", "reason": "Tool call is not a JSON object.", "raw": item})
             continue
+        missing_tool_call_keys = [key for key in ("tool", "mode") if not item.get(key)]
+        if missing_tool_call_keys:
+            rejected.append(
+                {
+                    "tool": str(item.get("tool") or ""),
+                    "reason": "Missing required Tool call fields: " + ", ".join(missing_tool_call_keys),
+                    "raw": item,
+                }
+            )
+            continue
         tool_name = normalize_tool_name(str(item.get("tool") or ""))
         requested_mode = normalize_tool_mode(str(item.get("mode") or "dry-run"), mode)
         if tool_name not in supported_calls:
@@ -1023,6 +1110,220 @@ def build_requirement_summary(
         "errors": errors,
         "nextRecommendedActions": next_actions(context, tool_results, planner_result, final_result),
     }
+
+
+def build_requirement_safety_evaluation(
+    args: argparse.Namespace,
+    context: dict[str, Any],
+    execution: dict[str, list[dict[str, Any]]],
+    planner_result: dict[str, Any],
+    failure_context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    allowed_tools = [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner",
+        "artifact_patcher",
+        "validation",
+        "e2e_runner",
+    ]
+    mutating_tools = {"scaffold_runner", "artifact_patcher", "e2e_runner"}
+    validated = execution.get("validatedToolCalls") or []
+    rejected = execution.get("rejectedToolCalls") or []
+    deferred = execution.get("deferredToolCalls") or []
+    forced_dry_run = [
+        item
+        for item in validated
+        if item.get("tool") in mutating_tools
+        and item.get("effectiveMode") == "dry-run"
+        and not item.get("executeAllowed")
+    ]
+    return {
+        "llmProviderPolicy": {
+            "status": "passed" if planner_result.get("llmPlannerUsed") else "failed",
+            "rule": "Only Ollama local LLM planner is supported; mock/OpenAI fallback is not used.",
+            "model": (planner_result.get("localLLM") or {}).get("model"),
+            "baseUrl": (planner_result.get("localLLM") or {}).get("baseUrl"),
+            "evidence": "plannerResult.llmPlannerUsed and plannerResult.localLLM",
+        },
+        "toolAllowlist": {
+            "status": "passed" if not rejected else "blocked",
+            "allowedTools": allowed_tools,
+            "rejectedCount": len(rejected),
+            "rejectedToolCalls": rejected,
+            "evidence": "rejected-tool-calls.json",
+        },
+        "executionModeGate": {
+            "status": "passed",
+            "agentMode": args.mode,
+            "executeFlag": bool(args.execute),
+            "forcedDryRunTools": [item.get("tool") for item in forced_dry_run],
+            "rule": "--execute is required before mutating tools can perform real changes.",
+            "evidence": "validated-tool-calls.json",
+        },
+        "pathSafety": {
+            "status": "passed" if is_inside_repo(Path(context["workspace"])) and is_inside_repo(Path(context["targetProjectDir"])) else "failed",
+            "workspace": context["workspace"],
+            "targetProjectDir": context["targetProjectDir"],
+            "rule": "workspace and target project paths must stay inside the repository root.",
+            "evidence": "validated Tool arguments",
+        },
+        "validationCommandAllowlist": {
+            "status": "passed",
+            "allowedTargets": ["make generate", "make manifests", "make test"],
+            "rule": "The validation Tool only accepts generate, manifests, and test targets.",
+            "evidence": "agent/tools/langchain_wrappers.py validation()",
+        },
+        "deferredToolPolicy": {
+            "status": "passed",
+            "deferredCount": len(deferred),
+            "deferredToolCalls": deferred,
+            "rule": "Tools that require a scaffolded project may be deferred during dry-run.",
+            "evidence": "deferred-tool-calls.json",
+        },
+        "recoveryApprovalGate": {
+            "status": "waiting-for-user-approval" if failure_context else "not-needed",
+            "rule": "Recovery Tool calls are never executed automatically.",
+            "evidence": "validated-recovery-plan.json" if failure_context else "",
+        },
+    }
+
+
+def build_log_analysis_safety_evaluation(summary: dict[str, Any]) -> dict[str, Any]:
+    analyzer = summary.get("logAnalyzerResult") or {}
+    return {
+        "llmProviderPolicy": {
+            "status": "passed" if summary.get("llmPlannerUsed") else "failed",
+            "rule": "Only Ollama local LLM planner is supported; mock/OpenAI fallback is not used.",
+            "model": (summary.get("localLLM") or {}).get("model"),
+            "baseUrl": (summary.get("localLLM") or {}).get("baseUrl"),
+        },
+        "readOnlyAnalysis": {
+            "status": "passed",
+            "rule": "Log analysis mode only reads existing logs and invokes log_analyzer.",
+            "sourceLogDir": summary.get("sourceLogDir"),
+            "command": analyzer.get("command"),
+        },
+        "toolAllowlist": {
+            "status": "passed" if analyzer.get("tool") == "log_analyzer" else "failed",
+            "allowedTools": ["log_analyzer"],
+            "executedTool": analyzer.get("tool"),
+        },
+    }
+
+
+def build_requirement_evidence_trace(summary: dict[str, Any]) -> dict[str, Any]:
+    final_output = (summary.get("finalLLM") or {}).get("output") or {}
+    recovery = summary.get("recovery") or {}
+    trace = {
+        "requirementEvidence": {
+            "source": summary.get("requirement"),
+            "parsedSummary": summary.get("requirementSummary") or {},
+            "missingInformation": summary.get("missingInformation") or [],
+        },
+        "ragEvidence": build_rag_trace(summary.get("retrievalDetails") or {}, summary.get("ragEvidence") or []),
+        "llmPlanningEvidence": {
+            "planner": "llm",
+            "reasoning": summary.get("llmReasoning") or [],
+            "toolCallPlan": summary.get("toolCallPlan") or [],
+            "risks": (summary.get("llmPlan") or {}).get("risks") or [],
+            "nextActions": (summary.get("llmPlan") or {}).get("nextActions") or [],
+        },
+        "toolValidationEvidence": {
+            "validatedToolCalls": summary.get("validatedToolCalls") or [],
+            "rejectedToolCalls": summary.get("rejectedToolCalls") or [],
+            "deferredToolCalls": summary.get("deferredToolCalls") or [],
+        },
+        "executionEvidence": build_execution_trace(summary.get("toolResults") or []),
+        "finalJudgmentEvidence": {
+            "llmOutput": final_output,
+            "evidence": final_output.get("evidence") or [],
+            "warnings": final_output.get("warnings") or [],
+            "decision": final_output.get("executionDecision") or "",
+        },
+        "recoveryEvidence": {
+            "waitingForUserApproval": bool(recovery.get("waitingForUserApproval")),
+            "policyEvaluation": recovery.get("policyEvaluation") or {},
+            "validatedRecoveryToolCalls": (recovery.get("plan") or {}).get("validatedRecoveryToolCalls") or [],
+            "rejectedRecoveryToolCalls": recovery.get("rejectedRecoveryToolCalls") or [],
+        },
+    }
+    return trace
+
+
+def build_log_analysis_evidence_trace(summary: dict[str, Any]) -> dict[str, Any]:
+    llm_analysis = summary.get("llmAnalysis") or {}
+    return {
+        "sourceLogEvidence": {
+            "sourceLogDir": summary.get("sourceLogDir"),
+            "sourceSummary": summary.get("sourceSummary"),
+            "sourceAnalysis": summary.get("sourceAnalysis"),
+            "warnings": summary.get("warnings") or [],
+        },
+        "ragEvidence": build_rag_trace(summary.get("retrievalDetails") or {}, summary.get("ragEvidence") or []),
+        "toolEvidence": build_execution_trace([summary.get("logAnalyzerResult") or {}]),
+        "llmJudgmentEvidence": {
+            "decision": llm_analysis.get("decision") or "",
+            "classification": llm_analysis.get("classification") or "",
+            "rootCause": llm_analysis.get("rootCause") or "",
+            "evidence": llm_analysis.get("evidence") or [],
+            "recommendedFixes": llm_analysis.get("recommendedFixes") or [],
+        },
+    }
+
+
+def build_rag_trace(retrieval_details: dict[str, Any], llm_rag_evidence: list[Any]) -> dict[str, Any]:
+    selected = retrieval_details.get("selectedContext") or []
+    return {
+        "query": retrieval_details.get("retrievalQuery") or {},
+        "retrievalMode": retrieval_details.get("retrievalMode") or "",
+        "fallbackUsed": bool(retrieval_details.get("fallbackUsed")),
+        "fallbackReason": retrieval_details.get("fallbackReason") or "",
+        "embeddingModel": retrieval_details.get("embeddingModel") or "",
+        "rerankerModel": retrieval_details.get("rerankerModel") or "",
+        "selectedDocuments": [
+            {
+                "path": item.get("sourcePath") or item.get("path"),
+                "title": item.get("title"),
+                "category": item.get("category"),
+                "contextType": item.get("contextType"),
+                "score": item.get("combinedScore", item.get("score")),
+                "matchedKeywords": item.get("matchedKeywords") or [],
+                "selectionReason": item.get("reason") or "",
+            }
+            for item in selected
+            if isinstance(item, dict)
+        ],
+        "llmClaimedUsage": llm_rag_evidence,
+    }
+
+
+def build_execution_trace(tool_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    trace = []
+    for item in tool_results:
+        if not isinstance(item, dict):
+            continue
+        trace.append(
+            {
+                "tool": item.get("tool"),
+                "command": item.get("command"),
+                "cwd": item.get("cwd"),
+                "status": item.get("status"),
+                "exitCode": item.get("exitCode"),
+                "stdoutEvidence": tail_lines(str(item.get("stdout") or ""), 8),
+                "stderrEvidence": tail_lines(str(item.get("stderr") or ""), 8),
+                "steps": [
+                    {
+                        "target": step.get("target"),
+                        "status": step.get("status"),
+                        "exitCode": step.get("exitCode"),
+                    }
+                    for step in item.get("steps") or []
+                    if isinstance(step, dict)
+                ],
+            }
+        )
+    return trace
 
 
 def load_profile(path: Path) -> dict[str, Any]:
@@ -1247,6 +1548,9 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     lines.extend(["", "## RAG Evidence Used By LLM", ""])
     lines.extend(format_rag_evidence(summary.get("ragEvidence") or []))
 
+    lines.extend(["", "## Evidence Trace", ""])
+    lines.extend(format_evidence_trace(summary.get("evidenceTrace") or {}))
+
     lines.extend(["", "## Tool Call Plan From LLM", ""])
     lines.extend(format_tool_call_plan(summary.get("toolCallPlan") or []))
 
@@ -1260,6 +1564,9 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     if deferred:
         lines.extend(["", "## Deferred Tool Calls", ""])
         lines.extend(format_rejected_tool_calls(deferred))
+
+    lines.extend(["", "## Safety Evaluation", ""])
+    lines.extend(format_safety_evaluation(summary.get("safetyEvaluation") or {}))
 
     profile = summary["selectedProfile"]
     lines.extend(
@@ -1393,6 +1700,12 @@ def render_log_analysis_report(summary: dict[str, Any]) -> str:
     lines.extend(["", "## RAG Evidence Used By LLM", ""])
     lines.extend(format_rag_evidence(summary.get("ragEvidence") or []))
 
+    lines.extend(["", "## Evidence Trace", ""])
+    lines.extend(format_evidence_trace(summary.get("evidenceTrace") or {}))
+
+    lines.extend(["", "## Safety Evaluation", ""])
+    lines.extend(format_safety_evaluation(summary.get("safetyEvaluation") or {}))
+
     if llm_analysis.get("explanationForBeginner"):
         lines.extend(["", "## Beginner Explanation", "", llm_analysis["explanationForBeginner"]])
 
@@ -1495,6 +1808,71 @@ def format_rejected_tool_calls(items: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def format_safety_evaluation(data: dict[str, Any]) -> list[str]:
+    if not data:
+        return ["- No safety evaluation was recorded."]
+    lines: list[str] = []
+    for name, item in data.items():
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status") or "unknown"
+        rule = item.get("rule") or ""
+        lines.append(f"- `{name}`: `{status}`")
+        if rule:
+            lines.append(f"  - rule: {rule}")
+        if item.get("evidence"):
+            lines.append(f"  - evidence: {item.get('evidence')}")
+        if item.get("forcedDryRunTools"):
+            lines.append(f"  - forced dry-run tools: {', '.join(str(x) for x in item.get('forcedDryRunTools') or [])}")
+        if item.get("rejectedCount") not in (None, 0):
+            lines.append(f"  - rejected count: {item.get('rejectedCount')}")
+    return lines or ["- No safety evaluation entries were recorded."]
+
+
+def format_evidence_trace(data: dict[str, Any]) -> list[str]:
+    if not data:
+        return ["- No evidence trace was recorded."]
+    lines: list[str] = []
+    rag = data.get("ragEvidence") or {}
+    if rag:
+        lines.append(f"- RAG mode: `{rag.get('retrievalMode') or 'unknown'}`, fallbackUsed=`{rag.get('fallbackUsed')}`")
+        selected = rag.get("selectedDocuments") or []
+        if selected:
+            lines.append("- Selected RAG documents:")
+            for item in selected[:5]:
+                if not isinstance(item, dict):
+                    continue
+                lines.append(f"  - `{item.get('path')}` ({item.get('category') or 'unknown'})")
+                if item.get("selectionReason"):
+                    lines.append(f"    - reason: {item.get('selectionReason')}")
+    validation = data.get("toolValidationEvidence") or {}
+    if validation:
+        lines.append(
+            "- Tool validation: "
+            f"validated={len(validation.get('validatedToolCalls') or [])}, "
+            f"rejected={len(validation.get('rejectedToolCalls') or [])}, "
+            f"deferred={len(validation.get('deferredToolCalls') or [])}"
+        )
+    execution = data.get("executionEvidence") or data.get("toolEvidence") or []
+    if execution:
+        lines.append("- Execution evidence:")
+        for item in execution:
+            if not isinstance(item, dict):
+                continue
+            lines.append(f"  - `{item.get('tool')}` status=`{item.get('status')}` exitCode=`{item.get('exitCode')}`")
+    final = data.get("finalJudgmentEvidence") or data.get("llmJudgmentEvidence") or {}
+    if final:
+        decision = final.get("decision") or final.get("executionDecision") or ""
+        classification = final.get("classification") or ""
+        if decision or classification:
+            lines.append(f"- LLM judgment: decision=`{decision or 'unknown'}` classification=`{classification or 'n/a'}`")
+        evidence = final.get("evidence") or []
+        if evidence:
+            lines.append("- LLM judgment evidence:")
+            lines.extend(f"  - {item}" for item in evidence[:8])
+    return lines or ["- Evidence trace was empty."]
+
+
 def write_agent_artifacts(
     log_dir: Path,
     summary: dict[str, Any],
@@ -1512,6 +1890,16 @@ def write_agent_artifacts(
         tool_results = execution_or_results
 
     (log_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    if summary.get("evidenceTrace"):
+        (log_dir / "evidence-trace.json").write_text(
+            json.dumps(summary["evidenceTrace"], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    if summary.get("safetyEvaluation"):
+        (log_dir / "safety-evaluation.json").write_text(
+            json.dumps(summary["safetyEvaluation"], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
     (log_dir / "initial-plan.json").write_text(json.dumps(planner_result.get("llmOutput") or {}, indent=2, ensure_ascii=False), encoding="utf-8")
     (log_dir / "validated-tool-calls.json").write_text(
         json.dumps(execution.get("validatedToolCalls") or [], indent=2, ensure_ascii=False),

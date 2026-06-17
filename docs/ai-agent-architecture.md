@@ -155,6 +155,36 @@ LLM 입출력 파일:
 - `retrieved-docs.json`
 - `tool-results.json`
 
+## 근거 추적과 안전성 검증
+
+심사와 운영 관점에서 중요한 것은 LLM이 답을 만들었다는 사실만이 아니라, 어떤 근거와 어떤 안전장치를 거쳐 실행됐는지 확인할 수 있는 것이다.
+
+Agent는 매 실행마다 다음 파일을 추가로 생성한다.
+
+- `evidence-trace.json`: RAG 검색 결과, LLM 판단, Tool 검증, Tool 실행 결과, 최종 판단을 하나의 흐름으로 연결한다.
+- `safety-evaluation.json`: LLM provider 정책, Tool allowlist, dry-run/execute gate, path safety, validation command allowlist, recovery approval gate를 기록한다.
+
+`agent-report.md`에도 같은 내용이 사람이 읽기 쉬운 섹션으로 포함된다.
+
+```text
+Evidence Trace
+  -> RAG selected documents
+  -> LLM reasoning and RAG evidence mapping
+  -> validated / rejected / deferred Tool calls
+  -> Tool exitCode evidence
+  -> final LLM decision evidence
+
+Safety Evaluation
+  -> local Ollama LLM only
+  -> Tool allowlist
+  -> --execute gate
+  -> repository path guard
+  -> validation target allowlist
+  -> recovery approval required
+```
+
+이 계층은 CPU 환경에서도 중요하다. GPU가 없어도 Agent가 관련 문서를 검색하고, Local LLM이 계획을 만들고, Tool 호출을 안전하게 검증하고, 실행 결과를 다시 평가하는 과정을 명확히 증명할 수 있다.
+
 ## 왜 AI Agent 구조인가
 
 단순 자동화 스크립트는 정해진 명령을 순서대로 실행한다.
