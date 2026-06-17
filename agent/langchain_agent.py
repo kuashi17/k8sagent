@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -93,6 +95,8 @@ SUPPORTED_FIELD_TYPES = {
     "map[string]string",
     "metav1.Time",
 }
+AGENT_CACHE_ROOT = Path(".cache") / "agent"
+REQUIREMENT_PLAN_CACHE_VERSION = "requirement-planning-v1"
 
 
 def main() -> int:
@@ -103,6 +107,19 @@ def main() -> int:
     parser.add_argument("--profile", help="Profile YAML path.")
     parser.add_argument("--planner", default="llm", choices=["llm"], help="Only the LLM planner is supported.")
     parser.add_argument("--mode", default="dry-run", choices=["dry-run", "execute"], help="Agent mode. Defaults to dry-run.")
+    parser.add_argument(
+        "--run-level",
+        default="standard",
+        choices=["fast", "standard", "full"],
+        help="Execution depth. fast skips final LLM evaluation; standard preserves current behavior; full is reserved for heavier checks.",
+    )
+    parser.add_argument(
+        "--skip-final-llm-evaluation",
+        action="store_true",
+        help="Skip the second LLM call and use a deterministic rule-based execution summary.",
+    )
+    parser.add_argument("--no-cache", action="store_true", help="Disable local Agent LLM planning cache for this run.")
+    parser.add_argument("--refresh-cache", action="store_true", help="Ignore existing cache and replace it with a fresh LLM plan.")
     parser.add_argument("--workspace", default="workspace/generated-operators", help="Scaffold workspace parent.")
     parser.add_argument("--execute", action="store_true", help="Allow real execution for mutating tools.")
     args = parser.parse_args()
@@ -117,6 +134,7 @@ def main() -> int:
 
 
 def run_requirement_agent(args: argparse.Namespace) -> int:
+    total_started = time.perf_counter()
     requirement_path = Path(args.requirement)
     requirement_text = requirement_path.read_text(encoding="utf-8")
     profile = load_profile(Path(args.profile)) if args.profile else {}
@@ -127,12 +145,16 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     print(f"Requirement: {context['requirement']}")
     print(f"Selected profile: {context['selectedProfile'].get('path') or '<none>'}")
     print("Default safety mode: dry-run")
+    print(f"Run level: {args.run_level}")
 
+    planner_started = time.perf_counter()
     planner_result = call_requirement_planner(args, requirement_text, context)
+    context["timings"]["llmPlanningSeconds"] = elapsed(planner_started)
     if planner_result["error"]:
         execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "deferredToolCalls": [], "toolResults": []}
         final_result = empty_final_result(planner_result["error"])
         summary = build_requirement_summary(args, context, planner_result, execution, final_result)
+        summary["timings"] = finalize_timings(context, execution, total_started)
         summary["safetyEvaluation"] = build_requirement_safety_evaluation(args, context, execution, planner_result, None)
         summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
         write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result)
@@ -143,17 +165,27 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
         return 2
 
     execution = execute_planned_tools(context, args.mode, args.execute, planner_result)
+    context["timings"].update(execution.get("timings") or {})
     initial_errors = collect_errors(execution["toolResults"])
     if planner_result["error"]:
         initial_errors.append(planner_result["error"])
     recovery_result = None
     failure_context = detect_failure_context(context, planner_result, execution, args)
     if failure_context:
+        recovery_started = time.perf_counter()
         recovery_result = call_recovery_planner(context, planner_result, execution, failure_context, args)
+        context["timings"]["recoveryPlanningSeconds"] = elapsed(recovery_started)
         final_result = empty_final_result("Execution failed; recovery plan generated and waiting for user approval.")
     else:
-        final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
+        if should_skip_final_llm_evaluation(args):
+            context["timings"]["finalLlmEvaluationSeconds"] = 0.0
+            final_result = rule_based_final_result(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors, args)
+        else:
+            final_started = time.perf_counter()
+            final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
+            context["timings"]["finalLlmEvaluationSeconds"] = elapsed(final_started)
     summary = build_requirement_summary(args, context, planner_result, execution, final_result, recovery_result, failure_context)
+    summary["timings"] = finalize_timings(context, execution, total_started)
     summary["safetyEvaluation"] = build_requirement_safety_evaluation(args, context, execution, planner_result, failure_context)
     summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
     write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result, recovery_result)
@@ -270,6 +302,83 @@ def empty_final_result(error: str) -> dict[str, Any]:
     }
 
 
+def should_skip_final_llm_evaluation(args: argparse.Namespace) -> bool:
+    return bool(args.skip_final_llm_evaluation or args.run_level == "fast")
+
+
+def rule_based_final_result(
+    context: dict[str, Any],
+    planner_result: dict[str, Any],
+    execution: dict[str, Any],
+    warnings: list[str],
+    errors: list[str],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    tool_results = execution.get("toolResults") or []
+    rejected = execution.get("rejectedToolCalls") or []
+    failed = [item for item in tool_results if item.get("exitCode") != 0]
+    if failed or errors:
+        decision = "failed"
+    elif rejected:
+        decision = "partially-succeeded"
+    else:
+        decision = "succeeded"
+
+    output = {
+        "executionDecision": decision,
+        "completedSteps": [str(item.get("tool")) for item in tool_results if item.get("exitCode") == 0],
+        "failedSteps": [str(item.get("tool")) for item in failed],
+        "generatedArtifacts": [path for path in context.get("generatedFiles", {}).values()],
+        "validationResults": validation_results_from_tool_results(tool_results),
+        "evidence": [
+            f"{item.get('tool')} exitCode={item.get('exitCode')} status={item.get('status')}"
+            for item in tool_results
+        ],
+        "warnings": warnings + (["Final LLM evaluation skipped by fast mode."] if args.run_level == "fast" else []),
+        "recommendedNextActions": [
+            "Run again with --run-level standard when a full LLM final evaluation is needed.",
+            "Use --execute only after reviewing validated-tool-calls.json and safety-evaluation.json.",
+        ],
+        "beginnerSummary": "Fast mode used a deterministic summary from Tool exit codes instead of a second LLM call.",
+    }
+    return {
+        "requestedPlanner": "llm",
+        "effectivePlanner": "rule-based-fast-summary",
+        "llmPlannerUsed": False,
+        "localLLM": {
+            "baseUrl": config_from_env().base_url,
+            "model": config_from_env().model,
+        },
+        "llmInput": {
+            "mode": "tool-result-evaluation",
+            "skipped": True,
+            "reason": "fast mode or --skip-final-llm-evaluation",
+        },
+        "llmOutput": output,
+        "rawOutput": "",
+        "error": "",
+        "skipped": True,
+        "skipReason": "fast mode" if args.run_level == "fast" else "--skip-final-llm-evaluation",
+    }
+
+
+def validation_results_from_tool_results(tool_results: list[dict[str, Any]]) -> dict[str, str]:
+    results = {"makeGenerate": "skipped", "makeManifests": "skipped", "makeTest": "skipped"}
+    for item in tool_results:
+        if item.get("tool") != "validation":
+            continue
+        for step in item.get("steps") or []:
+            target = step.get("target")
+            status = "succeeded" if step.get("exitCode") == 0 else "failed"
+            if target == "generate":
+                results["makeGenerate"] = status
+            elif target == "manifests":
+                results["makeManifests"] = status
+            elif target == "test":
+                results["makeTest"] = status
+    return results
+
+
 def call_requirement_planner(
     args: argparse.Namespace,
     requirement_text: str,
@@ -282,6 +391,21 @@ def call_requirement_planner(
         "profileSummary": context["selectedProfile"],
         "safetyMode": args.mode,
     }
+    cache = requirement_plan_cache_metadata(llm_input)
+    if not args.no_cache and not args.refresh_cache and cache["path"].is_file():
+        try:
+            cached = json.loads(cache["path"].read_text(encoding="utf-8"))
+            result = llm_result(True, cached.get("llmInput") or llm_input, cached.get("llmOutput") or {}, cached.get("rawOutput") or "")
+            result["cache"] = {
+                "enabled": True,
+                "hit": True,
+                "key": cache["key"],
+                "path": str(cache["path"]),
+                "createdAt": cached.get("createdAt", ""),
+            }
+            return result
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"LLM plan cache read failed; refreshing cache: {exc}")
     try:
         output, exact_input, raw = plan_requirement_with_llm(
             requirement_text,
@@ -290,11 +414,28 @@ def call_requirement_planner(
             args.mode,
         )
         validate_llm_output_schema("requirement-planning", output, raw)
-        return llm_result(True, exact_input, output, raw)
+        result = llm_result(True, exact_input, output, raw)
+        result["cache"] = {
+            "enabled": not args.no_cache,
+            "hit": False,
+            "key": cache["key"],
+            "path": str(cache["path"]),
+            "refreshed": bool(args.refresh_cache),
+        }
+        if not args.no_cache:
+            write_requirement_plan_cache(cache["path"], exact_input, output, raw, result)
+        return result
     except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
         message = str(exc) or "Local LLM planner failed."
         print(f"LLM planner failed: {message}")
-        return llm_result(False, llm_input, {}, raw_from_exception(exc), message)
+        result = llm_result(False, llm_input, {}, raw_from_exception(exc), message)
+        result["cache"] = {
+            "enabled": not args.no_cache,
+            "hit": False,
+            "key": cache["key"],
+            "path": str(cache["path"]),
+        }
+        return result
 
 
 def run_log_analysis_agent(args: argparse.Namespace) -> int:
@@ -394,6 +535,37 @@ def llm_result(
     }
 
 
+def requirement_plan_cache_metadata(llm_input: dict[str, Any]) -> dict[str, Any]:
+    cfg = config_from_env()
+    payload = {
+        "version": REQUIREMENT_PLAN_CACHE_VERSION,
+        "localLLM": {"baseUrl": cfg.base_url, "model": cfg.model},
+        "llmInput": llm_input,
+    }
+    key = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    path = AGENT_CACHE_ROOT / "llm-plans" / f"{key}.json"
+    return {"key": key, "path": path}
+
+
+def write_requirement_plan_cache(
+    path: Path,
+    llm_input: dict[str, Any],
+    output: dict[str, Any],
+    raw: str,
+    planner_result: dict[str, Any],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "createdAt": now_iso(),
+        "cacheVersion": REQUIREMENT_PLAN_CACHE_VERSION,
+        "localLLM": planner_result.get("localLLM") or {},
+        "llmInput": llm_input,
+        "llmOutput": output,
+        "rawOutput": raw,
+    }
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def validate_llm_output_schema(mode: str, output: dict[str, Any], raw: str) -> None:
     schema = LLM_OUTPUT_SCHEMAS.get(mode)
     if not schema:
@@ -426,10 +598,13 @@ def build_requirement_context(
     profile: dict[str, Any],
     workspace: str,
 ) -> dict[str, Any]:
+    timings: dict[str, Any] = {}
+    rag_started = time.perf_counter()
     summary = summarize_requirement(requirement_text)
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
     retrieval = perform_retrieval(requirement_text, limit=3, purpose="requirement")
+    timings["ragRetrievalSeconds"] = elapsed(rag_started)
     retrieved = retrieval["selectedContext"]
     return {
         "requirement": str(requirement_path),
@@ -449,6 +624,7 @@ def build_requirement_context(
             "operatorSpec": f"generated/{kind_slug}-operator-spec.yaml",
             "commandPlan": f"generated/{kind_slug}-command-plan.md",
         },
+        "timings": timings,
     }
 
 
@@ -521,7 +697,7 @@ def execute_planned_tools(
     mode: str,
     allow_execute: bool,
     planner_result: dict[str, Any],
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, Any]:
     generated = context["generatedFiles"]
     mutating_execute = mode == "execute" and allow_execute
     supported_calls = {
@@ -583,11 +759,23 @@ def execute_planned_tools(
             "call": lambda: tools.e2e_runner(generated["operatorSpec"], context["selectedProfile"].get("path"), execute=mutating_execute),
         },
     }
+    validation_started = time.perf_counter()
     validated, rejected, deferred = validate_planned_tool_calls(planner_result, supported_calls, mode, allow_execute)
+    tool_validation_seconds = elapsed(validation_started)
     if not validated:
         print("\nLLM planner did not request any supported Tool calls.")
-        return {"validatedToolCalls": [], "rejectedToolCalls": rejected, "deferredToolCalls": deferred, "toolResults": []}
+        return {
+            "validatedToolCalls": [],
+            "rejectedToolCalls": rejected,
+            "deferredToolCalls": deferred,
+            "toolResults": [],
+            "timings": {
+                "toolValidationSeconds": tool_validation_seconds,
+                "toolExecutionSeconds": 0.0,
+            },
+        }
 
+    execution_started = time.perf_counter()
     results: list[dict[str, Any]] = []
     for item in validated:
         name = item["tool"]
@@ -599,7 +787,16 @@ def execute_planned_tools(
         print(f"exitCode={result['exitCode']} status={result['status']}")
         if result["exitCode"] != 0:
             break
-    return {"validatedToolCalls": validated, "rejectedToolCalls": rejected, "deferredToolCalls": deferred, "toolResults": results}
+    return {
+        "validatedToolCalls": validated,
+        "rejectedToolCalls": rejected,
+        "deferredToolCalls": deferred,
+        "toolResults": results,
+        "timings": {
+            "toolValidationSeconds": tool_validation_seconds,
+            "toolExecutionSeconds": elapsed(execution_started),
+        },
+    }
 
 
 def detect_failure_context(
@@ -1070,7 +1267,10 @@ def build_requirement_summary(
         "llmPlannerUsed": planner_result["llmPlannerUsed"],
         "localLLM": planner_result.get("localLLM") or {},
         "llmError": planner_result["error"],
+        "plannerCache": planner_result.get("cache") or {},
         "agentMode": args.mode,
+        "runLevel": args.run_level,
+        "skipFinalLlmEvaluation": bool(args.skip_final_llm_evaluation or args.run_level == "fast"),
         "executeAllowed": bool(args.execute),
         "createdAt": now_iso(),
         "requirementSummary": context["requirementSummary"],
@@ -1520,6 +1720,14 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
         f"- Local LLM model: `{summary.get('localLLM', {}).get('model') or 'unknown'}`",
         f"- LLM planner used: `{summary.get('llmPlannerUsed')}`",
         f"- LLM error: `{summary.get('llmError') or 'none'}`",
+        f"- Planner cache hit: `{(summary.get('plannerCache') or {}).get('hit', False)}`",
+        f"- Planner cache path: `{(summary.get('plannerCache') or {}).get('path', 'none')}`",
+        f"- Run level: `{summary.get('runLevel') or 'standard'}`",
+        f"- Final LLM evaluation skipped: `{summary.get('skipFinalLlmEvaluation')}`",
+        "",
+        "## Timings",
+        "",
+        *format_timings(summary.get("timings") or {}),
         "",
         "## Requirement Summary",
         "",
@@ -1743,6 +1951,31 @@ def format_retrieved_docs(items: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def format_timings(timings: dict[str, Any]) -> list[str]:
+    if not timings:
+        return ["- No timing information was recorded."]
+    order = [
+        ("ragRetrievalSeconds", "RAG retrieval"),
+        ("llmPlanningSeconds", "Initial LLM planning"),
+        ("toolValidationSeconds", "Tool validation"),
+        ("toolExecutionSeconds", "Tool execution"),
+        ("finalLlmEvaluationSeconds", "Final LLM evaluation"),
+        ("recoveryPlanningSeconds", "Recovery planning"),
+        ("totalSeconds", "Total"),
+    ]
+    lines = ["| Stage | Seconds |", "|---|---:|"]
+    for key, label in order:
+        if key in timings:
+            lines.append(f"| {label} | {float(timings.get(key) or 0):.3f} |")
+    for key, value in timings.items():
+        if key not in {item[0] for item in order}:
+            try:
+                lines.append(f"| {key} | {float(value):.3f} |")
+            except (TypeError, ValueError):
+                lines.append(f"| {key} | {value} |")
+    return lines
+
+
 def extract_list(data: dict[str, Any], key: str) -> list[Any]:
     value = data.get(key) if isinstance(data, dict) else []
     return value if isinstance(value, list) else []
@@ -1900,6 +2133,16 @@ def write_agent_artifacts(
             json.dumps(summary["safetyEvaluation"], indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+    if summary.get("timings"):
+        (log_dir / "timings.json").write_text(
+            json.dumps(summary["timings"], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    if summary.get("plannerCache"):
+        (log_dir / "planner-cache.json").write_text(
+            json.dumps(summary["plannerCache"], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
     (log_dir / "initial-plan.json").write_text(json.dumps(planner_result.get("llmOutput") or {}, indent=2, ensure_ascii=False), encoding="utf-8")
     (log_dir / "validated-tool-calls.json").write_text(
         json.dumps(execution.get("validatedToolCalls") or [], indent=2, ensure_ascii=False),
@@ -2054,6 +2297,17 @@ def make_agent_log_dir() -> Path:
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def elapsed(started: float) -> float:
+    return round(time.perf_counter() - started, 3)
+
+
+def finalize_timings(context: dict[str, Any], execution: dict[str, Any], total_started: float) -> dict[str, Any]:
+    timings = dict(context.get("timings") or {})
+    timings.update(execution.get("timings") or {})
+    timings["totalSeconds"] = elapsed(total_started)
+    return timings
 
 
 if __name__ == "__main__":

@@ -753,6 +753,20 @@ python3 agent/langchain_agent.py \
   --mode dry-run
 ```
 
+CPU 환경에서 개발 피드백을 빠르게 보고 싶다면 `fast` run-level을 사용합니다. 이 모드는 최초 LLM 계획과 Tool dry-run은 수행하지만, Tool 결과를 다시 LLM에 보내는 최종 평가 단계는 규칙 기반 요약으로 대체합니다.
+
+```bash
+python3 agent/langchain_agent.py \
+  --requirement requirements/appconfig.txt \
+  --profile profiles/appconfig.yaml \
+  --mode dry-run \
+  --run-level fast
+```
+
+정밀한 최종 LLM 평가가 필요하면 기본값인 `--run-level standard`를 사용합니다. 명시적으로 최종 LLM 평가만 건너뛰려면 `--skip-final-llm-evaluation`을 사용할 수 있습니다.
+
+같은 requirement와 profile 조합은 기본적으로 LLM planning cache를 사용합니다. 캐시는 `.cache/agent/llm-plans/` 아래에 저장됩니다. 새 모델 응답을 강제로 받고 싶으면 `--refresh-cache`, 캐시를 끄고 싶으면 `--no-cache`를 사용합니다.
+
 Agent 실행 결과에는 다음 항목이 포함됩니다.
 
 - Requirement Summary
@@ -772,7 +786,11 @@ Agent 실행 결과에는 다음 항목이 포함됩니다.
 
 근거와 안전장치만 따로 확인하려면 [Agent Evidence And Safety](docs/agent-evidence-and-safety.md)를 봅니다. Agent 실행 시 `evidence-trace.json`과 `safety-evaluation.json`이 함께 생성되어, RAG 문서 선택 이유, LLM 판단 근거, Tool allowlist 검증, dry-run/execute gate, recovery 승인 대기 상태를 확인할 수 있습니다.
 
+오프라인/내부망 환경에서 모델을 어떻게 사용할지는 [Local Model Usage Policy](docs/local-model-usage-policy.md)를 봅니다. 이 문서는 Ollama local model, run-level, planning cache, Tool 실행 안전 원칙을 정리합니다.
+
 기본은 dry-run이며, 실제 scaffold, patch, e2e 변경 작업은 `--execute`가 명시되지 않으면 수행하지 않습니다. 실행 결과는 `logs/agent/<timestamp>/summary.json`과 `logs/agent/<timestamp>/agent-report.md`에 저장됩니다.
+
+성능 병목은 `logs/agent/<timestamp>/timings.json`과 `agent-report.md`의 `Timings` 섹션에서 확인합니다. 주요 항목은 RAG 검색 시간, 최초 LLM 계획 시간, Tool 검증 시간, Tool 실행 시간, 최종 LLM 평가 시간, 전체 시간입니다.
 
 실제 LLM 연결 여부는 다음 파일로 확인합니다.
 
