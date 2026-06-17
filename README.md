@@ -864,6 +864,49 @@ python3 agent/evaluation/rag_evaluator.py \
 
 자세한 설명은 [docs/rag-evaluation.md](docs/rag-evaluation.md)를 참고합니다.
 
+## MVP 평가 지표 측정
+
+제출 계획서의 4개 평가 지표를 실제 Agent 실행 로그 기준으로 계산할 수 있습니다.
+
+측정 지표:
+
+- 개발 단계별 작업 시간 단축
+- 필수 산출물 생성 완성도
+- 검증 단계 1차 통과율
+- 오류 대응 지원 속도
+
+대표 로그 4개 평가:
+
+```bash
+python3 agent/evaluation/mvp_evaluator.py \
+  --log-paths \
+    logs/agent/20260617-140047-627341 \
+    logs/agent/20260617-140801-334502 \
+    logs/agent/20260617-141235-479378 \
+    logs/agent/20260617-141519-779916 \
+  --baseline evaluation/mvp-baseline.yaml \
+  --output-dir evaluation/results/mvp
+```
+
+전체 Agent 로그 평가:
+
+```bash
+./scripts/evaluate-mvp.sh --logs-dir logs/agent
+```
+
+결과는 `evaluation/results/mvp/<timestamp>/` 아래에 생성됩니다.
+
+- `mvp-evaluation-summary.json`
+- `mvp-evaluation-details.json`
+- `artifact-completion-results.json`
+- `validation-pass-results.json`
+- `error-response-results.json`
+- `mvp-evaluation-report.md`
+
+baseline은 `evaluation/mvp-baseline.yaml`에서 관리합니다. 실제 수작업 측정값이 아닌 placeholder baseline은 `measured: false`로 표시하며, 이 경우 작업 시간 단축률은 임의 달성 처리하지 않고 `측정 불가`로 표시합니다.
+
+자세한 설명은 [docs/mvp-evaluation.md](docs/mvp-evaluation.md)를 참고합니다.
+
 ## Web UI
 
 CLI는 실제 자동화 core이고, Web UI는 초보자 입력과 심사용 시연을 위한 얇은 wrapper입니다. Web UI도 내부적으로 `agent/langchain_agent.py`를 호출하므로 CLI와 같은 Agent 파이프라인을 사용합니다.

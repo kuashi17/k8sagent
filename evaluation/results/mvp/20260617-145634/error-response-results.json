@@ -1,0 +1,12 @@
+[
+  {
+    "logPath": "logs/agent/20260617-141519-779916",
+    "failedTool": "validation",
+    "failedStep": "make generate",
+    "exitCode": 2,
+    "recoveryPlanStatus": "waiting-for-user-approval",
+    "classification": "invalid-field-type",
+    "responseSeconds": 266.0,
+    "measurementBasis": "agent run elapsed upper-bound; per-event timestamps not present in existing logs"
+  }
+]

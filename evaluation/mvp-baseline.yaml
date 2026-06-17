@@ -1,0 +1,11 @@
+manualBaseline:
+  requirementToArtifactsMinutes: 120
+  source: "placeholder: 기존 수작업 수행 기준 또는 사전 측정값으로 교체 필요"
+  notes: "이 값은 평가 자동화 검증을 위한 기본 placeholder이며, 실제 평가 전 측정값으로 교체할 수 있다."
+  measured: false
+
+targets:
+  timeReductionPercent: 50
+  artifactCompletionPercent: 90
+  firstPassValidationPercent: 80
+  errorResponseMinutes: 10
