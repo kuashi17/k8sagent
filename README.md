@@ -285,6 +285,18 @@ Tool 실행 실패
 
 사용자는 특정 예시에 맞출 필요 없이 만들고 싶은 Operator를 자연어로 작성합니다. `--profile`은 선택 사항이며, 제공되더라도 Agent가 참고하는 hint일 뿐입니다.
 
+대충 쓴 문장을 requirement 파일로 정리하려면 먼저 질문형 builder를 사용할 수 있습니다.
+
+```bash
+python3 agent/requirement_builder.py \
+  --draft "비밀번호와 토큰 값을 Kubernetes Secret으로 관리하는 Operator가 필요해" \
+  --output requirements/secret-sync.txt \
+  --assume-defaults \
+  --print-questions
+```
+
+`--assume-defaults`를 빼면 부족한 값을 터미널에서 직접 물어봅니다. builder는 완성된 requirement 파일과 함께 “사용자에게 확인해야 할 질문”을 출력합니다.
+
 ```bash
 python3 agent/langchain_agent.py \
   --requirement requirements/my-operator.txt \
@@ -774,9 +786,18 @@ python3 agent/langchain_agent.py \
   --run-level fast
 ```
 
-정밀한 최종 LLM 평가가 필요하면 기본값인 `--run-level standard`를 사용합니다. 명시적으로 최종 LLM 평가만 건너뛰려면 `--skip-final-llm-evaluation`을 사용할 수 있습니다.
+현재 기본값은 빠른 피드백을 위해 `--run-level fast`입니다. 정밀한 최종 LLM 평가가 필요하면 `--run-level standard`를 사용합니다. 명시적으로 최종 LLM 평가만 건너뛰려면 `--skip-final-llm-evaluation`을 사용할 수 있습니다.
 
 같은 requirement, profile hint, RAG 문서, local model 조합은 기본적으로 LLM planning cache를 사용합니다. 캐시는 `.cache/agent/llm-plans/` 아래에 저장됩니다. 새 모델 응답을 강제로 받고 싶으면 `--refresh-cache`, 캐시를 끄고 싶으면 `--no-cache`를 사용합니다.
+
+로컬 모델 출력 길이는 기본적으로 짧게 제한합니다. 필요하면 다음 환경변수로 조정합니다.
+
+```bash
+export LOCAL_LLM_MAX_TOKENS=700
+export AGENT_REQUIREMENT_RAG_LIMIT=2
+```
+
+cache hit 여부는 실행 초반의 `Planner cache: hit|miss`와 `agent-report.md`의 `Planner cache hit`에서 확인할 수 있습니다.
 
 Agent 실행 결과에는 다음 항목이 포함됩니다.
 
@@ -1022,6 +1043,16 @@ python3 agent/tools/kind_deployment_runner.py
 - 원본 sample 재적용 시 ConfigMap/status 복구
 
 실행 로그는 `logs/kind-deployment/<timestamp>/summary.json`에 저장됩니다.
+
+Profile 없이 다양한 요구사항을 처리하는지 빠르게 확인:
+
+```bash
+python3 agent/evaluation/profileless_requirement_runner.py \
+  --output-dir evaluation/results/profileless/generic-check \
+  --run-level fast
+```
+
+현재 검증 fixture는 Secret, CronJob, Deployment/Service 요구사항을 profile 없이 실행합니다. e2e는 모든 Operator에 대해 범용으로 강제하지 않고, profile/fixture가 준비된 경우에만 수행합니다.
 
 ## 스펙 기반 Kubebuilder Scaffold
 

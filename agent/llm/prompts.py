@@ -22,13 +22,23 @@ Principles:
 REQUIREMENT_PLANNER_PROMPT = """\
 Create a requirement planning JSON object.
 
+Keep the response compact:
+- requirementSummary: one sentence.
+- missingInformation: max 6 items.
+- reasoning: max 2 bullets.
+- ragEvidence: max 3 items.
+- plannedSteps: max 4 items.
+- toolCalls: use only needed allowlisted tools.
+- risks: max 2 items.
+- nextActions: max 2 items.
+
 Required JSON shape:
 {{
   "requirementSummary": "...",
   "missingInformation": [],
   "recommendedProfile": "...",
   "reasoning": [
-    "Decision or inference grounded in the requirement and retrieved documents."
+    "Short decision or inference grounded in the requirement and retrieved documents."
   ],
   "ragEvidence": [
     {{

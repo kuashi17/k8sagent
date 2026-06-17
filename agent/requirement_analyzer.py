@@ -89,7 +89,7 @@ def select_profile_hint(
         selected["selectionMode"] = "explicit-hint"
         selected["reason"] = "User provided this profile path; the Agent still plans from the requirement text."
         return {"selectedProfile": selected, "profileCandidates": candidates}
-    if candidates:
+    if candidates and is_strong_profile_match(candidates[0], requirement_text):
         selected = dict(candidates[0])
         selected["selectionMode"] = "auto-hint"
         selected["reason"] = selected.get("reason") or "Best matching profile hint from managed resource overlap."
@@ -105,6 +105,15 @@ def select_profile_hint(
         },
         "profileCandidates": [],
     }
+
+
+def is_strong_profile_match(candidate: dict[str, Any], requirement_text: str) -> bool:
+    requirement_resources = set(infer_managed_resources(requirement_text))
+    if not requirement_resources:
+        return False
+    matched = set(candidate.get("matchedResources") or [])
+    coverage = len(matched) / max(len(requirement_resources), 1)
+    return int(candidate.get("score", 0)) >= 5 and coverage >= 0.67
 
 
 def rank_profile_candidates(requirement_text: str, profiles_dir: Path | str = "profiles") -> list[dict[str, Any]]:

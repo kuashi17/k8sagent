@@ -5,8 +5,8 @@
       "run": 1,
       "exitCode": 0,
       "status": "succeeded",
-      "elapsedSeconds": 1.512,
-      "logDir": "logs/agent/20260617-210133-169516",
+      "elapsedSeconds": 132.885,
+      "logDir": "logs/agent/20260617-213131-724441",
       "fixtureKind": "AppConfig",
       "operatorSpec": "generated/appconfig-operator-spec.yaml",
       "commandPlan": "generated/appconfig-command-plan.md",
@@ -16,7 +16,9 @@
         "scaffold_runner"
       ],
       "rejectedCount": 0,
-      "deferredTools": [],
+      "deferredTools": [
+        "artifact_patcher"
+      ],
       "decision": "succeeded"
     }
   ],
@@ -31,7 +33,9 @@
         "scaffold_runner"
       ],
       "rejectedCount": 0,
-      "deferredTools": []
+      "deferredTools": [
+        "artifact_patcher"
+      ]
     }
   ],
   "comparison": {

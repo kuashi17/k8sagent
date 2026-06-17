@@ -1,0 +1,111 @@
+metadata:
+  sourceFile: requirements/web-service.txt
+  generatedAt: '2026-06-17T21:31:29+09:00'
+  generatorVersion: 0.1.0
+project:
+  name: web-service-operator
+  domain: sample.io
+  module: sample.io/web-service-operator
+api:
+  domain: sample.io
+  group: apps
+  version: v1alpha1
+  kind: WebService
+specFields:
+- name: appName
+  type: string
+  description: 배포할 애플리케이션 이름
+- name: image
+  type: string
+  description: Deployment에 사용할 컨테이너 이미지
+- name: replicas
+  type: int32
+  description: Deployment replica 수
+- name: port
+  type: int32
+  description: Service와 컨테이너 포트
+statusFields:
+- name: phase
+  type: string
+  description: 현재 처리 상태
+- name: deploymentName
+  type: string
+  description: 생성 또는 갱신된 Deployment 이름
+- name: serviceName
+  type: string
+  description: 생성 또는 갱신된 Service 이름
+- name: readyReplicas
+  type: int32
+  description: 준비된 Pod replica 수
+- name: message
+  type: string
+  description: 현재 상태 설명 또는 오류 메시지
+controller:
+  enabled: true
+  managedResources:
+  - Deployment
+  - Service
+  responsibilities:
+  - deploymentName:string - 생성 또는 갱신된 Deployment 이름
+  - serviceName:string - 생성 또는 갱신된 Service 이름
+  - Controller는 WebService Custom Resource 변경을 감지한다
+  - Controller는 Deployment, Service 리소스를 생성/수정/삭제한다
+  - Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다
+  - Controller는 Deployment, Service 상태를 조회하여 status를 갱신한다
+  fieldMappings:
+  - from: spec.image
+    to: Deployment container image
+  - from: spec.replicas
+    to: Deployment.spec.replicas
+  - from: spec.port
+    to: Deployment containerPort and Service port
+  statusRules:
+  - Controller는 Deployment, Service 상태를 조회하여 status를 갱신한다
+  - status.readyReplicas는 Deployment.status.readyReplicas를 기준으로 갱신한다
+rbac:
+  resources:
+  - apiGroup: apps.sample.io
+    resource: webservices
+    verbs:
+    - get
+    - list
+    - watch
+    - update
+    - patch
+  - apiGroup: apps
+    resource: deployments
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroup: ''
+    resource: services
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroup: ''
+    resource: pods
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+validation:
+  commands:
+  - make generate
+  - make manifests
+  - make test
+warnings: []
+errors: []

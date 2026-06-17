@@ -53,6 +53,16 @@ Agent는 profile을 `hint-only`로 취급한다. Operator의 kind, spec/status f
 
 ## 사용자가 편하게 쓰는 방식
 
+대충 쓴 문장을 requirement 파일로 정리:
+
+```bash
+python3 agent/requirement_builder.py \
+  --draft "웹 애플리케이션 이미지를 Deployment와 Service로 배포하는 Operator를 만들고 싶어" \
+  --output requirements/web-service.txt \
+  --assume-defaults \
+  --print-questions
+```
+
 가장 단순한 사용 방식:
 
 ```bash
@@ -87,6 +97,49 @@ python3 agent/langchain_agent.py \
 - dry-run 결과를 먼저 보여줌
 - 생성될 파일과 실행될 명령을 사람이 확인
 - execute는 CLI 또는 승인된 내부 UI에서만 허용
+
+## Generic Validation Boundary
+
+모든 Operator에 대해 kind e2e를 자동으로 일반화하는 것은 현재 범위가 아니다.
+
+현재 범용 core가 책임지는 검증:
+
+- requirement 분석
+- RAG 검색
+- LLM Tool 계획
+- spec 생성
+- command plan 생성
+- scaffold dry-run/execute
+- artifact patch
+- `make generate`
+- `make manifests`
+- `make test`
+- 실패 시 recovery plan 생성
+
+profile 또는 fixture가 있을 때만 수행하는 검증:
+
+- kind e2e
+- 특정 하위 리소스 spec validation
+- workload-specific warning 해석
+- lifecycle 검증
+
+이 경계를 유지하면 시스템이 특정 예시에 묶이지 않으면서도, 준비된 profile에 대해서는 더 깊은 검증을 제공할 수 있다.
+
+## Profile-less Regression Fixtures
+
+다음 요구사항은 profile 없이 Agent core가 동작하는지 확인하기 위한 회귀 테스트다.
+
+- `requirements/secret-sync.txt`: Secret 관리 Operator
+- `requirements/scheduled-task.txt`: CronJob 기반 Operator
+- `requirements/web-service.txt`: Deployment/Service 기반 Operator
+
+검증 명령:
+
+```bash
+python3 agent/evaluation/profileless_requirement_runner.py \
+  --output-dir evaluation/results/profileless/generic-check \
+  --run-level fast
+```
 
 ## 보고서에서 확인할 것
 

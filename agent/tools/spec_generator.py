@@ -170,7 +170,7 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
     block = find_section_block(text, section)
     fields: list[dict[str, str]] = []
     for line in block.splitlines():
-        match = re.match(r"\s*-\s*([a-z][A-Za-z0-9]*)\s*:\s*([A-Za-z0-9\[\]]+(?:\[[A-Za-z0-9\[\]]+\])?)\s*(?:-\s*(.+))?\s*$", line)
+        match = re.match(r"\s*-\s*([a-z][A-Za-z0-9]*)\s*:\s*([^\s-]+)\s*(?:-\s*(.+))?\s*$", line)
         if not match:
             continue
         name, field_type, description = match.groups()
@@ -186,7 +186,7 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
         inline_pattern = rf"{section}\s*에는\s+(.+?)을\s*포함한다"
         inline = find_value(text, inline_pattern)
         for item in re.split(r"\s*,\s*", inline):
-            match = re.match(r"([a-z][A-Za-z0-9]*)\s*:\s*([A-Za-z0-9\[\]]+(?:\[[A-Za-z0-9\[\]]+\])?)", item.strip())
+            match = re.match(r"([a-z][A-Za-z0-9]*)\s*:\s*([^\s,]+)", item.strip())
             if not match:
                 continue
             name, field_type = match.groups()

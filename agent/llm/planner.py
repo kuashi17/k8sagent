@@ -33,7 +33,7 @@ def plan_requirement_with_llm(
     profile_candidates: list[dict[str, Any]] | None = None,
     config: LLMConfig | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
-    compact_docs = compact_retrieved_docs(retrieved_docs)
+    compact_docs = compact_retrieved_docs(retrieved_docs, excerpt_limit=320)
     llm_input = {
         "mode": "requirement-planning",
         "requirementText": requirement_text,

@@ -46,6 +46,8 @@ CPU 환경에서는 모델 크기와 응답 시간이 직접적인 개발 생산
 ```bash
 export LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export LOCAL_LLM_MODEL=qwen2.5-coder:3b
+export LOCAL_LLM_MAX_TOKENS=700
+export AGENT_REQUIREMENT_RAG_LIMIT=2
 ```
 
 ## Run Level
@@ -55,18 +57,19 @@ Agent는 실행 깊이를 나누어 CPU 환경에서도 사용할 수 있게 한
 | run-level | LLM planning | Tool 실행 | final LLM evaluation | 용도 |
 |---|---|---|---|---|
 | `fast` | 수행 | 수행 | 생략 | 개발 중 빠른 피드백 |
-| `standard` | 수행 | 수행 | 수행 | 기본 검증 |
+| `standard` | 수행 | 수행 | 수행 | 정밀한 최종 LLM 평가 |
 | `full` | 수행 | 수행 | 수행 | 향후 kind/e2e/reliability 포함용 |
 
 예시:
 
 ```bash
 python3 agent/langchain_agent.py \
-  --requirement requirements/appconfig.txt \
-  --profile profiles/appconfig.yaml \
+  --requirement requirements/my-operator.txt \
   --mode dry-run \
   --run-level fast
 ```
+
+현재 CLI 기본 run-level은 `fast`다. CPU 환경에서 긴 대기 시간을 줄이기 위해 기본 흐름은 최초 LLM 계획과 Tool dry-run 중심으로 동작하고, Tool 결과를 다시 LLM에 보내는 최종 평가는 `--run-level standard`에서 수행한다.
 
 ## Cache 정책
 
@@ -90,10 +93,14 @@ python3 agent/langchain_agent.py \
 - requirement text
 - selected RAG documents
 - profile summary
+- requirement intent analysis
+- profile candidates
 - safety mode
 - local LLM base URL
 - local LLM model
 - cache schema version
+
+첫 cache miss 실행은 로컬 모델 속도에 따라 오래 걸릴 수 있다. 같은 입력의 두 번째 실행부터는 `Planner cache: hit`로 표시되고, 일반적으로 수 초 내 dry-run 피드백을 받을 수 있다.
 
 ## 안전 원칙
 

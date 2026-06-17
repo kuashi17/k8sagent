@@ -23,6 +23,7 @@ class LLMConfig:
     base_url: str = DEFAULT_LOCAL_LLM_BASE_URL
     model: str = DEFAULT_LOCAL_LLM_MODEL
     timeout_seconds: int = 180
+    max_tokens: int = 800
 
 
 def config_from_env(model: str | None = None) -> LLMConfig:
@@ -31,10 +32,16 @@ def config_from_env(model: str | None = None) -> LLMConfig:
         timeout_seconds = int(timeout)
     except ValueError:
         timeout_seconds = 180
+    max_tokens_raw = os.environ.get("LOCAL_LLM_MAX_TOKENS", "700")
+    try:
+        max_tokens = int(max_tokens_raw)
+    except ValueError:
+        max_tokens = 700
     return LLMConfig(
         base_url=os.environ.get("LOCAL_LLM_BASE_URL", DEFAULT_LOCAL_LLM_BASE_URL),
         model=model or os.environ.get("LOCAL_LLM_MODEL", DEFAULT_LOCAL_LLM_MODEL),
         timeout_seconds=timeout_seconds,
+        max_tokens=max_tokens,
     )
 
 
@@ -49,6 +56,11 @@ def chat_json(system_prompt: str, user_prompt: str, config: LLMConfig | None = N
         ],
         "temperature": 0,
         "response_format": {"type": "json_object"},
+        "max_tokens": cfg.max_tokens,
+        "options": {
+            "num_predict": cfg.max_tokens,
+            "temperature": 0,
+        },
         "stream": False,
     }
     request = urllib.request.Request(
@@ -69,7 +81,7 @@ def chat_json(system_prompt: str, user_prompt: str, config: LLMConfig | None = N
     except urllib.error.URLError as exc:
         raise LLMUnavailable(local_connection_error(cfg)) from exc
     except TimeoutError as exc:
-        raise LLMUnavailable(local_connection_error(cfg)) from exc
+        raise LLMUnavailable(f"{local_connection_error(cfg)} 요청이 {cfg.timeout_seconds}초 안에 끝나지 않았습니다.") from exc
     except json.JSONDecodeError as exc:
         raise LLMUnavailable(f"Ollama local LLM endpoint returned invalid JSON: {exc}") from exc
 

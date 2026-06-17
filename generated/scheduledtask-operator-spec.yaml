@@ -1,0 +1,99 @@
+metadata:
+  sourceFile: requirements/scheduled-task.txt
+  generatedAt: '2026-06-17T21:31:26+09:00'
+  generatorVersion: 0.1.0
+project:
+  name: scheduled-task-operator
+  domain: sample.io
+  module: sample.io/scheduled-task-operator
+api:
+  domain: sample.io
+  group: batch
+  version: v1alpha1
+  kind: ScheduledTask
+specFields:
+- name: schedule
+  type: string
+  description: CronJob 실행 스케줄
+- name: image
+  type: string
+  description: 실행할 컨테이너 이미지
+- name: command
+  type: '[]string'
+  description: 컨테이너에서 실행할 명령
+- name: suspend
+  type: bool
+  description: 스케줄 일시 중지 여부
+statusFields:
+- name: phase
+  type: string
+  description: 현재 처리 상태
+- name: cronJobName
+  type: string
+  description: 생성 또는 갱신된 CronJob 이름
+- name: lastScheduleTime
+  type: metav1.Time
+  description: 마지막 스케줄 실행 시각
+- name: message
+  type: string
+  description: 현재 상태 설명 또는 오류 메시지
+controller:
+  enabled: true
+  managedResources:
+  - CronJob
+  - Job
+  responsibilities:
+  - cronJobName:string - 생성 또는 갱신된 CronJob 이름
+  - Controller는 ScheduledTask Custom Resource 변경을 감지한다
+  - Controller는 CronJob, Job 리소스를 생성/수정/삭제한다
+  - Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다
+  - Controller는 CronJob, Job 상태를 조회하여 status를 갱신한다
+  fieldMappings:
+  - from: spec.schedule
+    to: CronJob.spec.schedule
+  - from: spec.image
+    to: CronJob JobTemplate container image
+  - from: spec.command
+    to: CronJob JobTemplate container command
+  - from: spec.suspend
+    to: CronJob.spec.suspend
+  statusRules:
+  - Controller는 CronJob, Job 상태를 조회하여 status를 갱신한다
+  - status.phase와 status.lastScheduleTime은 CronJob 상태를 기준으로 갱신한다
+rbac:
+  resources:
+  - apiGroup: batch.sample.io
+    resource: scheduledtasks
+    verbs:
+    - get
+    - list
+    - watch
+    - update
+    - patch
+  - apiGroup: batch
+    resource: cronjobs
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroup: batch
+    resource: jobs
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+validation:
+  commands:
+  - make generate
+  - make manifests
+  - make test
+warnings: []
+errors: []

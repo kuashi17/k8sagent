@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import time
@@ -110,9 +111,9 @@ def main() -> int:
     parser.add_argument("--mode", default="dry-run", choices=["dry-run", "execute"], help="Agent mode. Defaults to dry-run.")
     parser.add_argument(
         "--run-level",
-        default="standard",
+        default="fast",
         choices=["fast", "standard", "full"],
-        help="Execution depth. fast skips final LLM evaluation; standard preserves current behavior; full is reserved for heavier checks.",
+        help="Execution depth. fast is the default and skips final LLM evaluation; standard adds final LLM evaluation; full is reserved for heavier checks.",
     )
     parser.add_argument(
         "--skip-final-llm-evaluation",
@@ -152,6 +153,7 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     planner_started = time.perf_counter()
     planner_result = call_requirement_planner(args, requirement_text, context)
     context["timings"]["llmPlanningSeconds"] = elapsed(planner_started)
+    print_planner_cache_status(planner_result)
     if planner_result["error"]:
         execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "deferredToolCalls": [], "toolResults": []}
         final_result = empty_final_result(planner_result["error"])
@@ -444,6 +446,14 @@ def call_requirement_planner(
         return result
 
 
+def print_planner_cache_status(planner_result: dict[str, Any]) -> None:
+    cache = planner_result.get("cache") or {}
+    if not cache:
+        return
+    status = "hit" if cache.get("hit") else "miss"
+    print(f"Planner cache: {status} ({cache.get('path')})")
+
+
 def run_log_analysis_agent(args: argparse.Namespace) -> int:
     source_log_dir = Path(args.log_dir)
     source_summary_path = source_log_dir / "summary.json"
@@ -611,7 +621,7 @@ def build_requirement_context(
     profile_hint = select_profile_hint(requirement_text, profile_path, profile)
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
-    retrieval = perform_retrieval(requirement_text, limit=3, purpose="requirement")
+    retrieval = perform_retrieval(requirement_text, limit=requirement_rag_limit(), purpose="requirement")
     timings["ragRetrievalSeconds"] = elapsed(rag_started)
     retrieved = retrieval["selectedContext"]
     return {
@@ -695,6 +705,14 @@ def select_context(details: dict[str, Any], limit: int, purpose: str) -> list[di
         selected.append(row)
         used_sources.add(source)
     return selected[:limit]
+
+
+def requirement_rag_limit() -> int:
+    raw = os.environ.get("AGENT_REQUIREMENT_RAG_LIMIT", "2")
+    try:
+        return max(1, min(3, int(raw)))
+    except ValueError:
+        return 2
 
 
 def execute_planned_tools(
@@ -1281,6 +1299,7 @@ def build_requirement_summary(
         "requirementSummary": context["requirementSummary"],
         "intentAnalysis": context["intentAnalysis"],
         "missingInformation": context["missingInformation"],
+        "clarifyingQuestions": clarifying_questions(context["missingInformation"], context["requirementSummary"]),
         "retrievedKnowledge": context["retrievedKnowledge"],
         "retrievalDetails": context.get("retrievalDetails") or {},
         "selectedProfile": context["selectedProfile"],
@@ -1587,6 +1606,24 @@ def missing_information(summary: dict[str, Any], text: str) -> list[str]:
     return [name for name, value in checks.items() if not value]
 
 
+def clarifying_questions(missing: list[str], summary: dict[str, Any]) -> list[str]:
+    question_map = {
+        "kind": "Custom Resource 이름(kind)을 무엇으로 할까요? 예: BackupPolicy, WebService, SecretSync",
+        "domain": "API domain은 무엇으로 할까요? 예: sample.io, platform.internal",
+        "group": "API group은 무엇으로 할까요? 예: app, batch, security",
+        "version": "API version은 무엇으로 할까요? 보통 처음에는 v1alpha1을 사용합니다.",
+        "spec fields": "사용자가 Custom Resource에 입력해야 하는 spec 필드는 무엇인가요?",
+        "status fields": "kubectl로 확인하고 싶은 status 필드는 무엇인가요?",
+        "managed Kubernetes resource": "Controller가 생성하거나 관리할 Kubernetes 리소스는 무엇인가요? 예: ConfigMap, Secret, Deployment, Job",
+        "validation commands": "검증 명령은 make generate, make manifests, make test를 사용해도 될까요?",
+    }
+    questions = [question_map[item] for item in missing if item in question_map]
+    managed = summary.get("managedResources") or []
+    if managed and "status fields" in missing:
+        questions.append(f"{', '.join(managed)} 상태 중 어떤 값을 status에 반영할까요?")
+    return questions
+
+
 def parse_field_names(text: str, section: str) -> list[str]:
     match = re.search(rf"{section}\s*에는.*?(?=\n\n|status에는|Controller는|검증 명령|$)", text, flags=re.DOTALL)
     block = match.group(0) if match else ""
@@ -1767,6 +1804,10 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
         "## Missing Information Check",
         "",
         *([f"- {item}" for item in summary["missingInformation"]] or ["- No critical missing information found."]),
+        "",
+        "## Clarifying Questions",
+        "",
+        *([f"- {item}" for item in summary.get("clarifyingQuestions") or []] or ["- No clarifying questions are needed before dry-run."]),
         "",
         "## Retrieved Knowledge",
         "",

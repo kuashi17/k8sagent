@@ -5,7 +5,7 @@
 - Fixture: `generic-configmap-fixture`
 - Fixture requirement: `requirements/appconfig.txt`
 - Fixture profile: `profiles/appconfig.yaml`
-- Created at: `2026-06-17T21:01:33+09:00`
+- Created at: `2026-06-17T21:33:42+09:00`
 
 ## Safety Policy Tests
 
@@ -25,7 +25,7 @@
 
 - Status: `passed`
 - Runs: `1`
-- Run 1: exitCode=`0` logDir=`logs/agent/20260617-210133-169516`
+- Run 1: exitCode=`0` logDir=`logs/agent/20260617-213131-724441`
 
 ## Generic Fixture Kind Idempotency
 
