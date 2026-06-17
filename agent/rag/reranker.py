@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
+import os
 import sys
 import time
 from pathlib import Path
@@ -77,7 +79,7 @@ def rerank(
     raw = ""
     parsed: dict[str, Any] = {}
     try:
-        raw = chat_json(
+        raw = call_chat_json_with_hard_timeout(
             RERANKER_SYSTEM_PROMPT,
             RERANKER_PROMPT.format(query=query, candidates=json.dumps(compact_candidates, indent=2, ensure_ascii=False)),
         )
@@ -92,11 +94,40 @@ def rerank(
         "query": query,
         "rerankerModel": config_from_env().model,
         "fallbackUsed": fallback,
+        "fallbackReason": raw if fallback else "",
         "rawOutput": raw,
         "rankedResults": ranked[:final_top_n],
         "allRankedResults": ranked,
         "elapsedSeconds": round(time.time() - started, 3),
     }
+
+
+def call_chat_json_with_hard_timeout(system_prompt: str, user_prompt: str) -> str:
+    timeout_seconds = int(os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", "180"))
+    if timeout_seconds <= 0:
+        return chat_json(system_prompt, user_prompt)
+
+    queue: mp.Queue = mp.Queue(maxsize=1)
+    process = mp.Process(target=chat_worker, args=(system_prompt, user_prompt, queue), daemon=True)
+    process.start()
+    process.join(timeout_seconds)
+    if process.is_alive():
+        process.terminate()
+        process.join(2)
+        raise TimeoutError(f"reranker timed out after {timeout_seconds} seconds")
+    if queue.empty():
+        raise RuntimeError("reranker worker exited without output")
+    payload = queue.get()
+    if payload.get("ok"):
+        return str(payload.get("value") or "")
+    raise RuntimeError(str(payload.get("error") or "reranker worker failed"))
+
+
+def chat_worker(system_prompt: str, user_prompt: str, queue: Any) -> None:
+    try:
+        queue.put({"ok": True, "value": chat_json(system_prompt, user_prompt)})
+    except Exception as exc:  # noqa: BLE001
+        queue.put({"ok": False, "error": str(exc)})
 
 
 def normalize_reranker_output(parsed: dict[str, Any], candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -1,0 +1,276 @@
+metadata:
+  name: kubebuilder-agent-rag-evaluation
+  version: 0.1.0
+  source: internal-authored
+  description: Query set for comparing keyword, vector, hybrid, and hybrid-rerank retrieval modes.
+
+queries:
+  - id: appconfig-configmap-001
+    query: ConfigMap을 생성하는 AppConfig Operator를 만들고 싶다
+    category: requirement
+    expectedSources:
+      - knowledge-base/examples/appconfig.md
+      - knowledge-base/kubebuilder-guides/reconcile-pattern.md
+    expectedKeywords:
+      - AppConfig
+      - ConfigMap
+      - Reconcile
+    notes: AppConfig 예시와 Reconcile 문서가 상위에 나와야 함
+
+  - id: trainingjob-gpu-limit-001
+    query: TrainingJob spec.gpuCount를 nvidia.com/gpu limit으로 반영해야 한다
+    category: requirement
+    expectedSources:
+      - knowledge-base/examples/trainingjob.md
+      - knowledge-base/examples/gpu-pending-analysis.md
+      - knowledge-base/troubleshooting/insufficient-gpu.md
+    expectedKeywords:
+      - TrainingJob
+      - nvidia.com/gpu
+      - gpuCount
+    notes: GPU limit과 환경 warning 문서가 함께 검색되어야 함
+
+  - id: rediscache-statefulset-service-001
+    query: RedisCache Operator가 StatefulSet과 Service를 생성하도록 하고 싶다
+    category: requirement
+    expectedSources:
+      - knowledge-base/examples/rediscache.md
+      - knowledge-base/kubebuilder-guides/ownership-watches.md
+    expectedKeywords:
+      - RedisCache
+      - StatefulSet
+      - Service
+    notes: RedisCache profile/example 문서가 우선되어야 함
+
+  - id: invalid-field-type-001
+    query: make generate 중 brokenValue notatype 때문에 실패했다
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/invalid-go-field-type.md
+      - knowledge-base/examples/invalid-field-type-recovery.md
+      - knowledge-base/few-shot/invalid-field-type-recovery-plan.md
+    expectedKeywords:
+      - notatype
+      - invalid-field-type
+      - make generate
+    notes: 잘못된 필드 타입 복구 정책을 찾는 질의
+
+  - id: controller-gen-failure-001
+    query: controller-gen 실행이 실패했을 때 원인과 조치가 궁금하다
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/controller-gen-failure.md
+      - knowledge-base/kubebuilder-guides/make-generate.md
+    expectedKeywords:
+      - controller-gen
+      - marker
+      - generate
+    notes: controller-gen failure와 make generate 가이드가 검색되어야 함
+
+  - id: make-generate-failure-001
+    query: make generate 실패 로그를 분석해서 API 타입 문제인지 확인하고 싶다
+    category: validation
+    expectedSources:
+      - knowledge-base/troubleshooting/make-generate-failure.md
+      - knowledge-base/kubebuilder-guides/make-generate.md
+    expectedKeywords:
+      - make generate
+      - API type
+      - deepcopy
+    notes: generate 단계 특화 문서가 필요함
+
+  - id: make-manifests-failure-001
+    query: make manifests가 RBAC marker 오류로 실패한다
+    category: validation
+    expectedSources:
+      - knowledge-base/troubleshooting/make-manifests-failure.md
+      - knowledge-base/kubebuilder-guides/make-manifests.md
+      - knowledge-base/kubebuilder-guides/rbac-marker.md
+    expectedKeywords:
+      - make manifests
+      - RBAC
+      - marker
+    notes: manifests와 RBAC marker 문서를 찾아야 함
+
+  - id: rbac-forbidden-001
+    query: controller 로그에 configmaps is forbidden 권한 오류가 나온다
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/rbac-forbidden.md
+      - knowledge-base/examples/rbac-recovery.md
+      - knowledge-base/kubebuilder-guides/rbac-marker.md
+    expectedKeywords:
+      - forbidden
+      - RBAC
+      - configmaps
+    notes: 권한 부족과 복구 예시가 필요함
+
+  - id: pvc-not-found-001
+    query: Pod 이벤트에 persistentvolumeclaim missing-pvc not found 라고 나온다
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/pvc-not-found.md
+      - knowledge-base/examples/trainingjob.md
+    expectedKeywords:
+      - PVC
+      - not found
+      - pvcName
+    notes: PVC 참조 오류 문서가 상위에 나와야 함
+
+  - id: image-pull-backoff-001
+    query: 생성된 Pod가 ImagePullBackOff 상태다
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/image-pull-backoff.md
+    expectedKeywords:
+      - ImagePullBackOff
+      - image
+      - registry
+    notes: 이미지 pull 관련 문서를 검색해야 함
+
+  - id: insufficient-gpu-001
+    query: kind 클러스터에서 Insufficient nvidia.com/gpu 때문에 Pending인데 실패인가
+    category: environment-warning
+    expectedSources:
+      - knowledge-base/troubleshooting/insufficient-gpu.md
+      - knowledge-base/examples/gpu-pending-analysis.md
+      - knowledge-base/few-shot/warning-vs-failure-classification.md
+    expectedKeywords:
+      - Insufficient nvidia.com/gpu
+      - Pending
+      - warning
+    notes: 환경 warning과 실패 분류 차이를 찾아야 함
+
+  - id: status-update-001
+    query: Controller가 status.phase와 message를 어떻게 갱신해야 하나
+    category: generation
+    expectedSources:
+      - knowledge-base/kubebuilder-guides/status-update-pattern.md
+      - knowledge-base/kubebuilder-guides/spec-status-design.md
+      - knowledge-base/troubleshooting/status-update-forbidden.md
+    expectedKeywords:
+      - status
+      - phase
+      - status subresource
+    notes: status 설계와 update 패턴이 필요함
+
+  - id: finalizer-001
+    query: 외부 리소스를 정리하려면 finalizer를 써야 하나
+    category: generation
+    expectedSources:
+      - knowledge-base/kubebuilder-guides/finalizer-pattern.md
+    expectedKeywords:
+      - finalizer
+      - cleanup
+      - deletionTimestamp
+    notes: finalizer 패턴 문서가 검색되어야 함
+
+  - id: envtest-001
+    query: make test에서 envtest kube-apiserver 바이너리를 찾지 못한다
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/envtest-binary-missing.md
+      - knowledge-base/kubebuilder-guides/envtest.md
+    expectedKeywords:
+      - envtest
+      - kube-apiserver
+      - make test
+    notes: envtest 설정 문서가 필요함
+
+  - id: kind-e2e-001
+    query: kind 클러스터에서 CRD 설치부터 sample CR 적용까지 e2e 검증하고 싶다
+    category: validation
+    expectedSources:
+      - knowledge-base/kubebuilder-guides/kind-e2e-flow.md
+      - knowledge-base/troubleshooting/crd-not-installed.md
+    expectedKeywords:
+      - kind
+      - CRD
+      - e2e
+    notes: kind e2e 흐름과 CRD 설치 문서가 필요함
+
+  - id: crd-not-installed-001
+    query: no matches for kind AppConfig in version app.beginner.sample.io/v1alpha1
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/crd-not-installed.md
+      - knowledge-base/kubebuilder-guides/kind-e2e-flow.md
+    expectedKeywords:
+      - no matches for kind
+      - CRD
+      - kubectl
+    notes: CRD 미설치 오류를 찾아야 함
+
+  - id: spec-status-design-001
+    query: spec 필드와 status 필드를 어떻게 나눠야 하나
+    category: generation
+    expectedSources:
+      - knowledge-base/kubebuilder-guides/spec-status-design.md
+      - knowledge-base/kubebuilder-guides/api-crd-design.md
+    expectedKeywords:
+      - spec
+      - status
+      - observed
+    notes: API 설계 가이드 검색
+
+  - id: ownership-watch-001
+    query: ownerReference와 watches 설정으로 하위 리소스를 같이 정리하고 싶다
+    category: generation
+    expectedSources:
+      - knowledge-base/kubebuilder-guides/ownership-watches.md
+      - knowledge-base/kubebuilder-guides/reconcile-pattern.md
+    expectedKeywords:
+      - ownerReference
+      - Owns
+      - watches
+    notes: ownership/watch 가이드 검색
+
+  - id: requirement-tool-plan-001
+    query: 자연어 요구사항에서 spec 생성과 command plan 그리고 scaffold dry-run 순서를 잡고 싶다
+    category: requirement
+    expectedSources:
+      - knowledge-base/few-shot/requirement-to-tool-plan.md
+      - knowledge-base/kubebuilder-guides/basic-flow.md
+      - knowledge-base/few-shot/requirement-to-operator-spec.md
+    expectedKeywords:
+      - spec_generator
+      - command_planner
+      - scaffold_runner
+    notes: few-shot tool plan과 기본 흐름이 검색되어야 함
+
+  - id: successful-execution-evaluation-001
+    query: make generate manifests test가 모두 성공한 실행 결과를 어떻게 요약하나
+    category: validation
+    expectedSources:
+      - knowledge-base/few-shot/successful-execution-evaluation.md
+      - knowledge-base/kubebuilder-guides/make-generate.md
+      - knowledge-base/kubebuilder-guides/make-manifests.md
+    expectedKeywords:
+      - executionDecision
+      - succeeded
+      - make test
+    notes: 최종 평가 few-shot 검색
+
+  - id: validation-defaulting-001
+    query: CRD 필드에 validation marker와 default 값을 추가하려면 어떻게 해야 하나
+    category: generation
+    expectedSources:
+      - knowledge-base/kubebuilder-guides/validation-defaulting.md
+      - knowledge-base/kubebuilder-guides/api-crd-design.md
+    expectedKeywords:
+      - validation
+      - default
+      - marker
+    notes: validation/defaulting 가이드 검색
+
+  - id: reconcile-conflict-001
+    query: status 업데이트 중 object has been modified conflict 오류가 난다
+    category: troubleshooting
+    expectedSources:
+      - knowledge-base/troubleshooting/reconcile-conflict.md
+      - knowledge-base/kubebuilder-guides/status-update-pattern.md
+    expectedKeywords:
+      - conflict
+      - resourceVersion
+      - status
+    notes: reconcile conflict 문서 검색

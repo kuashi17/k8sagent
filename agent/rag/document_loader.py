@@ -143,6 +143,8 @@ def extract_title(text: str, path: Path) -> str:
 
 def category_for(path: Path) -> str:
     parts = set(path.parts)
+    if "few-shot" in parts:
+        return "few-shot"
     if "troubleshooting" in parts:
         return "troubleshooting"
     if "examples" in parts:

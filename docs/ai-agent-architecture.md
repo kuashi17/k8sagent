@@ -67,7 +67,7 @@ knowledge-base Markdown
   -> vector search
   -> keyword search
   -> hybrid score 결합
-  -> Local LLM reranker
+  -> optional Local LLM reranker
   -> Top 3 context
   -> LLM Planner 입력
 ```
@@ -84,15 +84,25 @@ knowledge-base Markdown
 
 RAG 관련 환경변수:
 
-- `RAG_MODE`, 기본값 `hybrid-rerank`
+- `RAG_MODE`, 기본값 `hybrid`
 - `RAG_TOP_K`, 기본값 `8`
 - `RAG_FINAL_TOP_N`, 기본값 `3`
-- `RAG_RERANK_ENABLED`, 기본값 `true`
+- `RAG_RERANK_ENABLED`, 기본값 `false`
 - `RAG_KEYWORD_FALLBACK`, 기본값 `true`
 - `OLLAMA_BASE_URL`, 기본값 `http://127.0.0.1:11434`
 - `LOCAL_EMBEDDING_MODEL`, 기본값 `nomic-embed-text`
 
 Vector index가 없거나 embedding model이 준비되지 않은 개발 환경에서는 keyword fallback을 사용할 수 있다. fallback 발생 여부는 Agent log의 `retrievalDetails.fallbackUsed`와 `selected-context.json`에서 확인한다.
+
+CPU 노트북 기본값은 Hybrid 검색이며 reranker는 꺼져 있다. reranker 검증이 필요할 때만 다음처럼 별도 실행한다.
+
+```bash
+export RAG_MODE=hybrid-rerank
+export RAG_RERANK_ENABLED=true
+export LOCAL_LLM_TIMEOUT_SECONDS=120
+```
+
+검색 품질은 `evaluation/rag-evaluation-dataset.yaml`과 `agent/evaluation/rag_evaluator.py`로 정량 평가한다. 평가기는 `keyword`, `vector`, `hybrid`, `hybrid-rerank`를 비교하고 Hit@1, Hit@3, Recall@3, Recall@5, MRR, 평균 latency, P95 latency, fallback count, reranker timeout count를 저장한다.
 
 Agent report에는 검색 결과만 나열하지 않고, LLM이 각 문서를 어떤 판단에 사용했는지도 별도 섹션으로 기록한다.
 

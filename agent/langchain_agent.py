@@ -166,7 +166,7 @@ def call_recovery_planner(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     query = build_failure_rag_query(failure_context)
-    retrieval = perform_retrieval(query, limit=3)
+    retrieval = perform_retrieval(query, limit=3, purpose="recovery")
     retrieved = retrieval["selectedContext"]
     successful = [item for item in execution["toolResults"] if item.get("exitCode") == 0]
     failed = failure_context.get("failedResult") or {}
@@ -266,7 +266,7 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
 
     analysis_path = source_log_dir / "analysis.md"
     analysis_text = analysis_path.read_text(encoding="utf-8") if analysis_path.is_file() else ""
-    retrieval = perform_retrieval(build_log_rag_query(source_summary, analysis_text), limit=3)
+    retrieval = perform_retrieval(build_log_rag_query(source_summary, analysis_text), limit=3, purpose="log-analysis")
     retrieved = retrieval["selectedContext"]
     planner_result = call_log_planner(source_summary, analysis_text, retrieved)
 
@@ -352,7 +352,7 @@ def build_requirement_context(
     summary = summarize_requirement(requirement_text)
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
-    retrieval = perform_retrieval(requirement_text, limit=3)
+    retrieval = perform_retrieval(requirement_text, limit=3, purpose="requirement")
     retrieved = retrieval["selectedContext"]
     return {
         "requirement": str(requirement_path),
@@ -375,9 +375,9 @@ def build_requirement_context(
     }
 
 
-def perform_retrieval(query: str, limit: int = 3) -> dict[str, Any]:
+def perform_retrieval(query: str, limit: int = 3, purpose: str = "requirement") -> dict[str, Any]:
     details = retrieve_knowledge_detailed(query, limit=limit)
-    selected = details.get("selectedContext") or []
+    selected = select_context(details, limit, purpose)
     return {
         "retrievalQuery": {"query": query},
         "retrievalMode": details.get("retrievalMode", ""),
@@ -394,6 +394,49 @@ def perform_retrieval(query: str, limit: int = 3) -> dict[str, Any]:
         "elapsedSeconds": details.get("elapsedSeconds"),
         "rerankerOutput": details.get("rerankerOutput") or {},
     }
+
+
+def select_context(details: dict[str, Any], limit: int, purpose: str) -> list[dict[str, Any]]:
+    pool = details.get("rerankedResults") or details.get("selectedContext") or details.get("hybridResults") or []
+    selected: list[dict[str, Any]] = []
+    used_sources: set[str] = set()
+
+    def add_matching(categories: set[str], max_count: int, context_type: str) -> None:
+        count = 0
+        for item in pool:
+            if count >= max_count or len(selected) >= limit:
+                return
+            source = str(item.get("sourcePath") or item.get("path") or "")
+            if not source or source in used_sources:
+                continue
+            if str(item.get("category") or "") not in categories:
+                continue
+            row = dict(item)
+            row["contextType"] = context_type
+            row["reason"] = row.get("reason") or f"Selected for {purpose} context from {row.get('category')} document."
+            selected.append(row)
+            used_sources.add(source)
+            count += 1
+
+    if purpose == "requirement":
+        add_matching({"guide", "troubleshooting"}, 2, "reference")
+        add_matching({"example", "few-shot"}, 1, "few-shot")
+    elif purpose in {"recovery", "log-analysis"}:
+        add_matching({"troubleshooting", "guide"}, 2, "reference")
+        add_matching({"few-shot", "example"}, 1, "few-shot")
+
+    for item in pool:
+        if len(selected) >= limit:
+            break
+        source = str(item.get("sourcePath") or item.get("path") or "")
+        if not source or source in used_sources:
+            continue
+        row = dict(item)
+        row["contextType"] = row.get("contextType") or ("few-shot" if row.get("category") in {"example", "few-shot"} else "reference")
+        row["reason"] = row.get("reason") or f"Selected as fallback context for {purpose}."
+        selected.append(row)
+        used_sources.add(source)
+    return selected[:limit]
 
 
 def execute_planned_tools(

@@ -63,10 +63,10 @@ def search_detailed(
     limit: int = 5,
     mode: str | None = None,
 ) -> dict[str, Any]:
-    mode = mode or os.environ.get("RAG_MODE", "hybrid-rerank")
+    mode = mode or os.environ.get("RAG_MODE", "hybrid")
     top_k = int(os.environ.get("RAG_TOP_K", "8"))
     final_top_n = int(os.environ.get("RAG_FINAL_TOP_N", str(limit)))
-    rerank_enabled = os.environ.get("RAG_RERANK_ENABLED", "true").lower() not in {"0", "false", "no"}
+    rerank_enabled = os.environ.get("RAG_RERANK_ENABLED", "false").lower() not in {"0", "false", "no"}
     allow_keyword_fallback = os.environ.get("RAG_KEYWORD_FALLBACK", "true").lower() not in {"0", "false", "no"}
     base = resolve_knowledge_dir(knowledge_dir)
     keyword_results = keyword_search(query, base, limit=max(limit, 5))
@@ -237,6 +237,8 @@ def category_for(path: Path) -> str:
         return "troubleshooting"
     if "examples" in parts:
         return "example"
+    if "few-shot" in parts:
+        return "few-shot"
     return "guide"
 
 
@@ -252,7 +254,7 @@ def main() -> int:
     parser.add_argument("--query", required=True, help="Search query text.")
     parser.add_argument("--knowledge-dir", default=str(DEFAULT_KNOWLEDGE_DIR), help="Knowledge-base directory.")
     parser.add_argument("--limit", type=int, default=5, help="Maximum number of results.")
-    parser.add_argument("--mode", default=os.environ.get("RAG_MODE", "hybrid-rerank"), choices=["keyword", "vector", "hybrid", "hybrid-rerank"])
+    parser.add_argument("--mode", default=os.environ.get("RAG_MODE", "hybrid"), choices=["keyword", "vector", "hybrid", "hybrid-rerank"])
     parser.add_argument("--json", action="store_true", help="Print detailed JSON.")
     args = parser.parse_args()
 
