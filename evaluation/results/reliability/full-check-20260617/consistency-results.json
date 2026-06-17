@@ -1,0 +1,122 @@
+{
+  "status": "passed",
+  "runs": [
+    {
+      "run": 1,
+      "exitCode": 0,
+      "status": "succeeded",
+      "elapsedSeconds": 1.363,
+      "logDir": "logs/agent/20260617-204437-772163",
+      "kind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": [
+        "artifact_patcher",
+        "validation"
+      ],
+      "decision": "succeeded"
+    },
+    {
+      "run": 2,
+      "exitCode": 0,
+      "status": "succeeded",
+      "elapsedSeconds": 1.429,
+      "logDir": "logs/agent/20260617-204439-187481",
+      "kind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": [
+        "artifact_patcher",
+        "validation"
+      ],
+      "decision": "succeeded"
+    },
+    {
+      "run": 3,
+      "exitCode": 0,
+      "status": "succeeded",
+      "elapsedSeconds": 1.37,
+      "logDir": "logs/agent/20260617-204440-557828",
+      "kind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": [
+        "artifact_patcher",
+        "validation"
+      ],
+      "decision": "succeeded"
+    }
+  ],
+  "consistentFields": [
+    {
+      "kind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": [
+        "artifact_patcher",
+        "validation"
+      ]
+    },
+    {
+      "kind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": [
+        "artifact_patcher",
+        "validation"
+      ]
+    },
+    {
+      "kind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": [
+        "artifact_patcher",
+        "validation"
+      ]
+    }
+  ],
+  "comparison": {
+    "sameKind": true,
+    "sameGeneratedFiles": true,
+    "sameValidatedTools": true,
+    "sameRejectedCount": true,
+    "sameDeferredTools": true
+  }
+}

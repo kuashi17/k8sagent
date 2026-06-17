@@ -192,6 +192,10 @@ class Runner:
             self.apply_sample()
             self.wait_configmap()
             self.wait_status()
+            if not self.args.skip_lifecycle:
+                self.verify_update()
+                self.verify_disabled()
+                self.verify_delete_and_restore()
             status = "succeeded"
         except Exception as exc:  # noqa: BLE001
             status = "failed"
@@ -316,6 +320,128 @@ class Runner:
             time.sleep(3)
         raise RuntimeError(f"AppConfig status was not updated: {last}")
 
+    def verify_update(self) -> None:
+        self.failed_step = "verify-update"
+        updated = load_yaml(self.sample)
+        updated.setdefault("spec", {}).setdefault("configData", {})
+        updated["spec"]["configData"]["LOG_LEVEL"] = "debug"
+        updated["spec"]["configData"]["FEATURE_FLAG"] = "false"
+        updated["spec"]["configData"]["UPDATED_BY"] = "kind-deployment-runner"
+        updated_sample = self.write_temp_sample("update", updated)
+        expected = expected_config_data(updated_sample)
+        self.run_cmd("kubectl-apply-updated-sample", ["kubectl", "apply", "-f", str(updated_sample)], timeout=120)
+        data = self.wait_configmap_data(expected, "updated")
+        status = self.wait_appconfig_phase("Ready", self.args.configmap_name, "updated")
+        self.checks["appConfigUpdate"] = {
+            "dataMatches": data == expected,
+            "expectedData": expected,
+            "actualData": data,
+            "status": status,
+        }
+
+    def verify_disabled(self) -> None:
+        self.failed_step = "verify-disabled"
+        disabled = load_yaml(self.sample)
+        disabled.setdefault("spec", {})["enabled"] = False
+        disabled_sample = self.write_temp_sample("disabled", disabled)
+        self.run_cmd("kubectl-apply-disabled-sample", ["kubectl", "apply", "-f", str(disabled_sample)], timeout=120)
+        status = self.wait_appconfig_phase("Disabled", "", "disabled")
+        absent = self.wait_configmap_absent()
+        self.checks["appConfigDisabled"] = {
+            "phase": status.get("phase"),
+            "configMapName": status.get("configMapName", ""),
+            "message": status.get("message", ""),
+            "configMapAbsent": absent,
+        }
+
+    def verify_delete_and_restore(self) -> None:
+        self.failed_step = "verify-delete"
+        self.run_cmd("kubectl-delete-appconfig", ["kubectl", "delete", "appconfig", self.args.sample_name, "--ignore-not-found"], timeout=120)
+        appconfig_deleted = self.wait_appconfig_absent()
+        configmap_deleted = self.wait_configmap_absent()
+        self.checks["appConfigDelete"] = {
+            "appConfigAbsent": appconfig_deleted,
+            "configMapAbsent": configmap_deleted,
+        }
+
+        self.failed_step = "restore-sample"
+        self.run_cmd("kubectl-restore-sample", ["kubectl", "apply", "-f", str(self.sample)], timeout=120)
+        restored_data = self.wait_configmap_data(expected_config_data(self.sample), "restored")
+        restored_status = self.wait_appconfig_phase("Ready", self.args.configmap_name, "restored")
+        self.checks["appConfigRestore"] = {
+            "dataMatches": restored_data == expected_config_data(self.sample),
+            "status": restored_status,
+        }
+
+    def wait_configmap_data(self, expected: dict[str, str], label: str) -> dict[str, str]:
+        deadline = time.time() + parse_duration_seconds(self.args.timeout)
+        last: dict[str, str] = {}
+        while time.time() < deadline:
+            result = self.run_cmd(
+                f"kubectl-get-configmap-{label}",
+                ["kubectl", "get", "configmap", self.args.configmap_name, "-o", "json"],
+                check=False,
+            )
+            if result["exitCode"] == 0:
+                configmap = json.loads(result["stdout"])
+                data = {str(key): str(value) for key, value in (configmap.get("data") or {}).items()}
+                last = data
+                if data == expected:
+                    return data
+            time.sleep(3)
+        raise RuntimeError(f"ConfigMap data did not match for {label}: expected={expected}, actual={last}")
+
+    def wait_appconfig_phase(self, phase: str, configmap_name: str, label: str) -> dict[str, Any]:
+        deadline = time.time() + parse_duration_seconds(self.args.timeout)
+        last: dict[str, Any] = {}
+        while time.time() < deadline:
+            result = self.run_cmd(
+                f"kubectl-get-appconfig-status-{label}",
+                ["kubectl", "get", "appconfig", self.args.sample_name, "-o", "json"],
+                check=False,
+            )
+            if result["exitCode"] == 0:
+                appconfig = json.loads(result["stdout"])
+                status = appconfig.get("status") or {}
+                last = status
+                if status.get("phase") == phase and status.get("configMapName", "") == configmap_name:
+                    return status
+            time.sleep(3)
+        raise RuntimeError(f"AppConfig phase did not become {phase}: {last}")
+
+    def wait_configmap_absent(self) -> bool:
+        deadline = time.time() + parse_duration_seconds(self.args.timeout)
+        while time.time() < deadline:
+            result = self.run_cmd(
+                "kubectl-get-configmap-absent",
+                ["kubectl", "get", "configmap", self.args.configmap_name, "-o", "json"],
+                check=False,
+            )
+            if result["exitCode"] != 0 and is_not_found(result):
+                mark_expected_not_found(result)
+                return True
+            time.sleep(3)
+        return False
+
+    def wait_appconfig_absent(self) -> bool:
+        deadline = time.time() + parse_duration_seconds(self.args.timeout)
+        while time.time() < deadline:
+            result = self.run_cmd(
+                "kubectl-get-appconfig-absent",
+                ["kubectl", "get", "appconfig", self.args.sample_name, "-o", "json"],
+                check=False,
+            )
+            if result["exitCode"] != 0 and is_not_found(result):
+                mark_expected_not_found(result)
+                return True
+            time.sleep(3)
+        return False
+
+    def write_temp_sample(self, suffix: str, data: dict[str, Any]) -> Path:
+        temp = self.log_dir / f"{self.sample.stem}-{suffix}.yaml"
+        temp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        return temp
+
     def run_cmd(
         self,
         name: str,
@@ -381,9 +507,24 @@ class Runner:
 
 
 def expected_config_data(sample: Path) -> dict[str, str]:
-    data = yaml.safe_load(sample.read_text(encoding="utf-8"))
+    data = load_yaml(sample)
     spec = data.get("spec") or {}
     return {str(key): str(value) for key, value in (spec.get("configData") or {}).items()}
+
+
+def load_yaml(path: Path) -> dict[str, Any]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def is_not_found(result: dict[str, Any]) -> bool:
+    text = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
+    return "NotFound" in text or "not found" in text
+
+
+def mark_expected_not_found(result: dict[str, Any]) -> None:
+    result["status"] = "succeeded"
+    result["expectedNotFound"] = True
 
 
 def parse_duration_seconds(value: str) -> int:
@@ -418,6 +559,7 @@ def main() -> int:
     parser.add_argument("--configmap-name", default=DEFAULT_CONFIGMAP_NAME)
     parser.add_argument("--timeout", default="180s")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--skip-lifecycle", action="store_true", help="Skip update, disabled, delete, and restore lifecycle checks.")
     args = parser.parse_args()
     return Runner(args).run()
 

@@ -35,7 +35,9 @@ def main() -> int:
     parser.add_argument("--output-dir", default="", help="Output directory. Defaults to evaluation/results/reliability/<timestamp>.")
     parser.add_argument("--requirement", default=DEFAULT_REQUIREMENT)
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
-    parser.add_argument("--agent-runs", type=int, default=3)
+    parser.add_argument("--sample", default=DEFAULT_SAMPLE)
+    parser.add_argument("--level", choices=["fast", "full"], default="fast", help="fast uses cache and one Agent dry-run; full uses three runs and kind idempotency.")
+    parser.add_argument("--agent-runs", type=int, default=0)
     parser.add_argument("--skip-agent-consistency", action="store_true")
     parser.add_argument("--skip-kind-idempotency", action="store_true")
     args = parser.parse_args()
@@ -46,19 +48,21 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     reliability = run_policy_tests()
+    agent_runs = args.agent_runs or (1 if args.level == "fast" else 3)
     consistency = (
         {"skipped": True, "reason": "--skip-agent-consistency was provided."}
         if args.skip_agent_consistency
-        else run_agent_consistency(args.requirement, args.profile, args.agent_runs)
+        else run_agent_consistency(args.requirement, args.profile, agent_runs)
     )
     kind_idempotency = (
-        {"skipped": True, "reason": "--skip-kind-idempotency was provided."}
-        if args.skip_kind_idempotency
-        else run_kind_idempotency(Path(args.sample) if hasattr(args, "sample") else Path(DEFAULT_SAMPLE))
+        {"skipped": True, "reason": "--skip-kind-idempotency was provided or level=fast."}
+        if args.skip_kind_idempotency or args.level == "fast"
+        else run_kind_idempotency(Path(args.sample))
     )
 
     summary = {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "level": args.level,
         "status": overall_status(reliability, consistency, kind_idempotency),
         "reliability": reliability,
         "consistency": consistency,
@@ -117,6 +121,7 @@ def run_policy_tests() -> dict[str, Any]:
     tests.append(check_external_workspace_path())
     tests.append(check_execute_gate(supported_calls))
     tests.append(check_recovery_auto_execution(context))
+    tests.append(check_invalid_field_type_recovery_policy())
 
     return {
         "status": "passed" if all(item["passed"] for item in tests) else "failed",
@@ -231,6 +236,71 @@ def check_recovery_auto_execution(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def check_invalid_field_type_recovery_policy() -> dict[str, Any]:
+    temp_dir = REPO_ROOT / "evaluation" / "tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = temp_dir / "brokenconfig-invalid-type-spec.yaml"
+    spec_path.write_text(
+        yaml.safe_dump(
+            {
+                "project": {"name": "broken-config-operator"},
+                "api": {"group": "app", "version": "v1alpha1", "kind": "BrokenConfig"},
+                "specFields": [{"name": "brokenValue", "type": "notatype"}],
+                "statusFields": [{"name": "phase", "type": "string"}],
+                "errors": [],
+                "warnings": [],
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    context = fake_context()
+    context["generatedFiles"] = {
+        "operatorSpec": str(spec_path),
+        "commandPlan": "generated/brokenconfig-command-plan.md",
+    }
+    raw_plan = {
+        "decision": "recovery-required",
+        "classification": "controller-gen-version",
+        "rootCause": "controller-gen failed",
+        "evidence": ["notatype"],
+        "proposedFixes": ["rerun controller-gen", "check Go version"],
+        "recoveryToolCalls": [
+            {"tool": "controller-gen", "mode": "execute", "reason": "rerun generator", "requiresApproval": True},
+            {"tool": "go_version_checker", "mode": "execute", "reason": "check Go", "requiresApproval": True},
+        ],
+        "rerunFromStep": "controller-gen",
+        "risks": [],
+        "beginnerSummary": "generator failed",
+    }
+    policy = agent.validate_recovery_plan(
+        raw_plan,
+        {"failedTool": "validation", "failedStep": "make generate", "stderrTail": "undefined: notatype"},
+        context,
+    )
+    plan = policy["validatedRecoveryPlan"]
+    rejected_tools = {item.get("tool") for item in plan.get("rejectedRecoveryToolCalls") or []}
+    validated_tools = [item.get("tool") for item in plan.get("validatedRecoveryToolCalls") or []]
+    passed = (
+        plan.get("classification") == "invalid-field-type"
+        and "controller-gen" in rejected_tools
+        and "go_version_checker" in rejected_tools
+        and validated_tools[:4] == ["requirement_editor", "spec_generator", "artifact_patcher", "validation"]
+        and all(item.get("requiresApproval") is True for item in plan.get("validatedRecoveryToolCalls") or [])
+        and plan.get("status") == "waiting-for-user-approval"
+    )
+    spec_path.unlink(missing_ok=True)
+    return {
+        "name": "invalid-field-type-recovery-policy",
+        "passed": passed,
+        "expected": "unsupported field type recovery starts with requirement/spec correction and rejects unrelated tools",
+        "classification": plan.get("classification"),
+        "validatedRecoveryToolCalls": plan.get("validatedRecoveryToolCalls") or [],
+        "rejectedRecoveryToolCalls": plan.get("rejectedRecoveryToolCalls") or [],
+    }
+
+
 def run_agent_consistency(requirement: str, profile: str, runs: int) -> dict[str, Any]:
     records = []
     for index in range(runs):
@@ -245,6 +315,8 @@ def run_agent_consistency(requirement: str, profile: str, runs: int) -> dict[str
                 profile,
                 "--mode",
                 "dry-run",
+                "--run-level",
+                "fast",
             ],
             timeout=420,
         )
@@ -472,6 +544,7 @@ def render_report(summary: dict[str, Any]) -> str:
         "# Agent Reliability Test Report",
         "",
         f"- Overall status: `{summary['status']}`",
+        f"- Level: `{summary.get('level')}`",
         f"- Created at: `{summary['createdAt']}`",
         "",
         "## Safety Policy Tests",

@@ -961,6 +961,54 @@ Web UI에서 할 수 있는 작업:
 
 안전을 위해 Web UI는 실제 scaffold/e2e `--execute` 버튼을 제공하지 않습니다. 실제 변경 작업은 CLI에서 명시적으로 `--execute`를 사용할 때만 수행합니다.
 
+## 신뢰성/응답속도 검증
+
+오프라인 Local LLM Agent는 모델 응답, Tool 실행, Kubernetes 검증이 함께 얽히기 때문에 “빠르게 반복 가능한 검증”과 “실제 클러스터 검증”을 분리합니다.
+
+빠른 정책/캐시 검증:
+
+```bash
+python3 agent/evaluation/reliability_test_runner.py \
+  --level fast \
+  --output-dir evaluation/results/reliability/fast-check
+```
+
+`fast` 모드는 다음을 확인합니다.
+
+- LLM 출력 JSON schema 검증
+- Tool allowlist, 필수 인자, 임의 shell 명령 차단
+- `--execute` 없는 변경 Tool dry-run 강제
+- Recovery Tool 자동 실행 차단
+- invalid field type 복구 정책 검증
+- Agent dry-run 1회 실행
+- kind 클러스터 재적용 검증은 생략
+
+전체 신뢰성 검증:
+
+```bash
+python3 agent/evaluation/reliability_test_runner.py \
+  --level full \
+  --output-dir evaluation/results/reliability/full-check
+```
+
+`full` 모드는 fast 검증에 더해 AppConfig Agent dry-run 3회 일관성 비교와 kind 기반 멱등성 검증을 수행합니다. Agent 실행은 로컬 캐시를 활용하므로 같은 requirement와 profile, 모델 설정에서는 반복 실행 시간이 줄어듭니다.
+
+AppConfig kind 배포 검증:
+
+```bash
+python3 agent/tools/kind_deployment_runner.py
+```
+
+이 검증은 생성된 AppConfig Operator를 kind 클러스터에 실제 배포하고 다음 lifecycle을 확인합니다.
+
+- AppConfig 생성 시 ConfigMap 생성
+- `configData` 변경 시 ConfigMap update
+- `enabled=false` 변경 시 ConfigMap 삭제 및 status `Disabled`
+- AppConfig 삭제 시 하위 ConfigMap 정리
+- 원본 sample 재적용 시 ConfigMap/status 복구
+
+실행 로그는 `logs/kind-deployment/<timestamp>/summary.json`에 저장됩니다.
+
 ## 스펙 기반 Kubebuilder Scaffold
 
 구조화 스펙 YAML을 기반으로 Kubebuilder 프로젝트를 생성할 수 있습니다.
