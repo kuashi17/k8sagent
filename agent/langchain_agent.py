@@ -25,7 +25,7 @@ from agent.llm.planner import (  # noqa: E402
     plan_recovery_with_llm,
     plan_requirement_with_llm,
 )
-from agent.rag.retriever import search as retrieve_knowledge  # noqa: E402
+from agent.rag.retriever import search_detailed as retrieve_knowledge_detailed  # noqa: E402
 from agent.tools import langchain_wrappers as tools  # noqa: E402
 
 
@@ -166,7 +166,8 @@ def call_recovery_planner(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     query = build_failure_rag_query(failure_context)
-    retrieved = retrieve_knowledge(query, limit=8)[:3]
+    retrieval = perform_retrieval(query, limit=3)
+    retrieved = retrieval["selectedContext"]
     successful = [item for item in execution["toolResults"] if item.get("exitCode") == 0]
     failed = failure_context.get("failedResult") or {}
     llm_input = {
@@ -201,6 +202,7 @@ def call_recovery_planner(
     result["policyEvaluation"] = policy["policyEvaluation"]
     result["rejectedRecoveryToolCalls"] = policy["rejectedRecoveryToolCalls"]
     result["retrievedTroubleshootingDocs"] = retrieved
+    result["retrievalDetails"] = retrieval
     return result
 
 
@@ -264,7 +266,8 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
 
     analysis_path = source_log_dir / "analysis.md"
     analysis_text = analysis_path.read_text(encoding="utf-8") if analysis_path.is_file() else ""
-    retrieved = retrieve_knowledge(build_log_rag_query(source_summary, analysis_text), limit=8)[:5]
+    retrieval = perform_retrieval(build_log_rag_query(source_summary, analysis_text), limit=3)
+    retrieved = retrieval["selectedContext"]
     planner_result = call_log_planner(source_summary, analysis_text, retrieved)
 
     errors = [] if analyzer_result["exitCode"] == 0 else ["log_analyzer failed"]
@@ -283,6 +286,7 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
         "createdAt": now_iso(),
         "logAnalyzerResult": analyzer_result,
         "retrievedKnowledge": retrieved,
+        "retrievalDetails": retrieval,
         "llmAnalysis": planner_result.get("llmOutput") or {},
         "ragEvidence": extract_list(planner_result.get("llmOutput") or {}, "ragEvidence"),
         "warnings": source_summary.get("warnings") or [],
@@ -348,12 +352,14 @@ def build_requirement_context(
     summary = summarize_requirement(requirement_text)
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
-    retrieved = retrieve_knowledge(requirement_text, limit=5)
+    retrieval = perform_retrieval(requirement_text, limit=3)
+    retrieved = retrieval["selectedContext"]
     return {
         "requirement": str(requirement_path),
         "requirementSummary": summary,
         "missingInformation": missing_information(summary, requirement_text),
         "retrievedKnowledge": retrieved,
+        "retrievalDetails": retrieval,
         "selectedProfile": {
             "path": profile_path or "",
             "name": profile.get("profileName", ""),
@@ -366,6 +372,27 @@ def build_requirement_context(
             "operatorSpec": f"generated/{kind_slug}-operator-spec.yaml",
             "commandPlan": f"generated/{kind_slug}-command-plan.md",
         },
+    }
+
+
+def perform_retrieval(query: str, limit: int = 3) -> dict[str, Any]:
+    details = retrieve_knowledge_detailed(query, limit=limit)
+    selected = details.get("selectedContext") or []
+    return {
+        "retrievalQuery": {"query": query},
+        "retrievalMode": details.get("retrievalMode", ""),
+        "vectorSearchResults": details.get("vectorSearchResults") or [],
+        "keywordSearchResults": details.get("keywordSearchResults") or [],
+        "hybridResults": details.get("hybridResults") or [],
+        "rerankedResults": details.get("rerankedResults") or [],
+        "selectedContext": selected[:limit],
+        "fallbackUsed": bool(details.get("fallbackUsed")),
+        "fallbackReason": details.get("fallbackReason", ""),
+        "embeddingModel": details.get("embeddingModel", ""),
+        "embeddingDimension": details.get("embeddingDimension"),
+        "rerankerModel": details.get("rerankerModel", ""),
+        "elapsedSeconds": details.get("elapsedSeconds"),
+        "rerankerOutput": details.get("rerankerOutput") or {},
     }
 
 
@@ -919,6 +946,7 @@ def build_requirement_summary(
         "requirementSummary": context["requirementSummary"],
         "missingInformation": context["missingInformation"],
         "retrievedKnowledge": context["retrievedKnowledge"],
+        "retrievalDetails": context.get("retrievalDetails") or {},
         "selectedProfile": context["selectedProfile"],
         "llmPlan": planner_result.get("llmOutput") or {},
         "llmReasoning": extract_list(planner_result.get("llmOutput") or {}, "reasoning"),
@@ -946,6 +974,7 @@ def build_requirement_summary(
             "policyEvaluation": (recovery_result or {}).get("policyEvaluation") or {},
             "rejectedRecoveryToolCalls": (recovery_result or {}).get("rejectedRecoveryToolCalls") or [],
             "retrievedTroubleshootingDocs": (recovery_result or {}).get("retrievedTroubleshootingDocs") or [],
+            "retrievalDetails": (recovery_result or {}).get("retrievalDetails") or {},
         },
         "warnings": collect_warnings(tool_results, context),
         "errors": errors,
@@ -1470,6 +1499,36 @@ def write_agent_artifacts(
         encoding="utf-8",
     )
     (log_dir / "retrieved-docs.json").write_text(json.dumps(retrieved_docs, indent=2, ensure_ascii=False), encoding="utf-8")
+    retrieval = summary.get("retrievalDetails") or {}
+    if retrieval:
+        (log_dir / "retrieval-query.json").write_text(
+            json.dumps(retrieval.get("retrievalQuery") or {}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "vector-results.json").write_text(
+            json.dumps(retrieval.get("vectorSearchResults") or [], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "keyword-results.json").write_text(
+            json.dumps(retrieval.get("keywordSearchResults") or [], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "hybrid-results.json").write_text(
+            json.dumps(retrieval.get("hybridResults") or [], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "reranker-input.json").write_text(
+            json.dumps((retrieval.get("rerankerOutput") or {}).get("allRankedResults") or [], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "reranker-output.json").write_text(
+            json.dumps(retrieval.get("rerankerOutput") or {}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (log_dir / "selected-context.json").write_text(
+            json.dumps(retrieval.get("selectedContext") or [], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
     (log_dir / "tool-results.json").write_text(json.dumps(tool_results, indent=2, ensure_ascii=False), encoding="utf-8")
     write_tool_output_logs(log_dir, tool_results)
     (log_dir / "llm-raw-output.txt").write_text(planner_result.get("rawOutput") or "", encoding="utf-8")
@@ -1501,6 +1560,12 @@ def write_agent_artifacts(
             json.dumps(recovery.get("retrievedTroubleshootingDocs") or [], indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        recovery_retrieval = recovery.get("retrievalDetails") or {}
+        if recovery_retrieval:
+            (log_dir / "recovery-retrieval-details.json").write_text(
+                json.dumps(recovery_retrieval, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
         (log_dir / "raw-recovery-plan.json").write_text(
             json.dumps(recovery.get("rawPlan") or {}, indent=2, ensure_ascii=False),
             encoding="utf-8",

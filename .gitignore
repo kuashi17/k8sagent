@@ -6,6 +6,7 @@ generated/*
 !generated/*.yaml
 workspace/*
 !workspace/.gitkeep
+knowledge-base/.index/
 
 # Local environment files
 .env

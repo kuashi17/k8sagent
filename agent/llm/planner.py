@@ -184,10 +184,17 @@ def compact_retrieved_docs(docs: list[dict[str, Any]], excerpt_limit: int = 900)
         compacted.append(
             {
                 "path": item.get("path", ""),
+                "sourcePath": item.get("sourcePath", item.get("path", "")),
                 "title": item.get("title", ""),
+                "category": item.get("category", ""),
                 "matchedKeywords": (item.get("matchedKeywords") or [])[:20],
                 "excerpt": str(item.get("excerpt", ""))[:excerpt_limit],
                 "score": item.get("score"),
+                "vectorScore": item.get("vectorScore"),
+                "keywordScore": item.get("keywordScore"),
+                "combinedScore": item.get("combinedScore"),
+                "rerankScore": item.get("rerankScore"),
+                "rerankReason": item.get("reason"),
             }
         )
     return compacted

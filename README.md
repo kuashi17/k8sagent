@@ -675,7 +675,40 @@ generated/redis-cache-operator-spec.yaml
 
 본 시스템은 LLM planner 기반 Agent 구조를 사용합니다. Agent는 요구사항을 요약하고, `knowledge-base` 문서를 검색한 뒤, LLM planner가 실행 계획을 JSON으로 생성하고, 기존 CLI 도구를 Tool wrapper로 호출합니다.
 
-RAG는 현재 로컬 Markdown `knowledge-base` 검색으로 구현되어 있습니다. Vector DB와 Reranker는 이후 확장 지점입니다.
+RAG는 로컬 Markdown `knowledge-base`를 대상으로 동작합니다. 현재는 keyword 검색을 fallback으로 유지하면서, Ollama embedding과 FAISS index를 사용하는 Hybrid RAG를 지원합니다.
+
+```text
+knowledge-base Markdown
+  -> chunk 분할
+  -> Ollama embedding
+  -> FAISS index
+  -> vector search + keyword search
+  -> Local LLM reranker
+  -> Top 3 context
+  -> LLM planner 입력
+```
+
+RAG index 생성:
+
+```bash
+ollama pull nomic-embed-text
+
+python3 agent/rag/build_index.py \
+  --knowledge-base knowledge-base \
+  --index-dir knowledge-base/.index \
+  --rebuild
+```
+
+검색 테스트:
+
+```bash
+python3 agent/rag/retriever.py \
+  --query "ConfigMap을 생성하는 AppConfig Operator" \
+  --mode hybrid-rerank \
+  --json
+```
+
+index가 없거나 embedding model이 준비되지 않은 개발 환경에서는 keyword fallback을 사용할 수 있으며, fallback 여부는 `logs/agent/<timestamp>/selected-context.json`과 `summary.json`에 기록됩니다.
 
 MVP는 안전을 위해 기본 dry-run 중심입니다. 실제 scaffold, patch, e2e 실행은 별도 `--execute`가 명시될 때만 수행합니다.
 

@@ -52,7 +52,7 @@ Context:
 Requirement text:
 {requirement_text}
 
-Retrieved knowledge docs:
+Reference Knowledge and Few-shot Examples:
 {retrieved_docs}
 
 Profile summary:
@@ -66,6 +66,8 @@ Tool planning rules:
 - For execute mode, include spec_generator, command_planner, scaffold_runner, artifact_patcher, and validation.
 - validation means the fixed allowlisted sequence: make generate, make manifests, make test.
 - Do not invent shell commands or tools outside the listed Tool names.
+- Documents with category "example" are few-shot examples. Use their structure as guidance, but do not copy fields or domain values unless the current requirement asks for them.
+- Documents with category "guide" or "troubleshooting" are reference knowledge. Ground planning decisions in these documents when relevant.
 """
 
 
