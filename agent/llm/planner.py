@@ -29,6 +29,8 @@ def plan_requirement_with_llm(
     retrieved_docs: list[dict[str, Any]],
     profile_summary: dict[str, Any],
     safety_mode: str,
+    intent_analysis: dict[str, Any] | None = None,
+    profile_candidates: list[dict[str, Any]] | None = None,
     config: LLMConfig | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     compact_docs = compact_retrieved_docs(retrieved_docs)
@@ -36,13 +38,17 @@ def plan_requirement_with_llm(
         "mode": "requirement-planning",
         "requirementText": requirement_text,
         "retrievedDocs": compact_docs,
+        "intentAnalysis": intent_analysis or {},
         "profileSummary": profile_summary,
+        "profileCandidates": profile_candidates or [],
         "safetyMode": safety_mode,
     }
     prompt = REQUIREMENT_PLANNER_PROMPT.format(
         requirement_text=requirement_text,
         retrieved_docs=json.dumps(compact_docs, ensure_ascii=False, indent=2),
+        intent_analysis=json.dumps(intent_analysis or {}, ensure_ascii=False, indent=2),
         profile_summary=json.dumps(profile_summary, ensure_ascii=False, indent=2),
+        profile_candidates=json.dumps(profile_candidates or [], ensure_ascii=False, indent=2),
         safety_mode=safety_mode,
     )
     raw = chat_json(SYSTEM_PROMPT, prompt, config)

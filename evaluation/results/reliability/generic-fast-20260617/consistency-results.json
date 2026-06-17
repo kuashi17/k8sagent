@@ -1,0 +1,44 @@
+{
+  "status": "passed",
+  "runs": [
+    {
+      "run": 1,
+      "exitCode": 0,
+      "status": "succeeded",
+      "elapsedSeconds": 1.512,
+      "logDir": "logs/agent/20260617-210133-169516",
+      "fixtureKind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": [],
+      "decision": "succeeded"
+    }
+  ],
+  "consistentFields": [
+    {
+      "fixtureKind": "AppConfig",
+      "operatorSpec": "generated/appconfig-operator-spec.yaml",
+      "commandPlan": "generated/appconfig-command-plan.md",
+      "validatedTools": [
+        "spec_generator",
+        "command_planner",
+        "scaffold_runner"
+      ],
+      "rejectedCount": 0,
+      "deferredTools": []
+    }
+  ],
+  "comparison": {
+    "sameFixtureKind": true,
+    "sameGeneratedFiles": true,
+    "sameValidatedTools": true,
+    "sameRejectedCount": true,
+    "sameDeferredTools": true
+  }
+}

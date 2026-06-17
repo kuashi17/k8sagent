@@ -11,6 +11,8 @@ Principles:
 - Identify missing information explicitly.
 - Use retrieved RAG documents as evidence. If something is not in the documents, mark it as an inference.
 - Explain which retrieved document supports each important decision.
+- Treat profiles as optional hints or examples, not as fixed product templates.
+- Plan from the current user requirement first. Do not force AppConfig, TrainingJob, RedisCache, or any example profile when the requirement does not ask for it.
 - Create executable Tool call plans, but do not execute tools yourself.
 - For safety, if execute is not explicitly allowed, scaffold, patch, and e2e tools must stay in dry-run mode.
 - Return JSON only. Do not wrap JSON in Markdown.
@@ -55,8 +57,14 @@ Requirement text:
 Reference Knowledge and Few-shot Examples:
 {retrieved_docs}
 
-Profile summary:
+Requirement intent analysis:
+{intent_analysis}
+
+Selected profile hint:
 {profile_summary}
+
+Other profile candidates:
+{profile_candidates}
 
 Safety mode:
 {safety_mode}
@@ -68,6 +76,8 @@ Tool planning rules:
 - Do not invent shell commands or tools outside the listed Tool names.
 - Documents with category "example" are few-shot examples. Use their structure as guidance, but do not copy fields or domain values unless the current requirement asks for them.
 - Documents with category "guide" or "troubleshooting" are reference knowledge. Ground planning decisions in these documents when relevant.
+- The selected profile is a hint for defaults/e2e rules only. The actual Operator kind, fields, managed resources, and workflow must come from the requirement text.
+- If important information is missing, list it in missingInformation and keep mutating steps dry-run unless the user explicitly provided enough detail and --execute is allowed.
 """
 
 

@@ -28,6 +28,7 @@ DEFAULT_CLUSTER_CONTEXT = "kind-appconfig-deploy"
 DEFAULT_SAMPLE = "workspace/generated-operators/app-config-operator/config/samples/app_v1alpha1_appconfig.yaml"
 DEFAULT_APPCONFIG_NAME = "appconfig-sample"
 DEFAULT_CONFIGMAP_NAME = "appconfig-sample-config"
+DEFAULT_FIXTURE_NAME = "generic-configmap-fixture"
 
 
 def main() -> int:
@@ -36,6 +37,7 @@ def main() -> int:
     parser.add_argument("--requirement", default=DEFAULT_REQUIREMENT)
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
     parser.add_argument("--sample", default=DEFAULT_SAMPLE)
+    parser.add_argument("--fixture-name", default=DEFAULT_FIXTURE_NAME)
     parser.add_argument("--level", choices=["fast", "full"], default="fast", help="fast uses cache and one Agent dry-run; full uses three runs and kind idempotency.")
     parser.add_argument("--agent-runs", type=int, default=0)
     parser.add_argument("--skip-agent-consistency", action="store_true")
@@ -63,6 +65,9 @@ def main() -> int:
     summary = {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "level": args.level,
+        "fixtureName": args.fixture_name,
+        "fixtureRequirement": args.requirement,
+        "fixtureProfile": args.profile,
         "status": overall_status(reliability, consistency, kind_idempotency),
         "reliability": reliability,
         "consistency": consistency,
@@ -329,7 +334,7 @@ def run_agent_consistency(requirement: str, profile: str, runs: int) -> dict[str
                 "status": result["status"],
                 "elapsedSeconds": round(time.time() - started, 3),
                 "logDir": log_dir,
-                "kind": ((summary.get("requirementSummary") or {}).get("kind")),
+                "fixtureKind": ((summary.get("requirementSummary") or {}).get("kind")),
                 "operatorSpec": ((summary.get("generatedFiles") or {}).get("operatorSpec")),
                 "commandPlan": ((summary.get("generatedFiles") or {}).get("commandPlan")),
                 "validatedTools": [item.get("tool") for item in summary.get("validatedToolCalls") or []],
@@ -340,7 +345,7 @@ def run_agent_consistency(requirement: str, profile: str, runs: int) -> dict[str
         )
     comparable = [
         {
-            "kind": item["kind"],
+            "fixtureKind": item["fixtureKind"],
             "operatorSpec": item["operatorSpec"],
             "commandPlan": item["commandPlan"],
             "validatedTools": item["validatedTools"],
@@ -355,7 +360,7 @@ def run_agent_consistency(requirement: str, profile: str, runs: int) -> dict[str
         "runs": records,
         "consistentFields": comparable,
         "comparison": {
-            "sameKind": len({item["kind"] for item in records}) == 1,
+            "sameFixtureKind": len({item["fixtureKind"] for item in records}) == 1,
             "sameGeneratedFiles": len({(item["operatorSpec"], item["commandPlan"]) for item in records}) == 1,
             "sameValidatedTools": len({tuple(item["validatedTools"]) for item in records}) == 1,
             "sameRejectedCount": len({item["rejectedCount"] for item in records}) == 1,
@@ -451,7 +456,7 @@ def fake_context(workspace: str = "workspace/generated-operators") -> dict[str, 
             "commandPlan": "generated/appconfig-command-plan.md",
         },
         "selectedProfile": {"path": DEFAULT_PROFILE},
-        "requirementSummary": {"kind": "AppConfig", "group": "app", "version": "v1alpha1"},
+        "requirementSummary": {"kind": "GenericFixture", "group": "fixture", "version": "v1alpha1"},
         "missingInformation": [],
     }
 
@@ -545,6 +550,9 @@ def render_report(summary: dict[str, Any]) -> str:
         "",
         f"- Overall status: `{summary['status']}`",
         f"- Level: `{summary.get('level')}`",
+        f"- Fixture: `{summary.get('fixtureName')}`",
+        f"- Fixture requirement: `{summary.get('fixtureRequirement')}`",
+        f"- Fixture profile: `{summary.get('fixtureProfile')}`",
         f"- Created at: `{summary['createdAt']}`",
         "",
         "## Safety Policy Tests",
@@ -557,7 +565,7 @@ def render_report(summary: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## Agent Dry-Run Consistency",
+        "## Generic Fixture Agent Dry-Run Consistency",
             "",
             f"- Status: `{consistency.get('status', 'skipped')}`",
             f"- Runs: `{len(consistency.get('runs') or [])}`",
@@ -568,12 +576,12 @@ def render_report(summary: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## Kind Idempotency",
+        "## Generic Fixture Kind Idempotency",
             "",
             f"- Status: `{kind.get('status', 'skipped')}`",
             f"- Reapply idempotent: `{kind.get('reapplyIdempotent')}`",
             f"- Spec change idempotent: `{kind.get('specChangeIdempotent')}`",
-            f"- AppConfig status: `{json.dumps(kind.get('appConfigStatus') or {}, ensure_ascii=False)}`",
+            f"- Fixture CR status: `{json.dumps(kind.get('appConfigStatus') or {}, ensure_ascii=False)}`",
             "",
             "## Generated Result Files",
             "",

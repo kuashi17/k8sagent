@@ -28,6 +28,7 @@ from agent.llm.planner import (  # noqa: E402
     plan_requirement_with_llm,
 )
 from agent.rag.retriever import search_detailed as retrieve_knowledge_detailed  # noqa: E402
+from agent.requirement_analyzer import analyze_requirement_intent, select_profile_hint  # noqa: E402
 from agent.tools import langchain_wrappers as tools  # noqa: E402
 
 
@@ -143,7 +144,8 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
 
     print("LLM Agent Orchestrator")
     print(f"Requirement: {context['requirement']}")
-    print(f"Selected profile: {context['selectedProfile'].get('path') or '<none>'}")
+    print(f"Profile hint: {context['selectedProfile'].get('path') or '<none>'}")
+    print(f"Primary intent: {context['intentAnalysis'].get('primaryIntent')}")
     print("Default safety mode: dry-run")
     print(f"Run level: {args.run_level}")
 
@@ -389,6 +391,8 @@ def call_requirement_planner(
         "requirementText": requirement_text,
         "retrievedDocs": context["retrievedKnowledge"],
         "profileSummary": context["selectedProfile"],
+        "intentAnalysis": context["intentAnalysis"],
+        "profileCandidates": context["profileCandidates"],
         "safetyMode": args.mode,
     }
     cache = requirement_plan_cache_metadata(llm_input)
@@ -412,6 +416,8 @@ def call_requirement_planner(
             context["retrievedKnowledge"],
             context["selectedProfile"],
             args.mode,
+            context["intentAnalysis"],
+            context["profileCandidates"],
         )
         validate_llm_output_schema("requirement-planning", output, raw)
         result = llm_result(True, exact_input, output, raw)
@@ -601,6 +607,8 @@ def build_requirement_context(
     timings: dict[str, Any] = {}
     rag_started = time.perf_counter()
     summary = summarize_requirement(requirement_text)
+    intent = analyze_requirement_intent(requirement_text)
+    profile_hint = select_profile_hint(requirement_text, profile_path, profile)
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
     retrieval = perform_retrieval(requirement_text, limit=3, purpose="requirement")
@@ -609,15 +617,12 @@ def build_requirement_context(
     return {
         "requirement": str(requirement_path),
         "requirementSummary": summary,
+        "intentAnalysis": intent,
         "missingInformation": missing_information(summary, requirement_text),
         "retrievedKnowledge": retrieved,
         "retrievalDetails": retrieval,
-        "selectedProfile": {
-            "path": profile_path or "",
-            "name": profile.get("profileName", ""),
-            "description": profile.get("description", ""),
-            "managedResources": profile.get("managedResources") or [],
-        },
+        "selectedProfile": profile_hint["selectedProfile"],
+        "profileCandidates": profile_hint["profileCandidates"],
         "workspace": workspace,
         "targetProjectDir": str(Path(workspace) / infer_project_name(kind, f"generated/{kind_slug}-operator-spec.yaml")),
         "generatedFiles": {
@@ -1274,10 +1279,16 @@ def build_requirement_summary(
         "executeAllowed": bool(args.execute),
         "createdAt": now_iso(),
         "requirementSummary": context["requirementSummary"],
+        "intentAnalysis": context["intentAnalysis"],
         "missingInformation": context["missingInformation"],
         "retrievedKnowledge": context["retrievedKnowledge"],
         "retrievalDetails": context.get("retrievalDetails") or {},
         "selectedProfile": context["selectedProfile"],
+        "profileCandidates": context["profileCandidates"],
+        "profilePolicy": {
+            "role": "hint-only",
+            "message": "Profiles are optional hints for defaults, examples, and validation rules. The Agent plans from the current requirement text first.",
+        },
         "llmPlan": planner_result.get("llmOutput") or {},
         "llmReasoning": extract_list(planner_result.get("llmOutput") or {}, "reasoning"),
         "ragEvidence": extract_list(planner_result.get("llmOutput") or {}, "ragEvidence"),
@@ -1419,7 +1430,13 @@ def build_requirement_evidence_trace(summary: dict[str, Any]) -> dict[str, Any]:
         "requirementEvidence": {
             "source": summary.get("requirement"),
             "parsedSummary": summary.get("requirementSummary") or {},
+            "intentAnalysis": summary.get("intentAnalysis") or {},
             "missingInformation": summary.get("missingInformation") or [],
+        },
+        "profileHintEvidence": {
+            "policy": summary.get("profilePolicy") or {},
+            "selectedProfile": summary.get("selectedProfile") or {},
+            "profileCandidates": summary.get("profileCandidates") or [],
         },
         "ragEvidence": build_rag_trace(summary.get("retrievalDetails") or {}, summary.get("ragEvidence") or []),
         "llmPlanningEvidence": {
@@ -1739,6 +1756,14 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
         f"- Spec fields: `{', '.join(req.get('specFields') or []) or 'none'}`",
         f"- Status fields: `{', '.join(req.get('statusFields') or []) or 'none'}`",
         "",
+        "## Requirement Intent",
+        "",
+        f"- Primary intent: `{(summary.get('intentAnalysis') or {}).get('primaryIntent') or 'unknown'}`",
+        f"- Confidence: `{(summary.get('intentAnalysis') or {}).get('confidence') or 'unknown'}`",
+        f"- Managed resource hints: `{', '.join((summary.get('intentAnalysis') or {}).get('managedResourceHints') or []) or 'none'}`",
+        "",
+        "The Agent is not fixed to AppConfig, TrainingJob, RedisCache, or any single profile. The requirement text is the source of truth; profiles are optional hints for defaults and validation rules.",
+        "",
         "## Missing Information Check",
         "",
         *([f"- {item}" for item in summary["missingInformation"]] or ["- No critical missing information found."]),
@@ -1780,11 +1805,29 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## Selected Profile",
+            "## Profile Hint",
             "",
             f"- Path: `{profile.get('path') or 'none'}`",
             f"- Name: `{profile.get('name') or 'none'}`",
+            f"- Selection mode: `{profile.get('selectionMode') or 'unknown'}`",
+            f"- Reason: {profile.get('reason') or 'not specified'}",
             f"- Managed resources: `{', '.join(profile.get('managedResources') or []) or 'none'}`",
+            "- Role: `hint-only`",
+            "",
+            "### Profile Candidates",
+            "",
+        ]
+    )
+    candidates = summary.get("profileCandidates") or []
+    if candidates:
+        for item in candidates[:5]:
+            lines.append(
+                f"- `{item.get('name') or 'unknown'}` score=`{item.get('score', 0)}` path=`{item.get('path') or ''}` reason={item.get('reason') or ''}"
+            )
+    else:
+        lines.append("- No profile candidates were selected. Generic Agent core still plans from the requirement.")
+    lines.extend(
+        [
             "",
             "## Tool Execution Results",
             "",
