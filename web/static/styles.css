@@ -140,6 +140,33 @@ button:hover {
   background: var(--accent-strong);
 }
 
+.option-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.check input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.check.critical {
+  color: #9f1239;
+}
+
 .note {
   margin-top: 18px;
   border-top: 1px solid var(--line);

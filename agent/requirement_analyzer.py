@@ -159,4 +159,5 @@ def summarize_profile(path: str, data: dict[str, Any]) -> dict[str, Any]:
         "description": data.get("description", ""),
         "managedResources": data.get("managedResources") or [],
         "referencedResources": data.get("referencedResources") or [],
+        "kindDeployment": data.get("kindDeployment") or {},
     }

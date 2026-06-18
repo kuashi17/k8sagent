@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+from dataclasses import replace
 from typing import Any
 
-from agent.llm.client import LLMConfig, chat_json
+from agent.llm.client import LLMConfig, chat_json, config_from_env
 from agent.llm.prompts import (
     LOG_ANALYSIS_PLANNER_PROMPT,
     RECOVERY_PLANNER_PROMPT,
+    REQUIREMENT_PLAN_REPAIR_PROMPT,
     REQUIREMENT_PLANNER_PROMPT,
     SYSTEM_PROMPT,
     TOOL_RESULT_EVALUATION_PROMPT,
@@ -31,9 +34,13 @@ def plan_requirement_with_llm(
     safety_mode: str,
     intent_analysis: dict[str, Any] | None = None,
     profile_candidates: list[dict[str, Any]] | None = None,
+    workflow_options: dict[str, Any] | None = None,
     config: LLMConfig | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     compact_docs = compact_retrieved_docs(retrieved_docs, excerpt_limit=320)
+    compact_intent = compact_intent_analysis(intent_analysis or {})
+    compact_profile = compact_profile_summary(profile_summary)
+    compact_candidates = [compact_profile_summary(item) for item in (profile_candidates or [])[:2]]
     llm_input = {
         "mode": "requirement-planning",
         "requirementText": requirement_text,
@@ -41,18 +48,49 @@ def plan_requirement_with_llm(
         "intentAnalysis": intent_analysis or {},
         "profileSummary": profile_summary,
         "profileCandidates": profile_candidates or [],
+        "workflowOptions": workflow_options or {},
         "safetyMode": safety_mode,
     }
     prompt = REQUIREMENT_PLANNER_PROMPT.format(
         requirement_text=requirement_text,
-        retrieved_docs=json.dumps(compact_docs, ensure_ascii=False, indent=2),
-        intent_analysis=json.dumps(intent_analysis or {}, ensure_ascii=False, indent=2),
-        profile_summary=json.dumps(profile_summary, ensure_ascii=False, indent=2),
-        profile_candidates=json.dumps(profile_candidates or [], ensure_ascii=False, indent=2),
+        retrieved_docs=compact_json(compact_docs),
+        intent_analysis=compact_json(compact_intent),
+        profile_summary=compact_json(compact_profile),
+        profile_candidates=compact_json(compact_candidates),
+        workflow_options=compact_json(workflow_options or {}),
+        tool_call_examples=requirement_tool_call_examples(
+            safety_mode,
+            bool((workflow_options or {}).get("kindDeploymentRequested")),
+        ),
+        kind_deployment_rule=(
+            "- kind_deployment was explicitly requested. Include it after validation."
+            if (workflow_options or {}).get("kindDeploymentRequested")
+            else "- kind_deployment is not available in this request. Do not include it."
+        ),
         safety_mode=safety_mode,
     )
-    raw = chat_json(SYSTEM_PROMPT, prompt, config)
-    return parse_json_object(raw), llm_input, raw
+    planning_config = requirement_planning_config(config)
+    raw = chat_json(SYSTEM_PROMPT, prompt, planning_config)
+    parsed = normalize_requirement_plan(parse_json_object(raw), profile_summary)
+    errors = requirement_plan_validation_errors(parsed)
+    if not errors:
+        return parsed, llm_input, raw
+
+    repair_prompt = REQUIREMENT_PLAN_REPAIR_PROMPT.format(
+        optional_kind_tool_name=", kind_deployment" if (workflow_options or {}).get("kindDeploymentRequested") else "",
+        safety_mode=safety_mode,
+        workflow_options=compact_json(workflow_options or {}),
+        validation_errors="; ".join(errors),
+        candidate=raw[:6000],
+    )
+    repaired_raw = chat_json(SYSTEM_PROMPT, repair_prompt, planning_config)
+    repaired = normalize_requirement_plan(parse_json_object(repaired_raw), profile_summary)
+    llm_input["responseRepair"] = {
+        "attempted": True,
+        "validationErrors": errors,
+        "originalRawOutput": raw,
+    }
+    return repaired, llm_input, repaired_raw
 
 
 def analyze_log_with_llm(
@@ -184,6 +222,135 @@ def parse_json_object(raw: str) -> dict[str, Any]:
     return data
 
 
+def normalize_requirement_plan(
+    data: dict[str, Any],
+    profile_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = dict(data)
+    aliases = {
+        "tool_calls": "toolCalls",
+        "tools": "toolCalls",
+        "missing_information": "missingInformation",
+        "steps": "plannedSteps",
+        "next_actions": "nextActions",
+        "profile": "recommendedProfile",
+        "summary": "requirementSummary",
+    }
+    for source, target in aliases.items():
+        if target not in normalized and source in normalized:
+            normalized[target] = normalized[source]
+    tool_calls = normalized.get("toolCalls")
+    planned_steps = normalized.get("plannedSteps")
+    if not isinstance(tool_calls, list) and isinstance(planned_steps, list):
+        inferred = [
+            item
+            for item in planned_steps
+            if isinstance(item, dict) and item.get("tool") and item.get("mode")
+        ]
+        if inferred:
+            normalized["toolCalls"] = inferred
+            normalized["plannedSteps"] = [
+                str(item.get("reason") or item.get("tool"))
+                if isinstance(item, dict)
+                else str(item)
+                for item in planned_steps
+            ]
+    for key in ("missingInformation", "plannedSteps", "risks", "nextActions"):
+        if key not in normalized or normalized[key] is None:
+            normalized[key] = []
+    if not isinstance(normalized.get("recommendedProfile"), str):
+        normalized["recommendedProfile"] = str((profile_summary or {}).get("path") or "")
+    return normalized
+
+
+def requirement_plan_validation_errors(data: dict[str, Any]) -> list[str]:
+    schema = {
+        "requirementSummary": str,
+        "missingInformation": list,
+        "recommendedProfile": str,
+        "plannedSteps": list,
+        "toolCalls": list,
+        "risks": list,
+        "nextActions": list,
+    }
+    errors = []
+    for key, expected in schema.items():
+        if key not in data:
+            errors.append(f"missing {key}")
+        elif not isinstance(data[key], expected):
+            errors.append(f"{key} must be {expected.__name__}")
+    if isinstance(data.get("toolCalls"), list):
+        if not data["toolCalls"]:
+            errors.append("toolCalls must not be empty")
+        for index, item in enumerate(data["toolCalls"]):
+            if not isinstance(item, dict):
+                errors.append(f"toolCalls[{index}] must be object")
+                continue
+            for key in ("tool", "mode"):
+                if not item.get(key):
+                    errors.append(f"toolCalls[{index}] missing {key}")
+    return errors
+
+
+def requirement_planning_config(config: LLMConfig | None) -> LLMConfig:
+    cfg = config or config_from_env()
+    raw = os.environ.get("LOCAL_LLM_PLANNING_MAX_TOKENS", "460")
+    try:
+        max_tokens = max(320, int(raw))
+    except ValueError:
+        max_tokens = 460
+    return replace(cfg, max_tokens=min(cfg.max_tokens, max_tokens))
+
+
+def compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def compact_intent_analysis(intent: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "primaryIntent": intent.get("primaryIntent", ""),
+        "managedResourceHints": intent.get("managedResourceHints") or [],
+        "confidence": intent.get("confidence", ""),
+    }
+
+
+def compact_profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "path": profile.get("path", ""),
+        "name": profile.get("name", ""),
+        "managedResources": profile.get("managedResources") or [],
+        "selectionMode": profile.get("selectionMode", ""),
+    }
+
+
+def requirement_tool_call_examples(safety_mode: str, include_kind: bool) -> str:
+    calls = [
+        {"tool": "spec_generator", "mode": "generate", "reason": "Generate the Operator spec."},
+        {"tool": "command_planner", "mode": "dry-run", "reason": "Plan allowlisted commands."},
+        {
+            "tool": "scaffold_runner",
+            "mode": "execute" if safety_mode == "execute" else "dry-run",
+            "reason": "Create the Kubebuilder scaffold.",
+        },
+    ]
+    if safety_mode == "execute":
+        calls.extend(
+            [
+                {"tool": "artifact_patcher", "mode": "execute", "reason": "Apply requirement fields and controller logic."},
+                {"tool": "validation", "mode": "execute", "reason": "Run generate, manifests, and tests."},
+            ]
+        )
+    if include_kind:
+        calls.append(
+            {
+                "tool": "kind_deployment",
+                "mode": "execute" if safety_mode == "execute" else "dry-run",
+                "reason": "Deploy to kind after validation.",
+            }
+        )
+    return ",\n    ".join(compact_json(item) for item in calls)
+
+
 def compact_retrieved_docs(docs: list[dict[str, Any]], excerpt_limit: int = 900) -> list[dict[str, Any]]:
     compacted = []
     for item in docs:
@@ -258,6 +425,17 @@ def compact_tool_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
                 for step in item.get("steps") or []
             ]
+        if item.get("deploymentSummary"):
+            deployment = item.get("deploymentSummary") or {}
+            compacted_item["deploymentSummary"] = {
+                "status": deployment.get("status"),
+                "failedStep": deployment.get("failedStep"),
+                "clusterName": deployment.get("clusterName"),
+                "project": deployment.get("project"),
+                "checks": deployment.get("checks") or {},
+                "elapsedSeconds": deployment.get("elapsedSeconds"),
+                "logDir": deployment.get("logDir"),
+            }
         compacted.append(compacted_item)
     return compacted
 

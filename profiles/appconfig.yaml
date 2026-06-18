@@ -36,3 +36,22 @@ configMapSpecValidation:
     - name: ConfigMap name
       from: metadata.name
       path: metadata.name
+kindDeployment:
+  enabled: true
+  runner: kind_deployment_runner
+  project: workspace/generated-operators/app-config-operator
+  clusterName: appconfig-deploy
+  image: app-config-operator:kind
+  sample: workspace/generated-operators/app-config-operator/config/samples/app_v1alpha1_appconfig.yaml
+  namespace: app-config-operator-system
+  deployment: app-config-operator-controller-manager
+  sampleName: appconfig-sample
+  configMapName: appconfig-sample-config
+  skipPrepareController: true
+  skipPrevalidation: true
+  lifecycleChecks:
+    - create
+    - update
+    - disabled
+    - delete
+    - restore

@@ -41,6 +41,7 @@ RECOVERY_TOOL_ALLOWLIST = {
     "artifact_patcher",
     "validation",
     "log_analyzer",
+    "kind_deployment",
 }
 LLM_OUTPUT_SCHEMAS = {
     "requirement-planning": {
@@ -98,7 +99,7 @@ SUPPORTED_FIELD_TYPES = {
     "metav1.Time",
 }
 AGENT_CACHE_ROOT = Path(".cache") / "agent"
-REQUIREMENT_PLAN_CACHE_VERSION = "requirement-planning-v1"
+REQUIREMENT_PLAN_CACHE_VERSION = "requirement-planning-v4"
 
 
 def main() -> int:
@@ -124,6 +125,12 @@ def main() -> int:
     parser.add_argument("--refresh-cache", action="store_true", help="Ignore existing cache and replace it with a fresh LLM plan.")
     parser.add_argument("--workspace", default="workspace/generated-operators", help="Scaffold workspace parent.")
     parser.add_argument("--execute", action="store_true", help="Allow real execution for mutating tools.")
+    parser.add_argument("--kind-deploy", action="store_true", help="Include profile-backed kind deployment after validation.")
+    parser.add_argument(
+        "--resume-existing",
+        action="store_true",
+        help="Skip scaffold creation when the target project already exists and continue patch/validation/deployment.",
+    )
     args = parser.parse_args()
 
     if args.analyze_log and not args.log_dir:
@@ -141,6 +148,8 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     requirement_text = requirement_path.read_text(encoding="utf-8")
     profile = load_profile(Path(args.profile)) if args.profile else {}
     context = build_requirement_context(requirement_path, requirement_text, args.profile, profile, args.workspace)
+    context["kindDeploymentRequested"] = bool(args.kind_deploy)
+    context["resumeExisting"] = bool(args.resume_existing)
     log_dir = make_agent_log_dir()
 
     print("LLM Agent Orchestrator")
@@ -168,6 +177,19 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
         print(f"\nAgent logs: {log_dir}")
         return 2
 
+    if args.kind_deploy:
+        ensure_requested_tool_call(
+            planner_result,
+            "validation",
+            args.mode,
+            "kind deployment requires make generate, make manifests, and make test to pass first.",
+        )
+        ensure_requested_tool_call(
+            planner_result,
+            "kind_deployment",
+            args.mode,
+            "User explicitly requested profile-backed kind deployment after validation.",
+        )
     execution = execute_planned_tools(context, args.mode, args.execute, planner_result)
     context["timings"].update(execution.get("timings") or {})
     initial_errors = collect_errors(execution["toolResults"])
@@ -395,6 +417,10 @@ def call_requirement_planner(
         "profileSummary": context["selectedProfile"],
         "intentAnalysis": context["intentAnalysis"],
         "profileCandidates": context["profileCandidates"],
+        "workflowOptions": {
+            "kindDeploymentRequested": bool(args.kind_deploy),
+            "resumeExisting": bool(args.resume_existing),
+        },
         "safetyMode": args.mode,
     }
     cache = requirement_plan_cache_metadata(llm_input)
@@ -420,6 +446,10 @@ def call_requirement_planner(
             args.mode,
             context["intentAnalysis"],
             context["profileCandidates"],
+            {
+                "kindDeploymentRequested": bool(args.kind_deploy),
+                "resumeExisting": bool(args.resume_existing),
+            },
         )
         validate_llm_output_schema("requirement-planning", output, raw)
         result = llm_result(True, exact_input, output, raw)
@@ -452,6 +482,30 @@ def print_planner_cache_status(planner_result: dict[str, Any]) -> None:
         return
     status = "hit" if cache.get("hit") else "miss"
     print(f"Planner cache: {status} ({cache.get('path')})")
+
+
+def ensure_requested_tool_call(
+    planner_result: dict[str, Any],
+    tool: str,
+    agent_mode: str,
+    reason: str,
+) -> None:
+    output = planner_result.get("llmOutput")
+    if not isinstance(output, dict):
+        return
+    calls = output.setdefault("toolCalls", [])
+    if not isinstance(calls, list):
+        return
+    if any(isinstance(item, dict) and normalize_tool_name(str(item.get("tool") or "")) == tool for item in calls):
+        return
+    calls.append(
+        {
+            "tool": tool,
+            "mode": "execute" if agent_mode == "execute" else "dry-run",
+            "reason": reason,
+            "source": "explicit-user-workflow-option",
+        }
+    )
 
 
 def run_log_analysis_agent(args: argparse.Namespace) -> int:
@@ -723,6 +777,7 @@ def execute_planned_tools(
 ) -> dict[str, Any]:
     generated = context["generatedFiles"]
     mutating_execute = mode == "execute" and allow_execute
+    kind_deployment = context["selectedProfile"].get("kindDeployment") or {}
     supported_calls = {
         "spec_generator": {
             "mutating": False,
@@ -782,8 +837,58 @@ def execute_planned_tools(
             "call": lambda: tools.e2e_runner(generated["operatorSpec"], context["selectedProfile"].get("path"), execute=mutating_execute),
         },
     }
+    if context.get("kindDeploymentRequested") and kind_deployment.get("enabled"):
+        supported_calls["kind_deployment"] = {
+            "mutating": True,
+            "requiredArgs": [
+                "project",
+                "clusterName",
+                "image",
+                "sample",
+                "namespace",
+                "deployment",
+                "sampleName",
+                "configMapName",
+            ],
+            "arguments": {
+                "project": kind_deployment.get("project") or context["targetProjectDir"],
+                "clusterName": kind_deployment.get("clusterName"),
+                "image": kind_deployment.get("image"),
+                "sample": kind_deployment.get("sample"),
+                "namespace": kind_deployment.get("namespace"),
+                "deployment": kind_deployment.get("deployment"),
+                "sampleName": kind_deployment.get("sampleName"),
+                "configMapName": kind_deployment.get("configMapName"),
+                "execute": mutating_execute,
+            },
+            "call": lambda: tools.kind_deployment_runner(
+                str(kind_deployment.get("project") or context["targetProjectDir"]),
+                cluster_name=str(kind_deployment.get("clusterName") or ""),
+                image=str(kind_deployment.get("image") or ""),
+                sample=str(kind_deployment.get("sample") or ""),
+                namespace=str(kind_deployment.get("namespace") or ""),
+                deployment=str(kind_deployment.get("deployment") or ""),
+                sample_name=str(kind_deployment.get("sampleName") or ""),
+                configmap_name=str(kind_deployment.get("configMapName") or ""),
+                execute=mutating_execute,
+                skip_prepare_controller=bool(kind_deployment.get("skipPrepareController")),
+                skip_prevalidation=bool(kind_deployment.get("skipPrevalidation")),
+            ),
+        }
     validation_started = time.perf_counter()
     validated, rejected, deferred = validate_planned_tool_calls(planner_result, supported_calls, mode, allow_execute)
+    if context.get("resumeExisting") and Path(context["targetProjectDir"]).is_dir():
+        resumed = [item for item in validated if item.get("tool") == "scaffold_runner"]
+        validated = [item for item in validated if item.get("tool") != "scaffold_runner"]
+        deferred.extend(
+            {
+                "tool": "scaffold_runner",
+                "reason": "Skipped because --resume-existing was provided and the target project already exists.",
+                "raw": item,
+            }
+            for item in resumed
+        )
+    validated = order_validated_tool_calls(validated)
     tool_validation_seconds = elapsed(validation_started)
     if not validated:
         print("\nLLM planner did not request any supported Tool calls.")
@@ -822,6 +927,19 @@ def execute_planned_tools(
     }
 
 
+def order_validated_tool_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    order = {
+        "spec_generator": 10,
+        "command_planner": 20,
+        "scaffold_runner": 30,
+        "artifact_patcher": 40,
+        "validation": 50,
+        "e2e_runner": 60,
+        "kind_deployment": 70,
+    }
+    return sorted(calls, key=lambda item: order.get(str(item.get("tool")), 999))
+
+
 def detect_failure_context(
     context: dict[str, Any],
     planner_result: dict[str, Any],
@@ -851,7 +969,10 @@ def detect_failure_context(
 
     for result in execution["toolResults"]:
         if result.get("exitCode") != 0:
-            failed_step = failed_validation_step(result)
+            failed_step = (
+                (result.get("deploymentSummary") or {}).get("failedStep")
+                or failed_validation_step(result)
+            )
             return {
                 "failedTool": result.get("tool"),
                 "failedStep": failed_step or result.get("tool"),
@@ -1097,6 +1218,12 @@ def policy_classification(raw_plan: dict[str, Any], failure_context: dict[str, A
         return "gpu-insufficient"
     if "imagepull" in text or "image pull" in text:
         return "image-pull"
+    if (
+        "cannot connect to the docker daemon" in text
+        or "docker daemon" in text
+        or ("kind" in text and "connection" in text)
+    ):
+        return "docker-kind-connection"
     return "unknown"
 
 
@@ -1158,6 +1285,18 @@ def generic_validated_recovery_calls(classification: str, failure_context: dict[
                 "evidenceRefs": evidence_refs,
                 "expectedEffect": "PVC reference is valid for the target environment.",
                 "verificationStep": "Run e2e manually after approval.",
+            }
+        ]
+    if classification == "docker-kind-connection":
+        return [
+            {
+                "tool": "kind_deployment",
+                "mode": "execute",
+                "reason": "Re-run only the kind deployment stage after Docker connectivity is restored.",
+                "requiresApproval": True,
+                "evidenceRefs": evidence_refs,
+                "expectedEffect": "Docker and kind commands can connect and the deployment verification resumes.",
+                "verificationStep": "Run docker info and kind get clusters, then approve kind_deployment.",
             }
         ]
     return []
@@ -1295,6 +1434,8 @@ def build_requirement_summary(
         "runLevel": args.run_level,
         "skipFinalLlmEvaluation": bool(args.skip_final_llm_evaluation or args.run_level == "fast"),
         "executeAllowed": bool(args.execute),
+        "kindDeploymentRequested": bool(args.kind_deploy),
+        "resumeExisting": bool(args.resume_existing),
         "createdAt": now_iso(),
         "requirementSummary": context["requirementSummary"],
         "intentAnalysis": context["intentAnalysis"],
@@ -1356,8 +1497,9 @@ def build_requirement_safety_evaluation(
         "artifact_patcher",
         "validation",
         "e2e_runner",
+        "kind_deployment",
     ]
-    mutating_tools = {"scaffold_runner", "artifact_patcher", "e2e_runner"}
+    mutating_tools = {"scaffold_runner", "artifact_patcher", "e2e_runner", "kind_deployment"}
     validated = execution.get("validatedToolCalls") or []
     rejected = execution.get("rejectedToolCalls") or []
     deferred = execution.get("deferredToolCalls") or []
@@ -1880,6 +2022,26 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
             lines.append(f"  - command: `{' '.join(result['command'])}`")
     else:
         lines.append("- No tools were executed.")
+
+    deployment_results = [
+        item.get("deploymentSummary") or {}
+        for item in summary.get("toolResults") or []
+        if item.get("tool") == "kind_deployment"
+    ]
+    if deployment_results:
+        deployment = deployment_results[-1]
+        lines.extend(
+            [
+                "",
+                "## Kind Deployment Result",
+                "",
+                f"- Status: `{deployment.get('status') or 'unknown'}`",
+                f"- Cluster: `{deployment.get('clusterName') or 'unknown'}`",
+                f"- Failed step: `{deployment.get('failedStep') or 'none'}`",
+                f"- Log directory: `{deployment.get('logDir') or 'unknown'}`",
+                f"- Checks: `{', '.join((deployment.get('checks') or {}).keys()) or 'none'}`",
+            ]
+        )
 
     recovery = summary.get("recovery") or {}
     if recovery.get("waitingForUserApproval"):

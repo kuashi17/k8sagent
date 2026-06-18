@@ -1,6 +1,6 @@
 metadata:
   sourceFile: requirements/scheduled-task.txt
-  generatedAt: '2026-06-17T21:31:26+09:00'
+  generatedAt: '2026-06-18T22:51:07+09:00'
   generatorVersion: 0.1.0
 project:
   name: scheduled-task-operator

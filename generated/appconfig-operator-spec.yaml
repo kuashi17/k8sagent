@@ -1,6 +1,6 @@
 metadata:
   sourceFile: requirements/appconfig.txt
-  generatedAt: '2026-06-08T23:12:22+09:00'
+  generatedAt: '2026-06-18T22:39:01+09:00'
   generatorVersion: 0.1.0
 project:
   name: app-config-operator

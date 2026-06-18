@@ -64,6 +64,7 @@ def run_requirement(requirement: str, run_level: str) -> dict[str, Any]:
         and selected_profile.get("selectionMode") in {"none", "auto-hint", "explicit-hint"}
         and summary.get("requirementSummary", {}).get("kind")
         and summary.get("validatedToolCalls")
+        and not summary.get("rejectedToolCalls")
     )
     return {
         "requirement": requirement,

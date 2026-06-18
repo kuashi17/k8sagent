@@ -9,8 +9,11 @@ core behavior.
 from __future__ import annotations
 
 import html
+import json
+import os
 import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,8 +24,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from agent.llm.client import LLMUnavailable, warm_up_model  # noqa: E402
+
+
 LOG_ROOT = REPO_ROOT / "logs" / "web"
 PROFILE_DIR = REPO_ROOT / "profiles"
 
@@ -31,15 +39,30 @@ app.mount("/static", StaticFiles(directory=REPO_ROOT / "web" / "static"), name="
 templates = Jinja2Templates(directory=REPO_ROOT / "web" / "templates")
 
 
+@app.on_event("startup")
+def warm_local_llm() -> None:
+    if os.environ.get("LOCAL_LLM_WARMUP", "true").lower() in {"0", "false", "no"}:
+        return
+    try:
+        warm_up_model()
+        print("Local LLM warm-up completed.")
+    except LLMUnavailable as exc:
+        print(f"Local LLM warm-up skipped: {exc}")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
-        "index.html",
-        {
+        request=request,
+        name="index.html",
+        context={
             "request": request,
             "profiles": list_profiles(),
             "default_requirement": read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
             "default_log_dir": "logs/e2e/20260607-213346",
+            "selected_profile": "",
+            "selected_mode": "dry-run",
+            "selected_run_level": "fast",
             "result": None,
         },
     )
@@ -49,8 +72,36 @@ async def index(request: Request) -> HTMLResponse:
 async def run_requirement(request: Request) -> HTMLResponse:
     form = await request.form()
     requirement_text = str(form.get("requirement_text") or "").strip()
-    profile = str(form.get("profile") or "profiles/appconfig.yaml")
+    profile = str(form.get("profile") or "")
+    mode = str(form.get("mode") or "dry-run")
+    run_level = str(form.get("run_level") or "fast")
+    kind_deploy = str(form.get("kind_deploy") or "") == "on"
+    resume_existing = str(form.get("resume_existing") or "") == "on"
+    confirm_execute = str(form.get("confirm_execute") or "") == "on"
     planner = "llm"
+    if mode == "execute" and not confirm_execute:
+        result = {
+            "title": "Execution blocked",
+            "command": "",
+            "stdout": "",
+            "stderr": "Execute mode requires the explicit confirmation checkbox.",
+            "exit_code": 2,
+            "agent_log_dir": "",
+            "agent_report": "",
+            "summary_json": "",
+            "evidence_json": "",
+            "safety_json": "",
+            "recovery_json": "",
+        }
+        return render_result(
+            request,
+            result,
+            requirement_text=requirement_text,
+            selected_profile=profile,
+            selected_planner=planner,
+            selected_mode=mode,
+            selected_run_level=run_level,
+        )
 
     run_dir = make_run_dir("requirement")
     requirement_path = run_dir / "requirement.txt"
@@ -61,13 +112,29 @@ async def run_requirement(request: Request) -> HTMLResponse:
         "agent/langchain_agent.py",
         "--requirement",
         str(requirement_path.relative_to(REPO_ROOT)),
-        "--profile",
-        profile,
         "--mode",
-        "dry-run",
+        mode,
+        "--run-level",
+        run_level,
     ]
+    if profile:
+        command.extend(["--profile", profile])
+    if mode == "execute":
+        command.append("--execute")
+    if kind_deploy:
+        command.append("--kind-deploy")
+    if resume_existing:
+        command.append("--resume-existing")
     result = run_agent_command(command)
-    return render_result(request, result, requirement_text=requirement_text, selected_profile=profile, selected_planner=planner)
+    return render_result(
+        request,
+        result,
+        requirement_text=requirement_text,
+        selected_profile=profile,
+        selected_planner=planner,
+        selected_mode=mode,
+        selected_run_level=run_level,
+    )
 
 
 @app.post("/analyze-log", response_class=HTMLResponse)
@@ -92,8 +159,9 @@ async def view_web_run(request: Request, run_type: str, run_id: str) -> HTMLResp
     if not run_dir.is_dir():
         return RedirectResponse("/")
     return templates.TemplateResponse(
-        "index.html",
-        {
+        request=request,
+        name="index.html",
+        context={
             "request": request,
             "profiles": list_profiles(),
             "default_requirement": read_text(run_dir / "requirement.txt"),
@@ -116,18 +184,23 @@ def render_result(
     request: Request,
     result: dict[str, Any],
     requirement_text: str | None = None,
-    selected_profile: str = "profiles/appconfig.yaml",
+    selected_profile: str = "",
     selected_planner: str = "llm",
+    selected_mode: str = "dry-run",
+    selected_run_level: str = "fast",
 ) -> HTMLResponse:
     return templates.TemplateResponse(
-        "index.html",
-        {
+        request=request,
+        name="index.html",
+        context={
             "request": request,
             "profiles": list_profiles(),
             "default_requirement": requirement_text or read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
             "default_log_dir": "logs/e2e/20260607-213346",
             "selected_profile": selected_profile,
             "selected_planner": selected_planner,
+            "selected_mode": selected_mode,
+            "selected_run_level": selected_run_level,
             "result": result,
         },
     )
@@ -139,6 +212,10 @@ def run_agent_command(command: list[str]) -> dict[str, Any]:
     stderr = completed.stderr
     agent_log_dir = extract_agent_log_dir(stdout)
     report = read_agent_report(agent_log_dir)
+    summary = read_agent_json(agent_log_dir, "summary.json")
+    evidence = read_agent_json(agent_log_dir, "evidence-trace.json")
+    safety = read_agent_json(agent_log_dir, "safety-evaluation.json")
+    recovery = (summary.get("recovery") or {}) if isinstance(summary, dict) else {}
     return {
         "title": "Agent Result",
         "command": " ".join(command),
@@ -147,6 +224,10 @@ def run_agent_command(command: list[str]) -> dict[str, Any]:
         "exit_code": completed.returncode,
         "agent_log_dir": agent_log_dir,
         "agent_report": report,
+        "summary_json": pretty_json(summary),
+        "evidence_json": pretty_json(evidence),
+        "safety_json": pretty_json(safety),
+        "recovery_json": pretty_json(recovery),
     }
 
 
@@ -160,6 +241,21 @@ def read_agent_report(agent_log_dir: str) -> str:
         return ""
     report_path = REPO_ROOT / agent_log_dir / "agent-report.md"
     return read_text(report_path)
+
+
+def read_agent_json(agent_log_dir: str, name: str) -> dict[str, Any]:
+    if not agent_log_dir:
+        return {}
+    path = REPO_ROOT / agent_log_dir / name
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def pretty_json(value: dict[str, Any]) -> str:
+    return json.dumps(value, indent=2, ensure_ascii=False) if value else ""
 
 
 def list_profiles() -> list[dict[str, str]]:

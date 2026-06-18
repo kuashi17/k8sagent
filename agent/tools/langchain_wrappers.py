@@ -8,6 +8,7 @@ as a tool-like function that an Agent planner can select and sequence.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,57 @@ def e2e_runner(
         command.append("--delete-pvc")
     command.append("--execute" if execute else "--dry-run")
     return run_command(command)
+
+
+def kind_deployment_runner(
+    project: str,
+    *,
+    cluster_name: str,
+    image: str,
+    sample: str,
+    namespace: str,
+    deployment: str,
+    sample_name: str,
+    configmap_name: str,
+    execute: bool = False,
+    skip_lifecycle: bool = False,
+    skip_prepare_controller: bool = False,
+    skip_prevalidation: bool = False,
+) -> dict[str, Any]:
+    command = [
+        "python3",
+        "agent/tools/kind_deployment_runner.py",
+        "--project",
+        project,
+        "--cluster-name",
+        cluster_name,
+        "--image",
+        image,
+        "--sample",
+        sample,
+        "--namespace",
+        namespace,
+        "--deployment",
+        deployment,
+        "--sample-name",
+        sample_name,
+        "--configmap-name",
+        configmap_name,
+    ]
+    if skip_lifecycle:
+        command.append("--skip-lifecycle")
+    if skip_prepare_controller:
+        command.append("--skip-prepare-controller")
+    if skip_prevalidation:
+        command.append("--skip-prevalidation")
+    if not execute:
+        command.append("--dry-run")
+    result = run_command(command)
+    try:
+        result["deploymentSummary"] = json.loads(result.get("stdout") or "{}")
+    except json.JSONDecodeError:
+        result["deploymentSummary"] = {}
+    return result
 
 
 def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]:

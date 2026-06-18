@@ -207,6 +207,7 @@ flowchart TD
 | Artifact Patcher | `agent/tools/artifact_patcher.py` | spec, project, profile | API 타입, sample, RBAC 보정 | `--execute`일 때만 수정 |
 | Validation Tool | `agent/tools/langchain_wrappers.py` 내부 | project, targets | `make generate/manifests/test` 결과 | 빌드 산출물 생성 가능 |
 | E2E Runner | `agent/tools/e2e_runner.py` | project, sample, profile | kind e2e 결과 | `--execute`일 때만 클러스터 조작 |
+| Kind Deployment | `agent/tools/kind_deployment_runner.py` | profile capability, project | Controller Deployment와 lifecycle 검증 | `--kind-deploy --execute`일 때만 실제 배포 |
 | Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
 | Recovery Validator | `agent/langchain_agent.py` 내부 | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
 
@@ -700,6 +701,8 @@ generated/redis-cache-operator-spec.yaml
 
 본 시스템은 LLM planner 기반 Agent 구조를 사용합니다. Agent는 요구사항을 요약하고, `knowledge-base` 문서를 검색한 뒤, LLM planner가 실행 계획을 JSON으로 생성하고, 기존 CLI 도구를 Tool wrapper로 호출합니다.
 
+정확한 구현 형태는 **Custom Agent Orchestrator + LangChain-compatible Tool wrapper**입니다. 계획·정책 검증·실행·recovery 루프는 프로젝트의 Python Orchestrator가 담당하며, `langchain_core.tools.Tool` adapter는 선택 호환 계층으로 제공합니다. 따라서 현재 구현을 `LangChain AgentExecutor로 전체 Workflow를 구현했다`고 표현하지 않습니다.
+
 RAG는 로컬 Markdown `knowledge-base`를 대상으로 동작합니다. 현재는 keyword 검색을 fallback으로 유지하면서, Ollama embedding과 FAISS index를 사용하는 Hybrid RAG를 지원합니다.
 
 ```text
@@ -824,6 +827,33 @@ Agent 실행 결과에는 다음 항목이 포함됩니다.
 오프라인/내부망 환경에서 모델을 어떻게 사용할지는 [Local Model Usage Policy](docs/local-model-usage-policy.md)를 봅니다. 이 문서는 Ollama local model, run-level, planning cache, Tool 실행 안전 원칙을 정리합니다.
 
 기본은 dry-run이며, 실제 scaffold, patch, e2e 변경 작업은 `--execute`가 명시되지 않으면 수행하지 않습니다. 실행 결과는 `logs/agent/<timestamp>/summary.json`과 `logs/agent/<timestamp>/agent-report.md`에 저장됩니다.
+
+검증 완료 후 profile 기반 kind 배포와 최종 LLM 재평가까지 한 Workflow로 실행:
+
+```bash
+python3 agent/langchain_agent.py \
+  --requirement requirements/appconfig.txt \
+  --profile profiles/appconfig.yaml \
+  --mode execute \
+  --execute \
+  --resume-existing \
+  --kind-deploy \
+  --run-level standard
+```
+
+```text
+requirement
+  -> RAG + Local LLM Tool 계획
+  -> spec / command plan
+  -> scaffold 생성 또는 기존 scaffold 재사용
+  -> artifact patch
+  -> make generate / manifests / test
+  -> profile-backed kind deployment
+  -> kind summary를 Local LLM에 전달
+  -> 최종 실행 판단
+```
+
+`--kind-deploy`는 profile에 `kindDeployment.enabled: true`와 실행 인자가 정의된 경우에만 허용됩니다. Docker 연결 실패 시 `docker-kind-connection` recovery plan을 생성하고, 사용자 승인 전에는 자동 재실행하지 않습니다.
 
 성능 병목은 `logs/agent/<timestamp>/timings.json`과 `agent-report.md`의 `Timings` 섹션에서 확인합니다. 주요 항목은 RAG 검색 시간, 최초 LLM 계획 시간, Tool 검증 시간, Tool 실행 시간, 최종 LLM 평가 시간, 전체 시간입니다.
 
@@ -988,13 +1018,15 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 
 Web UI에서 할 수 있는 작업:
 
-- 자연어 requirement 기반 Agent dry-run
+- 자연어 requirement 기반 Agent dry-run/execute
 - optional profile hint 선택
-- LLM planner 기반 실행
+- fast/standard run-level 선택
+- profile capability 기반 kind deployment 선택
+- 기존 scaffold resume
 - 기존 e2e 로그 분석
-- Agent report, stdout, stderr 확인
+- Agent report, evidence trace, safety evaluation, recovery 상태 확인
 
-안전을 위해 Web UI는 실제 scaffold/e2e `--execute` 버튼을 제공하지 않습니다. 실제 변경 작업은 CLI에서 명시적으로 `--execute`를 사용할 때만 수행합니다.
+Web UI execute는 Mode를 `execute`로 선택하고 별도의 실제 변경 승인 체크박스까지 선택해야 합니다. kind deployment는 capability가 정의된 profile을 선택해야 합니다.
 
 ## 신뢰성/응답속도 검증
 

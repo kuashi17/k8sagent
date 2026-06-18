@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy and verify the AppConfig Operator inside a kind cluster."""
+"""Deploy and verify a profile-backed Operator fixture inside a kind cluster."""
 
 from __future__ import annotations
 
@@ -173,21 +173,25 @@ class Runner:
     def run(self) -> int:
         try:
             self.preflight()
-            self.prepare_controller()
-            self.run_cmd("make-generate", ["make", "generate"], cwd=self.project)
-            self.run_cmd("make-manifests", ["make", "manifests"], cwd=self.project)
-            self.run_cmd("make-test", ["make", "test"], cwd=self.project)
+            if self.args.dry_run:
+                self.checks["dryRun"] = {
+                    "plannedSteps": self.planned_steps(),
+                    "message": "Dry-run only. No files, images, clusters, or Kubernetes resources were changed.",
+                }
+                summary = self.write_summary("succeeded")
+                print(json.dumps(summary, indent=2, ensure_ascii=False))
+                return 0
+            if not self.args.skip_prepare_controller:
+                self.prepare_controller()
+            if not self.args.skip_prevalidation:
+                self.run_cmd("make-generate", ["make", "generate"], cwd=self.project)
+                self.run_cmd("make-manifests", ["make", "manifests"], cwd=self.project)
+                self.run_cmd("make-test", ["make", "test"], cwd=self.project)
             self.ensure_cluster()
             self.run_cmd("docker-build", ["make", "docker-build", f"IMG={self.args.image}"], cwd=self.project, timeout=600)
             self.run_cmd("kind-load-image", ["kind", "load", "docker-image", self.args.image, "--name", self.args.cluster_name], timeout=300)
             self.run_cmd("make-install", ["make", "install"], cwd=self.project, timeout=300)
             self.run_cmd("make-deploy", ["make", "deploy", f"IMG={self.args.image}"], cwd=self.project, timeout=300)
-            if self.args.dry_run:
-                self.checks["dryRun"] = {"plannedSteps": len(self.steps), "message": "No cluster or workload verification was executed."}
-                status = "succeeded"
-                summary = self.write_summary(status)
-                print(json.dumps(summary, indent=2, ensure_ascii=False))
-                return 0
             self.wait_deployment()
             self.apply_sample()
             self.wait_configmap()
@@ -205,6 +209,41 @@ class Runner:
         summary = self.write_summary(status)
         print(json.dumps(summary, indent=2, ensure_ascii=False))
         return 0 if status == "succeeded" else 1
+
+    def planned_steps(self) -> list[dict[str, Any]]:
+        steps = []
+        if not self.args.skip_prepare_controller:
+            steps.append({"name": "prepare-controller", "mutating": True})
+        if not self.args.skip_prevalidation:
+            steps.extend(
+                [
+                    {"name": "make-generate", "command": ["make", "generate"], "cwd": rel(self.project)},
+                    {"name": "make-manifests", "command": ["make", "manifests"], "cwd": rel(self.project)},
+                    {"name": "make-test", "command": ["make", "test"], "cwd": rel(self.project)},
+                ]
+            )
+        steps.extend(
+            [
+            {"name": "ensure-kind-cluster", "clusterName": self.args.cluster_name, "mutating": True},
+            {"name": "docker-build", "command": ["make", "docker-build", f"IMG={self.args.image}"], "mutating": True},
+            {"name": "kind-load-image", "command": ["kind", "load", "docker-image", self.args.image, "--name", self.args.cluster_name], "mutating": True},
+            {"name": "make-install", "command": ["make", "install"], "mutating": True},
+            {"name": "make-deploy", "command": ["make", "deploy", f"IMG={self.args.image}"], "mutating": True},
+            {"name": "verify-controller-deployment"},
+            {"name": "apply-sample", "sample": rel(self.sample), "mutating": True},
+            {"name": "verify-managed-resource-and-status"},
+            ]
+        )
+        if not self.args.skip_lifecycle:
+            steps.extend(
+                [
+                    {"name": "verify-update", "mutating": True},
+                    {"name": "verify-disabled", "mutating": True},
+                    {"name": "verify-delete", "mutating": True},
+                    {"name": "restore-sample", "mutating": True},
+                ]
+            )
+        return steps
 
     def preflight(self) -> None:
         self.failed_step = "preflight"
@@ -548,7 +587,7 @@ def rel(path: Path) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Deploy AppConfig Operator into kind and verify Deployment, ConfigMap, and status.")
+    parser = argparse.ArgumentParser(description="Deploy a profile-backed Operator fixture into kind and verify its configured lifecycle.")
     parser.add_argument("--project", default=str(DEFAULT_PROJECT))
     parser.add_argument("--cluster-name", default=DEFAULT_CLUSTER)
     parser.add_argument("--image", default=DEFAULT_IMAGE)
@@ -560,6 +599,8 @@ def main() -> int:
     parser.add_argument("--timeout", default="180s")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-lifecycle", action="store_true", help="Skip update, disabled, delete, and restore lifecycle checks.")
+    parser.add_argument("--skip-prepare-controller", action="store_true", help="Use the existing controller source without fixture-specific preparation.")
+    parser.add_argument("--skip-prevalidation", action="store_true", help="Skip make generate/manifests/test because the caller already validated the project.")
     args = parser.parse_args()
     return Runner(args).run()
 

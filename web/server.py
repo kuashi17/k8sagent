@@ -10,6 +10,7 @@ flows using only Python's standard library:
 from __future__ import annotations
 
 import html
+import os
 import re
 import subprocess
 import sys
@@ -18,10 +19,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
-import yaml
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import yaml  # noqa: E402
+
+from agent.llm.client import LLMUnavailable, warm_up_model  # noqa: E402
+
+
 LOG_ROOT = REPO_ROOT / "logs" / "web"
 
 
@@ -41,8 +47,24 @@ class AgentHandler(BaseHTTPRequestHandler):
 
         if self.path == "/run-requirement":
             requirement_text = form.get("requirement_text", "").strip()
-            profile = form.get("profile", "profiles/appconfig.yaml")
+            profile = form.get("profile", "")
+            mode = form.get("mode", "dry-run")
+            run_level = form.get("run_level", "fast")
+            kind_deploy = form.get("kind_deploy") == "on"
+            resume_existing = form.get("resume_existing") == "on"
+            confirm_execute = form.get("confirm_execute") == "on"
             planner = "llm"
+            if mode == "execute" and not confirm_execute:
+                result = {
+                    "command": "",
+                    "stdout": "",
+                    "stderr": "Execute mode requires the explicit confirmation checkbox.",
+                    "exit_code": "2",
+                    "agent_log_dir": "",
+                    "agent_report": "",
+                }
+                self.respond_html(render_page(requirement_text=requirement_text, selected_profile=profile, selected_planner=planner, result=result))
+                return
             run_dir = make_run_dir("requirement")
             requirement_path = run_dir / "requirement.txt"
             requirement_path.write_text(requirement_text, encoding="utf-8")
@@ -51,11 +73,19 @@ class AgentHandler(BaseHTTPRequestHandler):
                 "agent/langchain_agent.py",
                 "--requirement",
                 str(requirement_path.relative_to(REPO_ROOT)),
-                "--profile",
-                profile,
                 "--mode",
-                "dry-run",
+                mode,
+                "--run-level",
+                run_level,
             ]
+            if profile:
+                command.extend(["--profile", profile])
+            if mode == "execute":
+                command.append("--execute")
+            if kind_deploy:
+                command.append("--kind-deploy")
+            if resume_existing:
+                command.append("--resume-existing")
             result = run_agent(command)
             self.respond_html(render_page(requirement_text=requirement_text, selected_profile=profile, selected_planner=planner, result=result))
             return
@@ -122,10 +152,17 @@ def render_page(
           <label for="requirement_text">Operator requirement</label>
           <textarea id="requirement_text" name="requirement_text" spellcheck="false">{escape(requirement)}</textarea>
           <div class="form-grid">
-            <label>Profile<select name="profile">{profiles}</select></label>
-            <div class="field-note">Planner: <strong>llm</strong></div>
+            <label>Profile hint<select name="profile">{profiles}</select></label>
+            <label>Run level<select name="run_level"><option value="fast">fast</option><option value="standard">standard</option></select></label>
+            <label>Mode<select name="mode"><option value="dry-run">dry-run</option><option value="execute">execute</option></select></label>
+            <div class="field-note">Planner: <strong>local LLM</strong></div>
           </div>
-          <button type="submit">Run Dry-run Agent</button>
+          <div class="option-list">
+            <label class="check"><input type="checkbox" name="kind_deploy"> profile 기반 kind 배포 포함</label>
+            <label class="check"><input type="checkbox" name="resume_existing"> 기존 scaffold에서 계속</label>
+            <label class="check critical"><input type="checkbox" name="confirm_execute"> 실제 변경 승인</label>
+          </div>
+          <button type="submit">Run Agent Workflow</button>
         </form>
       </section>
       <section class="panel">
@@ -140,8 +177,7 @@ def render_page(
           <button type="submit">Analyze Log</button>
         </form>
         <div class="note">
-          <strong>Safety:</strong> 이 Web UI는 실제 scaffold/e2e execute 버튼을 제공하지 않습니다.
-          실제 변경 작업은 CLI에서 명시적으로 <code>--execute</code>를 사용할 때만 수행합니다.
+          <strong>Safety:</strong> execute 모드는 명시적 승인 체크가 필요하고, kind 배포는 profile capability가 있어야 합니다.
         </div>
       </section>
       {result_html}
@@ -170,7 +206,8 @@ def render_result(result: dict[str, str]) -> str:
 
 
 def profile_options(selected: str) -> str:
-    options = []
+    selected_attr = " selected" if not selected else ""
+    options = [f'<option value=""{selected_attr}>없음 - requirement 기반 자동 판단</option>']
     for path in sorted((REPO_ROOT / "profiles").glob("*.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         rel = str(path.relative_to(REPO_ROOT))
@@ -222,6 +259,12 @@ def escape(value: object) -> str:
 def main() -> int:
     host = "0.0.0.0"
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    if os.environ.get("LOCAL_LLM_WARMUP", "true").lower() not in {"0", "false", "no"}:
+        try:
+            warm_up_model()
+            print("Local LLM warm-up completed.")
+        except LLMUnavailable as exc:
+            print(f"Local LLM warm-up skipped: {exc}")
     server = ThreadingHTTPServer((host, port), AgentHandler)
     print(f"Kubebuilder Agent Web UI: http://localhost:{port}")
     server.serve_forever()

@@ -24,6 +24,7 @@ class LLMConfig:
     model: str = DEFAULT_LOCAL_LLM_MODEL
     timeout_seconds: int = 180
     max_tokens: int = 800
+    keep_alive: str = "30m"
 
 
 def config_from_env(model: str | None = None) -> LLMConfig:
@@ -42,6 +43,7 @@ def config_from_env(model: str | None = None) -> LLMConfig:
         model=model or os.environ.get("LOCAL_LLM_MODEL", DEFAULT_LOCAL_LLM_MODEL),
         timeout_seconds=timeout_seconds,
         max_tokens=max_tokens,
+        keep_alive=os.environ.get("LOCAL_LLM_KEEP_ALIVE", "30m"),
     )
 
 
@@ -57,6 +59,7 @@ def chat_json(system_prompt: str, user_prompt: str, config: LLMConfig | None = N
         "temperature": 0,
         "response_format": {"type": "json_object"},
         "max_tokens": cfg.max_tokens,
+        "keep_alive": cfg.keep_alive,
         "options": {
             "num_predict": cfg.max_tokens,
             "temperature": 0,
@@ -92,6 +95,32 @@ def chat_json(system_prompt: str, user_prompt: str, config: LLMConfig | None = N
     if not content:
         raise LLMUnavailable(f"Ollama local LLM endpoint returned an empty response for model {cfg.model}.")
     return str(content)
+
+
+def warm_up_model(config: LLMConfig | None = None) -> bool:
+    """Load the configured Ollama model without generating planning output."""
+
+    cfg = config or config_from_env()
+    parsed = urlsplit(request_base_url(cfg.base_url))
+    endpoint = urlunsplit((parsed.scheme, parsed.netloc, "/api/generate", "", ""))
+    payload = {
+        "model": cfg.model,
+        "prompt": "",
+        "stream": False,
+        "keep_alive": cfg.keep_alive,
+    }
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=cfg.timeout_seconds) as response:
+            json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise LLMUnavailable(f"Local LLM warm-up failed for model {cfg.model}: {exc}") from exc
+    return True
 
 
 def local_connection_error(cfg: LLMConfig) -> str:

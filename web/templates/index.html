@@ -18,8 +18,8 @@
     <main class="layout">
       <section class="panel">
         <div class="panel-header">
-          <h2>Requirement Dry-run</h2>
-          <span>자연어 요구사항 → RAG 검색 → Tool dry-run</span>
+          <h2>Requirement Workflow</h2>
+          <span>자연어 요구사항 → RAG → Tool 검증 → 실행 → 평가</span>
         </div>
         <form method="post" action="/run-requirement">
           <label for="requirement_text">Operator requirement</label>
@@ -29,6 +29,7 @@
             <label>
               Profile
               <select name="profile">
+                <option value="" {% if not selected_profile %}selected{% endif %}>없음 - requirement 기반 자동 판단</option>
                 {% for profile in profiles %}
                   <option value="{{ profile.path }}" {% if selected_profile == profile.path %}selected{% endif %}>
                     {{ profile.name }} - {{ profile.path }}
@@ -36,12 +37,30 @@
                 {% endfor %}
               </select>
             </label>
-            <div class="field-note">
-              Planner: <strong>llm</strong>
-            </div>
+            <label>
+              Run level
+              <select name="run_level">
+                <option value="fast" {% if selected_run_level == "fast" %}selected{% endif %}>fast - 빠른 Tool 결과 요약</option>
+                <option value="standard" {% if selected_run_level == "standard" %}selected{% endif %}>standard - 최종 LLM 재평가</option>
+              </select>
+            </label>
+            <label>
+              Mode
+              <select name="mode">
+                <option value="dry-run" {% if selected_mode == "dry-run" %}selected{% endif %}>dry-run</option>
+                <option value="execute" {% if selected_mode == "execute" %}selected{% endif %}>execute</option>
+              </select>
+            </label>
+            <div class="field-note">Planner: <strong>local LLM</strong></div>
           </div>
 
-          <button type="submit">Run Dry-run Agent</button>
+          <div class="option-list">
+            <label class="check"><input type="checkbox" name="kind_deploy"> 검증 성공 후 profile 기반 kind 배포 포함</label>
+            <label class="check"><input type="checkbox" name="resume_existing"> 기존 scaffold가 있으면 재생성을 건너뛰고 계속</label>
+            <label class="check critical"><input type="checkbox" name="confirm_execute"> execute 모드의 실제 파일/클러스터 변경을 승인</label>
+          </div>
+
+          <button type="submit">Run Agent Workflow</button>
         </form>
       </section>
 
@@ -62,7 +81,7 @@
         </form>
 
         <div class="note">
-          <strong>Safety:</strong> 이 Web UI는 scaffold/e2e execute 버튼을 제공하지 않습니다. 실제 변경 작업은 CLI에서 명시적으로 <code>--execute</code>를 사용할 때만 수행합니다.
+          <strong>Safety:</strong> execute는 Mode와 승인 체크박스를 모두 선택해야 합니다. kind 배포는 해당 capability가 정의된 profile에서만 허용됩니다.
         </div>
       </section>
 
@@ -91,6 +110,30 @@
         <pre class="report">{{ result.agent_report }}</pre>
         {% endif %}
 
+        {% if result.safety_json %}
+        <details open>
+          <summary>Safety Evaluation</summary>
+          <pre>{{ result.safety_json }}</pre>
+        </details>
+        {% endif %}
+        {% if result.evidence_json %}
+        <details>
+          <summary>Evidence Trace</summary>
+          <pre>{{ result.evidence_json }}</pre>
+        </details>
+        {% endif %}
+        {% if result.recovery_json %}
+        <details>
+          <summary>Recovery Plan / Approval State</summary>
+          <pre>{{ result.recovery_json }}</pre>
+        </details>
+        {% endif %}
+        {% if result.summary_json %}
+        <details>
+          <summary>Agent Summary JSON</summary>
+          <pre>{{ result.summary_json }}</pre>
+        </details>
+        {% endif %}
         <details>
           <summary>stdout</summary>
           <pre>{{ result.stdout }}</pre>

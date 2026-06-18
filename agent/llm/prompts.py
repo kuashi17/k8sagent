@@ -4,90 +4,79 @@ from __future__ import annotations
 
 
 SYSTEM_PROMPT = """\
-You are an AI Agent that helps developers build Kubebuilder based Kubernetes Operators.
-
-Principles:
-- Convert natural language requirements into clear Operator development plans.
-- Identify missing information explicitly.
-- Use retrieved RAG documents as evidence. If something is not in the documents, mark it as an inference.
-- Explain which retrieved document supports each important decision.
-- Treat profiles as optional hints or examples, not as fixed product templates.
-- Plan from the current user requirement first. Do not force AppConfig, TrainingJob, RedisCache, or any example profile when the requirement does not ask for it.
-- Create executable Tool call plans, but do not execute tools yourself.
-- For safety, if execute is not explicitly allowed, scaffold, patch, and e2e tools must stay in dry-run mode.
-- Return JSON only. Do not wrap JSON in Markdown.
+You plan safe Kubebuilder Operator workflows.
+Use the requirement as the source of truth; profiles and retrieved documents are hints.
+Never invent tools or shell commands. Keep mutating tools in dry-run unless execute is allowed.
+Return one compact JSON object only, with no Markdown.
 """
 
 
 REQUIREMENT_PLANNER_PROMPT = """\
-Create a requirement planning JSON object.
-
-Keep the response compact:
-- requirementSummary: one sentence.
-- missingInformation: max 6 items.
-- reasoning: max 2 bullets.
-- ragEvidence: max 3 items.
-- plannedSteps: max 4 items.
-- toolCalls: use only needed allowlisted tools.
-- risks: max 2 items.
-- nextActions: max 2 items.
-
-Required JSON shape:
+Plan this requirement. Use every required key and keep all strings short.
+Required shape and key order:
 {{
   "requirementSummary": "...",
+  "toolCalls": [
+    {tool_call_examples}
+  ],
   "missingInformation": [],
   "recommendedProfile": "...",
-  "reasoning": [
-    "Short decision or inference grounded in the requirement and retrieved documents."
-  ],
-  "ragEvidence": [
-    {{
-      "documentPath": "knowledge-base/...",
-      "title": "...",
-      "usedFor": "What decision this document supports.",
-      "evidenceType": "retrieved | inference"
-    }}
-  ],
   "plannedSteps": [],
-  "toolCalls": [
-    {{"tool": "spec_generator", "mode": "generate", "reason": "..."}},
-    {{"tool": "command_planner", "mode": "dry-run", "reason": "..."}},
-    {{"tool": "scaffold_runner", "mode": "dry-run | execute", "reason": "..."}},
-    {{"tool": "artifact_patcher", "mode": "dry-run | execute", "reason": "..."}},
-    {{"tool": "validation", "mode": "dry-run | execute", "reason": "Run only make generate, make manifests, and make test."}}
-  ],
   "risks": [],
   "nextActions": []
 }}
 
-Context:
-Requirement text:
+Limits: missingInformation 4; plannedSteps 4; risks 2; nextActions 2;
+each Tool reason is at most 10 words.
+
+Requirement:
 {requirement_text}
 
-Reference Knowledge and Few-shot Examples:
+References:
 {retrieved_docs}
 
-Requirement intent analysis:
+Intent:
 {intent_analysis}
 
-Selected profile hint:
+Profile hint:
 {profile_summary}
 
-Other profile candidates:
+Profile candidates:
 {profile_candidates}
 
-Safety mode:
+Workflow:
+{workflow_options}
+
+Safety:
 {safety_mode}
 
-Tool planning rules:
-- For dry-run mode, include spec_generator, command_planner, and scaffold_runner in dry-run mode.
-- For execute mode, include spec_generator, command_planner, scaffold_runner, artifact_patcher, and validation.
-- validation means the fixed allowlisted sequence: make generate, make manifests, make test.
-- Do not invent shell commands or tools outside the listed Tool names.
-- Documents with category "example" are few-shot examples. Use their structure as guidance, but do not copy fields or domain values unless the current requirement asks for them.
-- Documents with category "guide" or "troubleshooting" are reference knowledge. Ground planning decisions in these documents when relevant.
-- The selected profile is a hint for defaults/e2e rules only. The actual Operator kind, fields, managed resources, and workflow must come from the requirement text.
-- If important information is missing, list it in missingInformation and keep mutating steps dry-run unless the user explicitly provided enough detail and --execute is allowed.
+Rules:
+- dry-run: spec_generator, command_planner, scaffold_runner.
+- execute: also artifact_patcher and validation.
+- validation means make generate, make manifests, make test.
+{kind_deployment_rule}
+- Never copy example fields absent from the requirement.
+- Missing important data keeps mutating steps dry-run.
+"""
+
+
+REQUIREMENT_PLAN_REPAIR_PROMPT = """\
+Repair the candidate into one compact JSON object. Do not explain.
+Required keys and types:
+- requirementSummary: string
+- toolCalls: array of objects with non-empty tool, mode, reason
+- missingInformation: array
+- recommendedProfile: string
+- plannedSteps: array
+- risks: array
+- nextActions: array
+
+Allowed tools: spec_generator, command_planner, scaffold_runner, artifact_patcher, validation{optional_kind_tool_name}
+Safety mode: {safety_mode}
+Workflow: {workflow_options}
+Validation errors: {validation_errors}
+Candidate:
+{candidate}
 """
 
 

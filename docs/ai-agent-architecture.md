@@ -6,6 +6,8 @@
 
 기존 CLI 도구는 그대로 유지하고, 그 위에 LangChain 기반 Orchestrator 계층과 RAG 검색 계층을 추가한다.
 
+구현의 정확한 형태는 `Custom Agent Orchestrator + LangChain-compatible Tool wrapper`다. 핵심 orchestration은 직접 작성한 Python workflow이며, `langchain_core.tools.Tool`은 선택적 adapter다.
+
 ## 계층 구조
 
 ```text
@@ -15,7 +17,9 @@ User requirement
   -> Local RAG Retriever
   -> Tool wrappers
   -> Existing CLI tools
-  -> Generated specs, command plans, scaffold, patches, e2e logs
+  -> Generated specs, command plans, scaffold, patches, validation, kind deployment
+  -> Tool results returned to Local LLM
+  -> Final evaluation or recovery plan
 ```
 
 ## 기존 자동화 파이프라인과 Agent 계층
@@ -30,6 +34,26 @@ User requirement
 - `log_analyzer.py`: 실행 로그와 summary 분석
 
 Agent 계층은 이 도구를 직접 대체하지 않는다. 대신 각 도구를 Tool로 감싸고, 요구사항과 검색 문서를 바탕으로 어떤 도구를 어떤 순서로 호출할지 결정한다.
+
+## Profile-backed Kind Deployment
+
+kind 배포는 모든 Operator에 임의 적용하지 않는다. profile이 `kindDeployment` capability를 제공하고 사용자가 `--kind-deploy`를 명시한 경우에만 Agent allowlist에 Tool이 추가된다.
+
+실행 순서:
+
+```text
+artifact_patcher
+  -> validation(make generate/manifests/test)
+  -> kind_deployment
+  -> deployment summary/checks
+  -> final Local LLM evaluation
+```
+
+기존 scaffold를 보존하고 배포 검증을 이어갈 때는 `--resume-existing`을 사용한다. 이 옵션은 기존 디렉터리를 삭제하지 않고 scaffold_runner만 건너뛴다.
+
+kind runner의 `--dry-run`은 Docker build, kind cluster, kubectl apply, 파일 수정을 실행하지 않고 계획만 기록한다.
+
+Docker daemon 연결 실패는 `docker-kind-connection`으로 분류한다. recovery plan은 Docker 연결 확인 후 `kind_deployment`만 재실행하도록 제안하지만, `requiresApproval=true` 상태로 저장되고 자동 실행되지 않는다.
 
 ## Requirement Analyzer와 Profile Hint
 
