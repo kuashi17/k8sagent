@@ -18,6 +18,7 @@
 - profile별 artifact controller/RBAC hook과 멱등성 검증
 - 실패 시 Tool 실행 중단, deterministic recovery 분류, 승인 대기 recovery plan
 - Local Markdown 기반 Hybrid RAG와 keyword fallback
+- requirement RAG Hit@3 품질 gate와 reranker latency 지표
 - requirement/log-analysis evidence trace, safety evaluation, Markdown report
 - Web UI 백그라운드 작업, 상태 polling, 로그 표시, 최근 작업 목록, 취소
 - 외부 다중 worker queue, SSE 로그, 제한 재시도, 수동 rollback 정책
@@ -61,6 +62,7 @@ python3 scripts/run-regression-tests.py --suite full
 - Agent core/LLM/Tool 단위 테스트 32개 통과
 - Web 단위 테스트 7개 통과
 - `quick` regression 통과
+- requirement RAG fixture Hit@3 1.0 통과
 - Local LLM Agent 1회를 포함한 `standard` regression 통과
 - Docker/kind 기반 `full` regression 통과
 - AppConfig create/update/disabled/delete/restore lifecycle 통과

@@ -69,10 +69,17 @@ def compute_mode_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
             "p95LatencySeconds": 0.0,
             "fallbackCount": 0,
             "rerankerTimeoutCount": 0,
+            "avgRerankerLatencySeconds": 0.0,
+            "p95RerankerLatencySeconds": 0.0,
         }
 
     ranks = [item.get("firstRelevantRank") for item in results]
     latencies = [float(item.get("elapsedSeconds") or 0.0) for item in results]
+    reranker_latencies = [
+        float(item.get("rerankerElapsedSeconds") or 0.0)
+        for item in results
+        if item.get("rerankerElapsedSeconds") is not None
+    ]
     return {
         "queryCount": total,
         "hitAt1": round(sum(1 for rank in ranks if hit_at_k(rank, 1)) / total, 4),
@@ -84,6 +91,14 @@ def compute_mode_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
         "p95LatencySeconds": round(percentile(latencies, 0.95), 4),
         "fallbackCount": sum(1 for item in results if item.get("fallbackUsed")),
         "rerankerTimeoutCount": sum(1 for item in results if item.get("rerankerTimeout")),
+        "avgRerankerLatencySeconds": round(
+            mean(reranker_latencies) if reranker_latencies else 0.0,
+            4,
+        ),
+        "p95RerankerLatencySeconds": round(
+            percentile(reranker_latencies, 0.95),
+            4,
+        ),
     }
 
 
@@ -124,5 +139,6 @@ def summarize_query_result(
         "fallbackUsed": bool(retrieval_response.get("fallbackUsed")),
         "fallbackReason": fallback_reason,
         "rerankerTimeout": reranker_timeout,
+        "rerankerElapsedSeconds": reranker_output.get("elapsedSeconds"),
         "success": bool(rank),
     }

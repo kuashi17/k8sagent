@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -83,6 +84,15 @@ def run_suite(suite: str, output_dir: Path) -> int:
             "web-unit-tests",
             [sys.executable, "-m", "unittest", "discover", "-s", "web", "-p", "test_*.py", "-q"],
         ),
+        run_check(
+            "rag-quality-gate",
+            [
+                sys.executable,
+                "agent/evaluation/rag_quality_gate.py",
+                "--output",
+                str(output_dir / "rag-quality.json"),
+            ],
+        ),
     ]
 
     reliability_command = [
@@ -124,13 +134,64 @@ def run_suite(suite: str, output_dir: Path) -> int:
         encoding="utf-8",
     )
     print(json.dumps({"status": summary["status"], "outputDir": relative(output_dir)}, indent=2))
+    write_performance_trend(output_dir, summary)
     return 0 if summary["status"] == "passed" else 1
 
 
 def run_check(name: str, command: list[str]) -> dict[str, object]:
     print(f"\n[{name}] {' '.join(command)}", flush=True)
+    started = time.perf_counter()
     completed = subprocess.run(command, cwd=REPO_ROOT, text=True)
-    return {"name": name, "command": command, "exitCode": completed.returncode}
+    return {
+        "name": name,
+        "command": command,
+        "exitCode": completed.returncode,
+        "elapsedSeconds": round(time.perf_counter() - started, 3),
+    }
+
+
+def write_performance_trend(
+    output_dir: Path,
+    summary: dict[str, object],
+) -> None:
+    current = {
+        "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "suite": summary["suite"],
+        "status": summary["status"],
+        "checks": {
+            item["name"]: item["elapsedSeconds"]
+            for item in summary["checks"]
+        },
+        "totalSeconds": round(
+            sum(float(item["elapsedSeconds"]) for item in summary["checks"]),
+            3,
+        ),
+    }
+    previous = find_previous_performance(output_dir)
+    payload = {"current": current, "previous": previous}
+    (output_dir / "performance-trend.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def find_previous_performance(output_dir: Path) -> dict[str, object]:
+    root = output_dir.parent
+    candidates = sorted(
+        (
+            path
+            for path in root.glob("*/performance-trend.json")
+            if path.parent != output_dir
+        ),
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        return data.get("current") or {}
+    return {}
 
 
 def relative(path: Path) -> str:

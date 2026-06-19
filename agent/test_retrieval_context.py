@@ -6,6 +6,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+from agent.rag.retriever import keyword_search
 from agent.retrieval_context import requirement_rag_limit, select_context
 
 
@@ -49,6 +50,21 @@ class RetrievalContextTest(unittest.TestCase):
             self.assertEqual(requirement_rag_limit(), 3)
         with patch.dict(os.environ, {"AGENT_REQUIREMENT_RAG_LIMIT": "invalid"}):
             self.assertEqual(requirement_rag_limit(), 2)
+
+    def test_requirement_fixtures_select_domain_example(self) -> None:
+        cases = {
+            "SecretSync source Secret destination Secret": "knowledge-base/examples/secret-sync.md",
+            "ScheduledTask CronJob schedule image": "knowledge-base/examples/scheduled-task.md",
+            "WebService Deployment Service replicas": "knowledge-base/examples/web-service.md",
+        }
+        for query, expected in cases.items():
+            with self.subTest(query=query):
+                details = {"hybridResults": keyword_search(query, limit=8)}
+                selected = select_context(details, 3, "requirement")
+                self.assertIn(
+                    expected,
+                    [item.get("sourcePath") for item in selected],
+                )
 
 
 if __name__ == "__main__":

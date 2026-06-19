@@ -1,0 +1,17 @@
+name: full-kind-regression
+
+on:
+  workflow_dispatch:
+
+jobs:
+  full:
+    runs-on: [self-hosted, local-llm, docker, kind]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker info
+      - run: python3 scripts/run-regression-tests.py --suite full
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-regression
+          path: evaluation/results/regression/

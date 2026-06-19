@@ -19,12 +19,12 @@ def render_report(summary: dict[str, Any], details: dict[str, Any]) -> str:
         "",
         "## Mode Metrics",
         "",
-        "| Mode | Hit@1 | Hit@3 | Recall@3 | Recall@5 | MRR | Avg Latency | P95 Latency | Fallback | Timeout |",
-        "|------|------:|------:|---------:|---------:|----:|------------:|------------:|---------:|--------:|",
+        "| Mode | Hit@1 | Hit@3 | Recall@3 | Recall@5 | MRR | Avg Latency | P95 Latency | Rerank Avg | Rerank P95 | Fallback | Timeout |",
+        "|------|------:|------:|---------:|---------:|----:|------------:|------------:|-----------:|-----------:|---------:|--------:|",
     ]
     for mode, metrics in summary.get("modes", {}).items():
         lines.append(
-            "| {mode} | {hit1:.4f} | {hit3:.4f} | {recall3:.4f} | {recall5:.4f} | {mrr:.4f} | {avg:.4f}s | {p95:.4f}s | {fallback} | {timeout} |".format(
+            "| {mode} | {hit1:.4f} | {hit3:.4f} | {recall3:.4f} | {recall5:.4f} | {mrr:.4f} | {avg:.4f}s | {p95:.4f}s | {rerank_avg:.4f}s | {rerank_p95:.4f}s | {fallback} | {timeout} |".format(
                 mode=mode,
                 hit1=float(metrics.get("hitAt1") or 0.0),
                 hit3=float(metrics.get("hitAt3") or 0.0),
@@ -33,6 +33,8 @@ def render_report(summary: dict[str, Any], details: dict[str, Any]) -> str:
                 mrr=float(metrics.get("mrr") or 0.0),
                 avg=float(metrics.get("avgLatencySeconds") or 0.0),
                 p95=float(metrics.get("p95LatencySeconds") or 0.0),
+                rerank_avg=float(metrics.get("avgRerankerLatencySeconds") or 0.0),
+                rerank_p95=float(metrics.get("p95RerankerLatencySeconds") or 0.0),
                 fallback=int(metrics.get("fallbackCount") or 0),
                 timeout=int(metrics.get("rerankerTimeoutCount") or 0),
             )

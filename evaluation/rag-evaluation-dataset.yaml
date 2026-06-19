@@ -274,3 +274,37 @@ queries:
       - resourceVersion
       - status
     notes: reconcile conflict 문서 검색
+
+  - id: secret-sync-cross-namespace-001
+    query: source Secret을 읽어서 다른 namespace의 destination Secret으로 동기화하는 Operator
+    category: requirement
+    expectedSources:
+      - knowledge-base/examples/secret-sync.md
+      - knowledge-base/kubebuilder-guides/finalizer-pattern.md
+      - knowledge-base/kubebuilder-guides/rbac-marker.md
+    expectedKeywords:
+      - SecretSync
+      - Secret
+      - namespace
+
+  - id: scheduled-task-cronjob-001
+    query: schedule과 image를 받아 CronJob을 관리하는 ScheduledTask Operator
+    category: requirement
+    expectedSources:
+      - knowledge-base/examples/scheduled-task.md
+      - knowledge-base/kubebuilder-guides/ownership-watches.md
+    expectedKeywords:
+      - ScheduledTask
+      - CronJob
+      - schedule
+
+  - id: web-service-deployment-service-001
+    query: image replicas containerPort를 받아 Deployment와 Service를 만드는 WebService Operator
+    category: requirement
+    expectedSources:
+      - knowledge-base/examples/web-service.md
+      - knowledge-base/kubebuilder-guides/reconcile-pattern.md
+    expectedKeywords:
+      - WebService
+      - Deployment
+      - Service

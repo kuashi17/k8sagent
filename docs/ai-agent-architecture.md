@@ -176,6 +176,8 @@ export LOCAL_LLM_TIMEOUT_SECONDS=120
 
 검색 품질은 `evaluation/rag-evaluation-dataset.yaml`과 `agent/evaluation/rag_evaluator.py`로 정량 평가한다. 평가기는 `keyword`, `vector`, `hybrid`, `hybrid-rerank`를 비교하고 Hit@1, Hit@3, Recall@3, Recall@5, MRR, 평균 latency, P95 latency, fallback count, reranker timeout count를 저장한다.
 
+`agent/evaluation/rag_quality_gate.py`는 외부 모델 없이 requirement fixture의 selected context Hit@3를 검사하므로 PR quick regression에서 실행할 수 있다. 전체 평가 결과에는 reranker 자체의 평균/P95 latency도 별도로 기록한다.
+
 Agent report에는 검색 결과만 나열하지 않고, LLM이 각 문서를 어떤 판단에 사용했는지도 별도 섹션으로 기록한다.
 
 ```text

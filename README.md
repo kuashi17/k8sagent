@@ -1079,6 +1079,14 @@ python3 scripts/run-regression-tests.py --suite full
 
 각 실행은 `evaluation/results/regression/<timestamp>/regression-summary.json`과 하위 검증 결과를 남깁니다. CI와 로컬 개발의 기본 검증은 `quick`, 로컬 LLM까지 포함한 변경은 `standard`, Docker/kind가 준비된 릴리스 전 검증은 `full`을 사용합니다.
 
+각 결과 디렉터리의 `performance-trend.json`에는 검사별 실행 시간, 전체 시간, 직전 실행 비교값이 저장됩니다. `quick`에는 requirement RAG fixture의 Hit@3 품질 gate도 포함됩니다.
+
+GitHub Actions 분리:
+
+- `.github/workflows/quick.yml`: PR와 main push에서 실행
+- `.github/workflows/standard.yml`: `local-llm` self-hosted runner에서 수동 실행
+- `.github/workflows/full.yml`: `local-llm`, `docker`, `kind` self-hosted runner에서 수동 실행
+
 빠른 정책/캐시 검증:
 
 ```bash
