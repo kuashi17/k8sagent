@@ -36,6 +36,7 @@ from agent.recovery_policy import (  # noqa: E402
     validate_recovery_plan,
 )
 from agent.report_writer import write_agent_artifacts, write_tool_output_logs  # noqa: E402
+from agent import report_renderer  # noqa: E402
 from agent.requirement_analyzer import analyze_requirement_intent, select_profile_hint  # noqa: E402
 from agent.tool_validator import (  # noqa: E402
     is_inside_repo,
@@ -120,7 +121,7 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
         summary["safetyEvaluation"] = build_requirement_safety_evaluation(args, context, execution, planner_result, None)
         summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
         write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result)
-        report = render_requirement_report(summary)
+        report = report_renderer.render_requirement_report(summary)
         (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
         print(report)
         print(f"\nAgent logs: {log_dir}")
@@ -173,7 +174,7 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     summary["safetyEvaluation"] = build_requirement_safety_evaluation(args, context, execution, planner_result, failure_context)
     summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
     write_agent_artifacts(log_dir, summary, planner_result, context["retrievedKnowledge"], execution, final_result, recovery_result)
-    report = render_requirement_report(summary)
+    report = report_renderer.render_requirement_report(summary)
     (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
     print(report)
     print(f"\nAgent logs: {log_dir}")
@@ -339,7 +340,7 @@ def write_recovery_checkpoint(
         execution,
         pending_final,
     )
-    (log_dir / "agent-report.md").write_text(render_requirement_report(summary), encoding="utf-8")
+    (log_dir / "agent-report.md").write_text(report_renderer.render_requirement_report(summary), encoding="utf-8")
 
 
 def empty_final_result(error: str) -> dict[str, Any]:
@@ -585,7 +586,7 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
     summary["safetyEvaluation"] = build_log_analysis_safety_evaluation(summary)
     summary["evidenceTrace"] = build_log_analysis_evidence_trace(summary)
     write_agent_artifacts(log_dir, summary, planner_result, retrieved, [analyzer_result])
-    report = render_log_analysis_report(summary)
+    report = report_renderer.render_log_analysis_report(summary)
     (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
     print(report)
     print(f"\nAgent logs: {log_dir}")
