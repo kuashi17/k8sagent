@@ -215,6 +215,7 @@ flowchart TD
 | Report Renderer | `agent/report_renderer.py` | Agent summary | Markdown requirement/log report | safety, evidence, recovery 표시 |
 | Context Builder | `agent/context_builder.py` | requirement, profile hint, retrieval | normalized planning context | 요구사항 파싱과 누락 정보 조립 |
 | Evidence Builder | `agent/evidence_builder.py` | summary, Tool/retrieval results | safety and evidence trace | 근거 연결과 안전 정책 표시 |
+| Summary Builder | `agent/summary_builder.py` | context, planner, execution, recovery | Agent summary | 오류·warning·다음 조치 조립 |
 | Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
 | Recovery Validator | `agent/langchain_agent.py` 내부 | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
 
