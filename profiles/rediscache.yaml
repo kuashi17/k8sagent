@@ -39,3 +39,36 @@ statefulSetSpecValidation:
     - name: storage request
       from: spec.storageSize
       path: spec.volumeClaimTemplates[0].spec.resources.requests.storage
+kindDeployment:
+  enabled: true
+  runner: kind_deployment_runner
+  project: workspace/redis-cache-operator
+  clusterName: rediscache-deploy
+  image: redis-cache-operator:kind
+  sample: workspace/redis-cache-operator/config/samples/cache_v1alpha1_rediscache.yaml
+  namespace: redis-cache-operator-system
+  deployment: redis-cache-operator-controller-manager
+  validator: managed-resources
+  validatorConfig:
+    resource: rediscache
+    sampleName: rediscache-sample
+    managedResources:
+      - resource: statefulset
+        name: rediscache-sample
+      - resource: service
+        name: rediscache-sample
+    acceptedStatusPhases:
+      - Pending
+      - Progressing
+      - Ready
+    rbacChecks:
+      - verb: update
+        resource: rediscaches/status
+        apiGroup: cache.sample.io
+      - verb: create
+        resource: statefulsets
+        apiGroup: apps
+      - verb: create
+        resource: services
+  skipPrepareController: true
+  skipPrevalidation: false

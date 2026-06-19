@@ -61,7 +61,9 @@ Local LLM 역할별 설정은 분리된다. `LOCAL_LLM_PLANNING_MODEL`, `LOCAL_L
 
 kind 배포는 모든 Operator에 임의 적용하지 않는다. profile이 `kindDeployment` capability를 제공하고 사용자가 `--kind-deploy`를 명시한 경우에만 Agent allowlist에 Tool이 추가된다.
 
-`kind_deployment_runner.py`의 공통 엔진은 Docker/kind 준비, image build/load, CRD 설치, Controller Deployment 확인까지만 담당한다. profile의 `kindDeployment.validator`와 `validatorConfig`는 Custom Resource 적용, 관리 리소스 확인, status 및 lifecycle 검증 구현을 선택한다. AppConfig의 ConfigMap 검증은 `kind_deployment_validators.py`의 `appconfig-configmap` validator로 분리되어 있다.
+`kind_deployment_runner.py`의 공통 엔진은 Docker/kind 준비, image build/load, CRD 설치, Controller Deployment 확인과 service account RBAC preflight를 담당한다. profile의 `kindDeployment.validator`와 `validatorConfig`는 Custom Resource 적용, 관리 리소스 확인, status 및 lifecycle 검증 구현을 선택한다. AppConfig는 `appconfig-configmap`, TrainingJob과 RedisCache는 선언형 `managed-resources` validator를 사용한다.
+
+Artifact patcher profile은 `artifactPatcher.rbacResources`와 제한된 exact-match `controllerPatches`를 제공할 수 있다. patcher는 Custom Resource/status 기본 권한을 보존하고, 적용 후 모든 RBAC marker 존재 여부를 검증한다. 같은 profile patch를 반복 적용해도 결과가 변하지 않아야 한다.
 
 실행 순서:
 

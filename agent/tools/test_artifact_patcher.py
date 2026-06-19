@@ -73,6 +73,58 @@ func (r *WidgetReconciler) Reconcile() {}
             patched,
         )
 
+    def test_profile_rbac_and_controller_patch_are_idempotent(self) -> None:
+        model = normalize_spec(
+            {
+                "project": {"name": "widget-operator"},
+                "api": {
+                    "kind": "Widget",
+                    "plural": "widgets",
+                    "version": "v1alpha1",
+                    "group": "apps",
+                    "domain": "example.io",
+                },
+                "specFields": [{"name": "enabled", "type": "bool"}],
+                "statusFields": [{"name": "phase", "type": "string"}],
+                "rbac": {"resources": []},
+            },
+            {
+                "artifactPatcher": {
+                    "rbacResources": [
+                        {
+                            "apiGroup": "",
+                            "resource": "secrets",
+                            "verbs": ["get"],
+                        }
+                    ],
+                    "controllerPatches": [
+                        {
+                            "before": "func marker() {}",
+                            "after": "func marker() { /* profile */ }",
+                        }
+                    ],
+                }
+            },
+            "profiles/widget.yaml",
+        )
+        controller = """package controller
+
+type WidgetReconciler struct {
+\tClient any
+}
+
+// +kubebuilder:rbac:groups=apps.example.io,resources=widgets,verbs=get
+
+func marker() {}
+"""
+
+        once = patch_controller(controller, model)
+        twice = patch_controller(once, model)
+
+        self.assertEqual(once, twice)
+        self.assertIn('groups="",resources=secrets,verbs=get', once)
+        self.assertIn("/* profile */", once)
+
 
 if __name__ == "__main__":
     unittest.main()

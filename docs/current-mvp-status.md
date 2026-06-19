@@ -13,6 +13,9 @@
 - `make generate`, `make manifests`, `make test` 검증
 - profile capability 기반 kind deployment
 - 공통 kind 배포 엔진과 profile validator 분리
+- AppConfig, TrainingJob, RedisCache 실제 kind lifecycle validator
+- 공통 namespace/service-account RBAC preflight
+- profile별 artifact controller/RBAC hook과 멱등성 검증
 - 실패 시 Tool 실행 중단, deterministic recovery 분류, 승인 대기 recovery plan
 - Local Markdown 기반 Hybrid RAG와 keyword fallback
 - requirement/log-analysis evidence trace, safety evaluation, Markdown report
@@ -61,6 +64,8 @@ python3 scripts/run-regression-tests.py --suite full
 - Local LLM Agent 1회를 포함한 `standard` regression 통과
 - Docker/kind 기반 `full` regression 통과
 - AppConfig create/update/disabled/delete/restore lifecycle 통과
+- TrainingJob Job create/delete/restore lifecycle 통과
+- RedisCache StatefulSet/Service create/delete/restore lifecycle 통과
 - 실제 Agent standard execute → validation → kind deployment 경로 통과
 
 ```bash
@@ -70,6 +75,8 @@ python3 scripts/run-regression-tests.py --suite full
 최근 성공 로그:
 
 - kind lifecycle: `logs/kind-deployment/20260619-160026/summary.json`
+- TrainingJob lifecycle: `logs/kind-deployment/20260619-161557/summary.json`
+- RedisCache lifecycle: `logs/kind-deployment/20260619-162141/summary.json`
 - Agent standard workflow: `logs/agent/20260619-160009-672713/summary.json`
 
 ## 안전 정책

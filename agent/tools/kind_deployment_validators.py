@@ -152,6 +152,7 @@ class DeploymentValidator(Protocol):
     def verify_initial(self, engine: DeploymentEngine) -> None: ...
     def verify_lifecycle(self, engine: DeploymentEngine) -> None: ...
     def summary(self) -> dict[str, Any]: ...
+    def rbac_checks(self) -> list[dict[str, str]]: ...
 
 
 class AppConfigConfigMapValidator:
@@ -226,6 +227,17 @@ class AppConfigConfigMapValidator:
             },
             "managedResource": {"kind": "ConfigMap", "name": self.configmap_name},
         }
+
+    def rbac_checks(self) -> list[dict[str, str]]:
+        return [
+            {
+                "verb": "update",
+                "resource": "appconfigs/status",
+                "apiGroup": "app.beginner.sample.io",
+            },
+            {"verb": "create", "resource": "configmaps", "apiGroup": ""},
+            {"verb": "delete", "resource": "configmaps", "apiGroup": ""},
+        ]
 
     def verify_update(self, engine: DeploymentEngine) -> None:
         engine.failed_step = "verify-update"
@@ -348,9 +360,222 @@ class AppConfigConfigMapValidator:
         return command
 
 
+class ManagedResourceValidator:
+    """Declarative create/delete/restore validation for profile resources."""
+
+    name = "managed-resources"
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.resource = str(config.get("resource") or "")
+        self.sample_name = str(config.get("sampleName") or "")
+        self.namespace = str(config.get("namespace") or "")
+        self.managed_resources = [
+            {
+                "resource": str(item.get("resource") or ""),
+                "name": str(item.get("name") or self.sample_name),
+            }
+            for item in config.get("managedResources") or []
+            if isinstance(item, dict) and item.get("resource")
+        ]
+        self.status_phases = [
+            str(item)
+            for item in config.get("acceptedStatusPhases") or []
+            if item
+        ]
+        self.setup_resources = [
+            item
+            for item in config.get("setupResources") or []
+            if isinstance(item, dict)
+        ]
+        self._rbac_checks = [
+            {
+                "verb": str(item.get("verb") or "get"),
+                "resource": str(item.get("resource") or ""),
+                "apiGroup": str(item.get("apiGroup") or ""),
+            }
+            for item in config.get("rbacChecks") or []
+            if isinstance(item, dict) and item.get("resource")
+        ]
+
+    def planned_steps(
+        self,
+        include_prepare: bool,
+        include_lifecycle: bool,
+    ) -> list[dict[str, Any]]:
+        steps = []
+        if include_prepare:
+            steps.append(
+                {
+                    "name": "verify-existing-controller",
+                    "validator": self.name,
+                }
+            )
+        steps.extend([
+            {"name": "apply-setup-resources", "validator": self.name},
+            {"name": "verify-managed-resources", "validator": self.name},
+        ])
+        if include_lifecycle:
+            steps.extend(
+                {"name": name, "mutating": True, "validator": self.name}
+                for name in ("verify-delete", "restore-sample")
+            )
+        return steps
+
+    def prepare(self, engine: DeploymentEngine) -> None:
+        engine.checks["controllerPrepared"] = {
+            "changed": False,
+            "reason": "managed-resources validator uses the existing controller",
+        }
+
+    def verify_initial(self, engine: DeploymentEngine) -> None:
+        self.apply_setup_resources(engine)
+        engine.failed_step = "apply-sample"
+        engine.run_cmd(
+            "kubectl-apply-sample",
+            self.kubectl(["apply", "-f", str(engine.sample)]),
+            timeout=120,
+        )
+        managed = [
+            self.wait_present(engine, item["resource"], item["name"])
+            for item in self.managed_resources
+        ]
+        custom_resource = self.wait_present(
+            engine,
+            self.resource,
+            self.sample_name,
+        )
+        status = custom_resource.get("status") or {}
+        if self.status_phases:
+            deadline = time.time() + engine.timeout_seconds
+            while (
+                str(status.get("phase") or "") not in self.status_phases
+                and time.time() < deadline
+            ):
+                time.sleep(2)
+                custom_resource = self.wait_present(
+                    engine,
+                    self.resource,
+                    self.sample_name,
+                )
+                status = custom_resource.get("status") or {}
+            if str(status.get("phase") or "") not in self.status_phases:
+                raise RuntimeError(
+                    f"Custom Resource phase was not accepted: {status}"
+                )
+        engine.checks["managedResources"] = managed
+        engine.checks["customResourceStatus"] = status
+
+    def verify_lifecycle(self, engine: DeploymentEngine) -> None:
+        engine.failed_step = "verify-delete"
+        engine.run_cmd(
+            "kubectl-delete-custom-resource",
+            self.kubectl(
+                [
+                    "delete",
+                    self.resource,
+                    self.sample_name,
+                    "--ignore-not-found",
+                ]
+            ),
+            timeout=120,
+        )
+        absent = {
+            f"{item['resource']}/{item['name']}": self.wait_absent(
+                engine,
+                item["resource"],
+                item["name"],
+            )
+            for item in self.managed_resources
+        }
+        engine.checks["lifecycleDelete"] = {
+            "customResourceAbsent": self.wait_absent(
+                engine,
+                self.resource,
+                self.sample_name,
+            ),
+            "managedResourcesAbsent": absent,
+        }
+        engine.failed_step = "restore-sample"
+        self.verify_initial(engine)
+        engine.checks["lifecycleRestore"] = {"restored": True}
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "customResource": {
+                "resource": self.resource,
+                "name": self.sample_name,
+                "namespace": self.namespace,
+            },
+            "managedResources": self.managed_resources,
+        }
+
+    def rbac_checks(self) -> list[dict[str, str]]:
+        return self._rbac_checks
+
+    def apply_setup_resources(self, engine: DeploymentEngine) -> None:
+        for index, item in enumerate(self.setup_resources, start=1):
+            manifest = engine.log_dir / f"setup-resource-{index}.yaml"
+            manifest.write_text(
+                yaml.safe_dump(item, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            engine.run_cmd(
+                f"kubectl-apply-setup-{index}",
+                self.kubectl(["apply", "-f", str(manifest)]),
+                timeout=120,
+            )
+
+    def wait_present(
+        self,
+        engine: DeploymentEngine,
+        resource: str,
+        name: str,
+    ) -> dict[str, Any]:
+        deadline = time.time() + engine.timeout_seconds
+        last = ""
+        while time.time() < deadline:
+            result = engine.run_cmd(
+                f"kubectl-get-{resource.replace('/', '-')}-{name}",
+                self.kubectl(["get", resource, name, "-o", "json"]),
+                check=False,
+            )
+            last = result.get("stderr") or result.get("stdout") or ""
+            if result["exitCode"] == 0:
+                return parse_json(result["stdout"])
+            time.sleep(2)
+        raise RuntimeError(f"{resource}/{name} was not created: {last}")
+
+    def wait_absent(
+        self,
+        engine: DeploymentEngine,
+        resource: str,
+        name: str,
+    ) -> bool:
+        deadline = time.time() + engine.timeout_seconds
+        while time.time() < deadline:
+            result = engine.run_cmd(
+                f"kubectl-get-{resource.replace('/', '-')}-{name}-absent",
+                self.kubectl(["get", resource, name, "-o", "json"]),
+                check=False,
+            )
+            if result["exitCode"] != 0 and is_not_found(result):
+                return True
+            time.sleep(2)
+        return False
+
+    def kubectl(self, arguments: list[str]) -> list[str]:
+        command = ["kubectl"]
+        if self.namespace:
+            command.extend(["--namespace", self.namespace])
+        return [*command, *arguments]
+
+
 def create_validator(name: str, config: dict[str, Any]) -> DeploymentValidator:
     if name == AppConfigConfigMapValidator.name:
         return AppConfigConfigMapValidator(config)
+    if name == ManagedResourceValidator.name:
+        return ManagedResourceValidator(config)
     raise ValueError(f"Unsupported kind deployment validator: {name}")
 
 

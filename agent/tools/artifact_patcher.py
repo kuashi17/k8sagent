@@ -101,7 +101,13 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
     project = spec.get("project") or {}
     spec_fields = spec.get("specFields") or spec.get("spec", {}).get("fields") or []
     status_fields = spec.get("statusFields") or spec.get("status", {}).get("fields") or []
+    patcher_profile = profile.get("artifactPatcher") or {}
     rbac_resources = list(spec.get("rbac", {}).get("resources") or [])
+    rbac_resources.extend(
+        item
+        for item in patcher_profile.get("rbacResources") or []
+        if isinstance(item, dict)
+    )
     profile_sample_defaults = profile.get("sampleDefaults", {}).get("spec") or {}
 
     kind = api.get("kind", "")
@@ -143,6 +149,11 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
             "name": profile.get("profileName", ""),
             "sampleDefaults": profile_sample_defaults,
         },
+        "controllerPatches": [
+            item
+            for item in patcher_profile.get("controllerPatches") or []
+            if isinstance(item, dict)
+        ],
         "rbacSource": "spec.rbac.resources" if rbac_resources else "fallback",
         "validationCommands": spec.get("validation", {}).get("commands") or ["make generate", "make manifests", "make test"],
     }
@@ -162,17 +173,28 @@ def required_missing(model: dict[str, Any]) -> list[str]:
 
 def normalize_rbac(api_group: str, plural: str, resources: list[dict[str, Any]], spec_fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if resources:
-        return unique_resources(
-            [
-                {
-                    "apiGroup": item.get("apiGroup", ""),
-                    "resource": item.get("resource", ""),
-                    "verbs": item.get("verbs") or ["get", "list", "watch"],
-                }
-                for item in resources
-                if item.get("resource")
-            ]
+        result = [
+            {
+                "apiGroup": item.get("apiGroup", ""),
+                "resource": item.get("resource", ""),
+                "verbs": item.get("verbs") or ["get", "list", "watch"],
+            }
+            for item in resources
+            if item.get("resource")
+        ]
+        ensure_resource(
+            result,
+            api_group,
+            plural,
+            ["get", "list", "watch", "update", "patch"],
         )
+        ensure_resource(
+            result,
+            api_group,
+            f"{plural}/status",
+            ["get", "update", "patch"],
+        )
+        return unique_resources(result)
 
     result: list[dict[str, Any]] = [
         {"apiGroup": api_group, "resource": plural, "verbs": ["get", "list", "watch", "create", "update", "patch", "delete"]},
@@ -321,7 +343,50 @@ def patch_controller(text: str, model: dict[str, Any]) -> str:
     updated, count = re.subn(pattern, replacement, text, flags=re.S)
     if count != 1:
         raise SystemExit(f"failed to update RBAC markers for {kind} controller")
+    updated = apply_controller_patches(
+        updated,
+        model.get("controllerPatches") or [],
+    )
+    validate_controller_markers(updated, model)
     return updated
+
+
+def apply_controller_patches(
+    text: str,
+    patches: list[dict[str, Any]],
+) -> str:
+    updated = text
+    for index, patch in enumerate(patches):
+        before = str(patch.get("before") or "")
+        after = str(patch.get("after") or "")
+        if not before or not after:
+            raise SystemExit(
+                f"profile controllerPatches[{index}] requires before and after"
+            )
+        if after in updated:
+            continue
+        count = updated.count(before)
+        if count != 1:
+            raise SystemExit(
+                f"profile controllerPatches[{index}] expected one match, got {count}"
+            )
+        updated = updated.replace(before, after, 1)
+    return updated
+
+
+def validate_controller_markers(
+    text: str,
+    model: dict[str, Any],
+) -> None:
+    missing = [
+        render_rbac_marker(item)
+        for item in model["rbacResources"]
+        if render_rbac_marker(item) not in text
+    ]
+    if missing:
+        raise SystemExit(
+            "controller RBAC marker validation failed: " + ", ".join(missing)
+        )
 
 
 def render_rbac_marker(item: dict[str, Any]) -> str:

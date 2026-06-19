@@ -7,7 +7,11 @@ import unittest
 from unittest.mock import patch
 
 from agent.tools.kind_deployment_runner import KindDeploymentEngine
-from agent.tools.kind_deployment_validators import AppConfigConfigMapValidator, create_validator
+from agent.tools.kind_deployment_validators import (
+    AppConfigConfigMapValidator,
+    ManagedResourceValidator,
+    create_validator,
+)
 from agent.tools.langchain_wrappers import kind_deployment_runner
 
 
@@ -44,6 +48,32 @@ class KindDeploymentValidatorTest(unittest.TestCase):
     def test_unknown_validator_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unsupported kind deployment validator"):
             create_validator("unknown", {})
+
+    def test_managed_resource_validator_uses_profile_contract(self) -> None:
+        validator = create_validator(
+            "managed-resources",
+            {
+                "resource": "trainingjob",
+                "sampleName": "sample",
+                "managedResources": [
+                    {"resource": "job", "name": "sample-job"}
+                ],
+                "rbacChecks": [
+                    {
+                        "verb": "create",
+                        "resource": "jobs",
+                        "apiGroup": "batch",
+                    }
+                ],
+            },
+        )
+
+        self.assertIsInstance(validator, ManagedResourceValidator)
+        self.assertEqual(
+            validator.summary()["managedResources"],
+            [{"resource": "job", "name": "sample-job"}],
+        )
+        self.assertEqual(validator.rbac_checks()[0]["verb"], "create")
 
     def test_engine_uses_deployment_namespace_as_validator_default(self) -> None:
         args = type(

@@ -71,6 +71,7 @@ class KindDeploymentEngine:
             self.run_cmd("make-install", ["make", "install"], cwd=self.project, timeout=300)
             self.run_cmd("make-deploy", ["make", "deploy", f"IMG={self.args.image}"], cwd=self.project, timeout=300)
             self.wait_deployment()
+            self.verify_rbac()
             self.validator.verify_initial(self)
             if not self.args.skip_lifecycle:
                 self.validator.verify_lifecycle(self)
@@ -162,6 +163,44 @@ class KindDeploymentEngine:
             "availableReplicas": deployment.get("status", {}).get("availableReplicas", 0),
             "readyReplicas": deployment.get("status", {}).get("readyReplicas", 0),
         }
+
+    def verify_rbac(self) -> None:
+        checks = []
+        service_account = (
+            f"system:serviceaccount:{self.args.namespace}:"
+            f"{self.args.deployment.removesuffix('-controller-manager')}-controller-manager"
+        )
+        for index, item in enumerate(self.validator.rbac_checks(), start=1):
+            resource_name, _, subresource = item["resource"].partition("/")
+            resource = resource_name
+            if item.get("apiGroup"):
+                resource = f"{resource}.{item['apiGroup']}"
+            command = [
+                "kubectl",
+                "auth",
+                "can-i",
+                item["verb"],
+                resource,
+                "--namespace",
+                self.args.namespace,
+                "--as",
+                service_account,
+            ]
+            if subresource:
+                command.extend(["--subresource", subresource])
+            result = self.run_cmd(
+                f"kubectl-auth-can-i-{index}",
+                command,
+                check=False,
+            )
+            allowed = result["exitCode"] == 0 and result["stdout"].strip() == "yes"
+            checks.append({**item, "allowed": allowed})
+            if not allowed:
+                self.failed_step = "rbac-preflight"
+                raise RuntimeError(
+                    f"Controller RBAC denied: {item['verb']} {resource}"
+                )
+        self.checks["rbacPreflight"] = checks
 
     def run_cmd(
         self,

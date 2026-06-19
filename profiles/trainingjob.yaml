@@ -77,3 +77,45 @@ warnings:
       - nvidia.com/gpu
     action: warn
     message: Pod is Pending due to insufficient GPU resources; treated as warning.
+kindDeployment:
+  enabled: true
+  runner: kind_deployment_runner
+  project: workspace/generated-operators/trainingjob-operator
+  clusterName: trainingjob-deploy
+  image: trainingjob-operator:kind
+  sample: workspace/generated-operators/trainingjob-operator/config/samples/ml_v1alpha1_trainingjob.yaml
+  namespace: trainingjob-operator-system
+  deployment: trainingjob-operator-controller-manager
+  validator: managed-resources
+  validatorConfig:
+    resource: trainingjob
+    sampleName: trainingjob-sample
+    managedResources:
+      - resource: job
+        name: trainingjob-sample-job
+    acceptedStatusPhases:
+      - Pending
+      - Running
+      - Succeeded
+    setupResources:
+      - apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: sample-pvc
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+    rbacChecks:
+      - verb: update
+        resource: trainingjobs/status
+        apiGroup: ml.ai.sample.io
+      - verb: create
+        resource: jobs
+        apiGroup: batch
+      - verb: get
+        resource: persistentvolumeclaims
+  skipPrepareController: true
+  skipPrevalidation: false
