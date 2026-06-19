@@ -21,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.llm.client import LLMUnavailable, config_from_env  # noqa: E402
-from agent.execution_engine import execute_planned_tools, order_validated_tool_calls  # noqa: E402
+from agent.execution_engine import execute_planned_tools  # noqa: E402
 from agent.llm.planner import (  # noqa: E402
     LLMOutputParseError,
     analyze_log_with_llm,
@@ -35,13 +35,12 @@ from agent.recovery_policy import (  # noqa: E402
     scrub_failure_context,
     validate_recovery_plan,
 )
-from agent.report_writer import write_agent_artifacts, write_tool_output_logs  # noqa: E402
+from agent.report_writer import write_agent_artifacts  # noqa: E402
 from agent import report_renderer  # noqa: E402
 from agent.requirement_analyzer import analyze_requirement_intent, select_profile_hint  # noqa: E402
 from agent.tool_validator import (  # noqa: E402
     is_inside_repo,
     normalize_tool_name,
-    planned_tool_calls,
     validate_llm_output_schema,
     validate_planned_tool_calls,
 )
