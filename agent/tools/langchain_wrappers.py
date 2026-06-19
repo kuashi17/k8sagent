@@ -148,8 +148,8 @@ def kind_deployment_runner(
     sample: str,
     namespace: str,
     deployment: str,
-    sample_name: str,
-    configmap_name: str,
+    validator: str,
+    validator_config: dict[str, Any],
     execute: bool = False,
     skip_lifecycle: bool = False,
     skip_prepare_controller: bool = False,
@@ -170,10 +170,10 @@ def kind_deployment_runner(
         namespace,
         "--deployment",
         deployment,
-        "--sample-name",
-        sample_name,
-        "--configmap-name",
-        configmap_name,
+        "--validator",
+        validator,
+        "--validator-config",
+        json.dumps(validator_config, ensure_ascii=False),
     ]
     if skip_lifecycle:
         command.append("--skip-lifecycle")

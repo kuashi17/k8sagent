@@ -857,6 +857,8 @@ requirement
 
 Tool 실패가 감지되면 recovery planning 전에 현재 plan, Tool 결과, failure context를 Agent 로그에 체크포인트로 저장합니다. recovery LLM이 지연되거나 프로세스가 중단되어도 실행 근거가 빈 로그 디렉터리로 남지 않습니다.
 
+kind runner는 공통 배포 엔진과 profile별 validator로 나뉩니다. 공통 엔진은 cluster 준비, image build/load, CRD 설치, Controller 배포 대기만 담당합니다. Custom Resource와 관리 리소스의 상태/lifecycle 검증은 `kindDeployment.validator`와 `validatorConfig`가 선택한 validator가 담당합니다. 현재 내부 fixture는 `appconfig-configmap` validator를 사용합니다.
+
 성능 병목은 `logs/agent/<timestamp>/timings.json`과 `agent-report.md`의 `Timings` 섹션에서 확인합니다. 주요 항목은 RAG 검색 시간, 최초 LLM 계획 시간, Tool 검증 시간, Tool 실행 시간, 최종 LLM 평가 시간, 전체 시간입니다.
 
 실제 LLM 연결 여부는 다음 파일로 확인합니다.

@@ -432,6 +432,7 @@ def compact_tool_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "failedStep": deployment.get("failedStep"),
                 "clusterName": deployment.get("clusterName"),
                 "project": deployment.get("project"),
+                "validator": deployment.get("validator") or {},
                 "checks": deployment.get("checks") or {},
                 "elapsedSeconds": deployment.get("elapsedSeconds"),
                 "logDir": deployment.get("logDir"),

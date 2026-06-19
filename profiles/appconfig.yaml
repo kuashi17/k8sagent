@@ -45,8 +45,12 @@ kindDeployment:
   sample: workspace/generated-operators/app-config-operator/config/samples/app_v1alpha1_appconfig.yaml
   namespace: app-config-operator-system
   deployment: app-config-operator-controller-manager
-  sampleName: appconfig-sample
-  configMapName: appconfig-sample-config
+  validator: appconfig-configmap
+  validatorConfig:
+    resource: appconfig
+    sampleName: appconfig-sample
+    configMapName: appconfig-sample-config
+    controllerPath: internal/controller/appconfig_controller.go
   skipPrepareController: true
   skipPrevalidation: true
   lifecycleChecks:
