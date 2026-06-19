@@ -127,6 +127,7 @@ def run_policy_tests() -> dict[str, Any]:
     tests.append(check_execute_gate(supported_calls))
     tests.append(check_recovery_auto_execution(context))
     tests.append(check_invalid_field_type_recovery_policy())
+    tests.append(check_docker_recovery_short_circuit())
 
     return {
         "status": "passed" if all(item["passed"] for item in tests) else "failed",
@@ -303,6 +304,23 @@ def check_invalid_field_type_recovery_policy() -> dict[str, Any]:
         "classification": plan.get("classification"),
         "validatedRecoveryToolCalls": plan.get("validatedRecoveryToolCalls") or [],
         "rejectedRecoveryToolCalls": plan.get("rejectedRecoveryToolCalls") or [],
+    }
+
+
+def check_docker_recovery_short_circuit() -> dict[str, Any]:
+    classification = agent.deterministic_recovery_classification(
+        {
+            "failedTool": "kind_deployment",
+            "failedStep": "docker-info",
+            "stderrTail": "Cannot connect to the Docker daemon.",
+            "stdoutTail": "",
+        }
+    )
+    return {
+        "name": "docker-recovery-short-circuit",
+        "passed": classification == "docker-kind-connection",
+        "expected": "Docker connectivity failures bypass recovery LLM planning",
+        "actual": classification,
     }
 
 

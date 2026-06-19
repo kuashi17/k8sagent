@@ -198,6 +198,15 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     recovery_result = None
     failure_context = detect_failure_context(context, planner_result, execution, args)
     if failure_context:
+        write_recovery_checkpoint(
+            log_dir,
+            args,
+            context,
+            planner_result,
+            execution,
+            failure_context,
+            total_started,
+        )
         recovery_started = time.perf_counter()
         recovery_result = call_recovery_planner(context, planner_result, execution, failure_context, args)
         context["timings"]["recoveryPlanningSeconds"] = elapsed(recovery_started)
@@ -270,6 +279,38 @@ def call_recovery_planner(
     failure_context: dict[str, Any],
     args: argparse.Namespace,
 ) -> dict[str, Any]:
+    deterministic_classification = deterministic_recovery_classification(failure_context)
+    if deterministic_classification:
+        scrubbed = scrub_failure_context(failure_context)
+        policy = validate_recovery_plan(
+            {"classification": deterministic_classification},
+            scrubbed,
+            context,
+        )
+        cfg = config_from_env()
+        return {
+            "requestedPlanner": "policy",
+            "effectivePlanner": "deterministic-recovery-policy",
+            "llmPlannerUsed": False,
+            "localLLM": {"baseUrl": cfg.base_url, "model": cfg.model},
+            "llmInput": {
+                "mode": "recovery-planning",
+                "skipped": True,
+                "reason": f"Deterministic recovery classification: {deterministic_classification}",
+                "failureContext": scrubbed,
+            },
+            "llmOutput": policy["validatedRecoveryPlan"],
+            "rawOutput": "",
+            "error": "",
+            "skipped": True,
+            "skipReason": deterministic_classification,
+            "rawRecoveryPlan": {},
+            "policyEvaluation": policy["policyEvaluation"],
+            "rejectedRecoveryToolCalls": policy["rejectedRecoveryToolCalls"],
+            "retrievedTroubleshootingDocs": [],
+            "retrievalDetails": {},
+        }
+
     query = build_failure_rag_query(failure_context)
     retrieval = perform_retrieval(query, limit=3, purpose="recovery")
     retrieved = retrieval["selectedContext"]
@@ -310,6 +351,64 @@ def call_recovery_planner(
     result["retrievedTroubleshootingDocs"] = retrieved
     result["retrievalDetails"] = retrieval
     return result
+
+
+def deterministic_recovery_classification(failure_context: dict[str, Any]) -> str:
+    failed_tool = str(failure_context.get("failedTool") or "")
+    failed_step = str(failure_context.get("failedStep") or "")
+    text = " ".join(
+        [
+            str(failure_context.get("stderrTail") or ""),
+            str(failure_context.get("stdoutTail") or ""),
+        ]
+    ).lower()
+    if failed_tool == "kind_deployment" and (
+        failed_step == "docker-info"
+        or "cannot connect to the docker daemon" in text
+        or "docker daemon" in text
+    ):
+        return "docker-kind-connection"
+    return ""
+
+
+def write_recovery_checkpoint(
+    log_dir: Path,
+    args: argparse.Namespace,
+    context: dict[str, Any],
+    planner_result: dict[str, Any],
+    execution: dict[str, list[dict[str, Any]]],
+    failure_context: dict[str, Any],
+    total_started: float,
+) -> None:
+    pending_final = empty_final_result("Recovery planning is in progress.")
+    summary = build_requirement_summary(
+        args,
+        context,
+        planner_result,
+        execution,
+        pending_final,
+        None,
+        failure_context,
+    )
+    summary["runStatus"] = "recovery-planning"
+    summary["timings"] = finalize_timings(context, execution, total_started)
+    summary["safetyEvaluation"] = build_requirement_safety_evaluation(
+        args,
+        context,
+        execution,
+        planner_result,
+        failure_context,
+    )
+    summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
+    write_agent_artifacts(
+        log_dir,
+        summary,
+        planner_result,
+        context["retrievedKnowledge"],
+        execution,
+        pending_final,
+    )
+    (log_dir / "agent-report.md").write_text(render_requirement_report(summary), encoding="utf-8")
 
 
 def empty_final_result(error: str) -> dict[str, Any]:

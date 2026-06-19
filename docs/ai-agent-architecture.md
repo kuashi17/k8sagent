@@ -55,6 +55,8 @@ kind runner의 `--dry-run`은 Docker build, kind cluster, kubectl apply, 파일 
 
 Docker daemon 연결 실패는 `docker-kind-connection`으로 분류한다. recovery plan은 Docker 연결 확인 후 `kind_deployment`만 재실행하도록 제안하지만, `requiresApproval=true` 상태로 저장되고 자동 실행되지 않는다.
 
+Docker 연결 실패처럼 로컬 정책으로 확정할 수 있는 오류는 recovery LLM 호출을 생략한다. Tool 실패 직후에는 recovery planning 전에 plan, Tool 결과, failure context를 Agent log에 체크포인트로 기록한다.
+
 ## Requirement Analyzer와 Profile Hint
 
 이 시스템의 중심은 특정 profile이 아니라 사용자의 현재 자연어 요구사항이다.

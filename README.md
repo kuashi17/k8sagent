@@ -853,7 +853,9 @@ requirement
   -> 최종 실행 판단
 ```
 
-`--kind-deploy`는 profile에 `kindDeployment.enabled: true`와 실행 인자가 정의된 경우에만 허용됩니다. Docker 연결 실패 시 `docker-kind-connection` recovery plan을 생성하고, 사용자 승인 전에는 자동 재실행하지 않습니다.
+`--kind-deploy`는 profile에 `kindDeployment.enabled: true`와 실행 인자가 정의된 경우에만 허용됩니다. Docker 연결 실패처럼 원인이 결정론적인 경우에는 별도 recovery LLM 호출 없이 `docker-kind-connection` policy plan을 즉시 생성합니다. 사용자 승인 전에는 자동 재실행하지 않습니다.
+
+Tool 실패가 감지되면 recovery planning 전에 현재 plan, Tool 결과, failure context를 Agent 로그에 체크포인트로 저장합니다. recovery LLM이 지연되거나 프로세스가 중단되어도 실행 근거가 빈 로그 디렉터리로 남지 않습니다.
 
 성능 병목은 `logs/agent/<timestamp>/timings.json`과 `agent-report.md`의 `Timings` 섹션에서 확인합니다. 주요 항목은 RAG 검색 시간, 최초 LLM 계획 시간, Tool 검증 시간, Tool 실행 시간, 최종 LLM 평가 시간, 전체 시간입니다.
 
