@@ -49,6 +49,8 @@ Agent summary, LLM 입력/출력, Tool stdout/stderr, evidence/safety, recovery 
 
 자연어 requirement 파싱, 누락 정보 검사, profile hint와 RAG 결과의 planning context 조립은 `agent/context_builder.py`가 담당한다. safety evaluation과 requirement/log-analysis evidence trace 조립은 `agent/evidence_builder.py`가 담당한다.
 
+검색기 출력 정규화, 용도별 reference/few-shot 균형 선택, requirement RAG limit과 log-analysis query 조립은 `agent/retrieval_context.py`가 담당한다.
+
 planner, Tool 실행, final/recovery 결과를 최종 Agent summary 계약으로 합치는 작업은 `agent/summary_builder.py`가 담당한다.
 
 ## Profile-backed Kind Deployment
