@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agent.contracts import FailureContext
+
 
 def detect_failure_context(
     context: dict[str, Any],
@@ -14,7 +16,7 @@ def detect_failure_context(
 ) -> dict[str, Any] | None:
     if execution["rejectedToolCalls"]:
         rejected = json.dumps(execution["rejectedToolCalls"], ensure_ascii=False)
-        return {
+        return validated_failure_context({
             "failedTool": "tool-validation",
             "failedStep": "rejectedToolCalls",
             "exitCode": 2,
@@ -32,7 +34,8 @@ def detect_failure_context(
                 "status": "failed",
                 "stderr": rejected,
             },
-        }
+            "agentMode": mode,
+        })
 
     for result in execution["toolResults"]:
         if result.get("exitCode") == 0:
@@ -41,7 +44,7 @@ def detect_failure_context(
             (result.get("deploymentSummary") or {}).get("failedStep")
             or failed_validation_step(result)
         )
-        return {
+        return validated_failure_context({
             "failedTool": result.get("tool"),
             "failedStep": failed_step or result.get("tool"),
             "exitCode": result.get("exitCode"),
@@ -58,13 +61,13 @@ def detect_failure_context(
             "targetProjectDir": context["targetProjectDir"],
             "agentMode": mode,
             "failedResult": result,
-        }
+        })
 
     missing = missing_artifacts(context)
     if mode != "execute" or not missing:
         return None
     message = "Missing expected artifacts: " + ", ".join(missing)
-    return {
+    return validated_failure_context({
         "failedTool": "artifact-check",
         "failedStep": "expected artifact missing",
         "exitCode": 2,
@@ -83,7 +86,11 @@ def detect_failure_context(
             "status": "failed",
             "stderr": message,
         },
-    }
+    })
+
+
+def validated_failure_context(value: dict[str, Any]) -> dict[str, Any]:
+    return FailureContext.model_validate(value).to_dict()
 
 
 def failed_validation_step(result: dict[str, Any]) -> str:

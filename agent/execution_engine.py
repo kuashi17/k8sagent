@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from agent.contracts import ToolResult
 from agent.tool_validator import validate_planned_tool_calls
 from agent.tools import langchain_wrappers as tools
 
@@ -57,6 +58,7 @@ def execute_planned_tools(
         print(f"\nCalling tool: {name}")
         result = supported_calls[name]["call"]()
         result["tool"] = name
+        result = ToolResult.model_validate(result).to_dict()
         results.append(result)
         print(f"exitCode={result['exitCode']} status={result['status']}")
         if result["exitCode"] != 0:

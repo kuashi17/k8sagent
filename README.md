@@ -216,6 +216,7 @@ flowchart TD
 | Report Writer | `agent/report_writer.py` | summary, Tool/LLM/recovery results | JSON, stdout/stderr artifacts | 체크포인트와 최종 로그 영속화 |
 | Report Renderer | `agent/report_renderer.py` | Agent summary | Markdown requirement/log report | safety, evidence, recovery 표시 |
 | Context Builder | `agent/context_builder.py` | requirement, profile hint, retrieval | normalized planning context | 요구사항 파싱과 누락 정보 조립 |
+| Agent Contracts | `agent/contracts.py` | planner, Tool, recovery, summary data | Pydantic 검증 모델 | 단계 간 JSON 계약과 타입 검증 |
 | Evidence Builder | `agent/evidence_builder.py` | summary, Tool/retrieval results | safety and evidence trace | 근거 연결과 안전 정책 표시 |
 | Summary Builder | `agent/summary_builder.py` | context, planner, execution, recovery | Agent summary | 오류·warning·다음 조치 조립 |
 | Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
@@ -415,6 +416,7 @@ python3 agent/langchain_agent.py \
 │   ├── requirement_orchestrator.py
 │   ├── log_analysis_orchestrator.py
 │   ├── orchestration_common.py
+│   ├── contracts.py
 │   ├── llm/
 │   ├── rag/
 │   ├── tools/
@@ -441,6 +443,7 @@ python3 agent/langchain_agent.py \
 | `agent/requirement_orchestrator.py` | 요구사항 계획, Tool 실행, 최종 평가, 복구 흐름 |
 | `agent/log_analysis_orchestrator.py` | 기존 실행 로그 분석 흐름 |
 | `agent/orchestration_common.py` | 오케스트레이터 공통 LLM 결과, 시간, 로그 헬퍼 |
+| `agent/contracts.py` | RequirementPlan, ToolCall, ToolResult, FinalEvaluation, FailureContext, RecoveryPlan, AgentSummary 계약 |
 | `agent/llm` | Ollama local LLM client, prompt, planner |
 | `agent/rag` | 로컬 Markdown RAG 검색기 |
 | `agent/tools` | 기존 CLI 자동화 도구와 Tool wrapper |

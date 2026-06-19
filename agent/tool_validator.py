@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
+from agent.contracts import LLM_OUTPUT_CONTRACTS
 from agent.llm.planner import LLMOutputParseError
 
 
@@ -53,6 +56,24 @@ LLM_OUTPUT_SCHEMAS = {
 
 
 def validate_llm_output_schema(mode: str, output: dict[str, Any], raw: str) -> None:
+    contract = LLM_OUTPUT_CONTRACTS.get(mode)
+    if contract:
+        try:
+            contract.model_validate(output)
+        except ValidationError as exc:
+            errors = []
+            for item in exc.errors():
+                location = ".".join(str(part) for part in item["loc"])
+                if item["type"] == "missing":
+                    errors.append(f"missing required key: {location}")
+                else:
+                    errors.append(f"{location}: {item['msg']}")
+            raise LLMOutputParseError(
+                f"LLM JSON schema validation failed for {mode}: "
+                + "; ".join(errors),
+                raw,
+            ) from exc
+        return
     schema = LLM_OUTPUT_SCHEMAS.get(mode)
     if not schema:
         return

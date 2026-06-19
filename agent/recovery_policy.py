@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from agent.contracts import RecoveryPlan
 from agent.tool_validator import normalize_tool_name
 
 
@@ -108,6 +109,11 @@ def validate_recovery_plan(
             else default_recovery_evidence(failure_context, unsupported)
         ),
         "proposedFixes": proposed,
+        "recoveryToolCalls": (
+            raw_plan.get("recoveryToolCalls")
+            if isinstance(raw_plan.get("recoveryToolCalls"), list)
+            else []
+        ),
         "validatedRecoveryToolCalls": validated_calls,
         "rejectedRecoveryToolCalls": rejected,
         "rerunFromStep": rerun_from,
@@ -120,6 +126,7 @@ def validate_recovery_plan(
         or "Agent validated the LLM recovery proposal against local policy and is waiting for user approval.",
         "status": "waiting-for-user-approval",
     }
+    validated_plan = RecoveryPlan.model_validate(validated_plan).to_dict()
     return {
         "validatedRecoveryPlan": validated_plan,
         "rejectedRecoveryToolCalls": rejected,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from agent.contracts import AgentSummary
 from agent.context_builder import (
     clarifying_questions,
     extract_list,
@@ -43,7 +44,7 @@ def build_requirement_summary(
             "Final LLM evaluation fallback: "
             + str(final_result["fallbackError"])
         )
-    return {
+    summary = {
         "mode": "requirement-planning",
         "requirement": context["requirement"],
         "profile": args.profile or "",
@@ -117,6 +118,7 @@ def build_requirement_summary(
             final_result,
         ),
     }
+    return AgentSummary.model_validate(summary).to_dict()
 
 
 def recovery_summary(
