@@ -35,6 +35,8 @@ User requirement
 
 Agent 계층은 이 도구를 직접 대체하지 않는다. 대신 각 도구를 Tool로 감싸고, 요구사항과 검색 문서를 바탕으로 어떤 도구를 어떤 순서로 호출할지 결정한다.
 
+LLM 출력 schema, Tool 이름/모드 정규화, allowlist, 필수 인자, validation target, repository path 검증은 `agent/tool_validator.py`가 담당한다. Orchestrator는 검증 결과만 받아 실행 순서를 구성한다.
+
 ## Profile-backed Kind Deployment
 
 kind 배포는 모든 Operator에 임의 적용하지 않는다. profile이 `kindDeployment` capability를 제공하고 사용자가 `--kind-deploy`를 명시한 경우에만 Agent allowlist에 Tool이 추가된다.

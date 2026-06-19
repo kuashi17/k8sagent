@@ -208,6 +208,7 @@ flowchart TD
 | Validation Tool | `agent/tools/langchain_wrappers.py` 내부 | project, targets | `make generate/manifests/test` 결과 | 빌드 산출물 생성 가능 |
 | E2E Runner | `agent/tools/e2e_runner.py` | project, sample, profile | kind e2e 결과 | `--execute`일 때만 클러스터 조작 |
 | Kind Deployment | `agent/tools/kind_deployment_runner.py` | profile capability, project | Controller Deployment와 lifecycle 검증 | `--kind-deploy --execute`일 때만 실제 배포 |
+| Tool Validator | `agent/tool_validator.py` | LLM JSON, Tool plan, arguments | validated/rejected/deferred calls | schema, allowlist, mode, path 검증 |
 | Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
 | Recovery Validator | `agent/langchain_agent.py` 내부 | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
 
