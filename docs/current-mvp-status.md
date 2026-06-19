@@ -28,6 +28,7 @@
 | `agent/tool_validator.py` | LLM schema와 Tool 호출 검증 |
 | `agent/execution_engine.py` | Tool capability, 정렬, 실행, timing |
 | `agent/recovery_policy.py` | 오류 분류와 recovery 승인 정책 |
+| `agent/failure_context.py` | 실패 evidence와 누락 산출물 context 조립 |
 | `agent/summary_builder.py` | 최종 summary 계약 조립 |
 | `agent/evidence_builder.py` | safety/evidence 조립 |
 | `agent/report_writer.py` | JSON/Markdown 보조 산출물 기록 |
@@ -48,7 +49,7 @@ python3 scripts/run-regression-tests.py --suite full
 
 2026-06-19 현재 확인 결과:
 
-- Agent 단위 테스트 17개 통과
+- Agent 단위 테스트 20개 통과
 - Web 단위 테스트 7개 통과
 - `quick` regression 통과
 - Local LLM Agent 1회를 포함한 `standard` regression 통과
