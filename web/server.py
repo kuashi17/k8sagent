@@ -10,14 +10,13 @@ flows using only Python's standard library:
 from __future__ import annotations
 
 import html
+import json
 import os
-import re
-import subprocess
 import sys
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -26,17 +25,39 @@ if str(REPO_ROOT) not in sys.path:
 import yaml  # noqa: E402
 
 from agent.llm.client import LLMUnavailable, warm_up_model  # noqa: E402
+from web.job_manager import JobManager  # noqa: E402
 
 
 LOG_ROOT = REPO_ROOT / "logs" / "web"
+JOBS = JobManager(REPO_ROOT, LOG_ROOT / "jobs")
 
 
 class AgentHandler(BaseHTTPRequestHandler):
     server_version = "KubebuilderAgentWeb/0.1"
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == "/static/styles.css":
+        path = urlparse(self.path).path
+        if path == "/static/styles.css":
             self.respond_text(read_text(REPO_ROOT / "web" / "static" / "styles.css"), "text/css")
+            return
+        if path.startswith("/api/jobs/"):
+            job_id = path.rsplit("/", 1)[-1]
+            try:
+                job = JOBS.result(job_id)
+            except ValueError:
+                job = None
+            self.respond_json(job or {"error": "job not found"}, status=200 if job else 404)
+            return
+        if path.startswith("/runs/job/"):
+            job_id = path.rsplit("/", 1)[-1]
+            try:
+                job = JOBS.result(job_id)
+            except ValueError:
+                job = None
+            if not job:
+                self.send_error(404)
+                return
+            self.respond_html(render_job_page(job))
             return
         self.respond_html(render_page())
 
@@ -86,8 +107,12 @@ class AgentHandler(BaseHTTPRequestHandler):
                 command.append("--kind-deploy")
             if resume_existing:
                 command.append("--resume-existing")
-            result = run_agent(command)
-            self.respond_html(render_page(requirement_text=requirement_text, selected_profile=profile, selected_planner=planner, result=result))
+            job = JOBS.submit(
+                "requirement",
+                command,
+                metadata={"profile": profile, "mode": mode, "runLevel": run_level},
+            )
+            self.redirect(f"/runs/job/{job['jobId']}")
             return
 
         if self.path == "/analyze-log":
@@ -99,8 +124,8 @@ class AgentHandler(BaseHTTPRequestHandler):
                 "--analyze-log",
                 log_dir,
             ]
-            result = run_agent(command)
-            self.respond_html(render_page(selected_planner=planner, result=result))
+            job = JOBS.submit("log-analysis", command, metadata={"sourceLogDir": log_dir, "planner": planner})
+            self.redirect(f"/runs/job/{job['jobId']}")
             return
 
         self.send_error(404)
@@ -115,6 +140,19 @@ class AgentHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
+
+    def respond_json(self, value: object, status: int = 200) -> None:
+        payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def redirect(self, location: str) -> None:
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.end_headers()
 
 
 def render_page(
@@ -205,6 +243,49 @@ def render_result(result: dict[str, str]) -> str:
     """
 
 
+def render_job_page(job: dict[str, object]) -> str:
+    terminal = job.get("state") in {"succeeded", "failed"}
+    result_html = ""
+    if terminal:
+        result_html = render_result(
+            {
+                "command": str(job.get("commandText") or ""),
+                "stdout": str(job.get("stdoutTail") or ""),
+                "stderr": str(job.get("stderrTail") or ""),
+                "exit_code": str(job.get("exitCode") or ""),
+                "agent_log_dir": str(job.get("agentLogDir") or ""),
+                "agent_report": str(job.get("agentReport") or ""),
+            }
+        )
+    refresh_script = (
+        ""
+        if terminal
+        else f"""<script>
+        async function poll() {{
+          const response = await fetch('/api/jobs/{escape(job.get("jobId", ""))}', {{cache: 'no-store'}});
+          const value = await response.json();
+          document.getElementById('state').textContent = value.state;
+          document.getElementById('phase').textContent = value.phase;
+          document.getElementById('stdout').textContent = value.stdoutTail || '';
+          document.getElementById('stderr').textContent = value.stderrTail || '';
+          if (value.state === 'succeeded' || value.state === 'failed') window.location.reload();
+          else setTimeout(poll, 1200);
+        }}
+        setTimeout(poll, 500);
+        </script>"""
+    )
+    return f"""<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Job</title><link rel="stylesheet" href="/static/styles.css"></head>
+<body><header class="topbar"><div><h1>Agent Background Job</h1><p>작업 ID 기반 비동기 실행</p></div>
+<div class="badge" id="state">{escape(job.get("state", ""))}</div></header>
+<main class="layout"><section class="panel result-panel"><div class="panel-header"><h2>{escape(job.get("jobId", ""))}</h2>
+<span id="phase">{escape(job.get("phase", ""))}</span></div>
+<h3>Live stdout</h3><pre id="stdout">{escape(job.get("stdoutTail", ""))}</pre>
+<details><summary>Live stderr</summary><pre id="stderr">{escape(job.get("stderrTail", ""))}</pre></details></section>
+{result_html}</main>{refresh_script}</body></html>"""
+
+
 def profile_options(selected: str) -> str:
     selected_attr = " selected" if not selected else ""
     options = [f'<option value=""{selected_attr}>없음 - requirement 기반 자동 판단</option>']
@@ -217,33 +298,8 @@ def profile_options(selected: str) -> str:
     return "\n".join(options)
 
 
-def run_agent(command: list[str]) -> dict[str, str]:
-    completed = subprocess.run(command, cwd=REPO_ROOT, text=True, capture_output=True)
-    stdout = completed.stdout
-    agent_log_dir = extract_agent_log_dir(stdout)
-    return {
-        "command": " ".join(command),
-        "stdout": stdout,
-        "stderr": completed.stderr,
-        "exit_code": str(completed.returncode),
-        "agent_log_dir": agent_log_dir,
-        "agent_report": read_agent_report(agent_log_dir),
-    }
-
-
-def extract_agent_log_dir(stdout: str) -> str:
-    match = re.search(r"Agent logs:\s*(\S+)", stdout)
-    return match.group(1) if match else ""
-
-
-def read_agent_report(agent_log_dir: str) -> str:
-    if not agent_log_dir:
-        return ""
-    return read_text(REPO_ROOT / agent_log_dir / "agent-report.md")
-
-
 def make_run_dir(kind: str) -> Path:
-    run_dir = LOG_ROOT / kind / datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = LOG_ROOT / kind / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
 

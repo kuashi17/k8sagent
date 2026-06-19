@@ -85,6 +85,45 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.job-progress {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.job-state {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 800;
+}
+
+.state-queued,
+.state-running {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.state-succeeded {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.state-failed {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+.job-note {
+  margin-top: 14px;
+  color: var(--muted);
+}
+
+.live-log {
+  min-height: 110px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
 .panel-header {
   display: flex;
   align-items: baseline;
@@ -217,7 +256,8 @@ summary {
 
   .layout,
   .form-grid,
-  .meta-grid {
+  .meta-grid,
+  .job-progress {
     grid-template-columns: 1fr;
   }
 }

@@ -11,8 +11,6 @@ from __future__ import annotations
 import html
 import json
 import os
-import re
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +18,7 @@ from typing import Any
 
 import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -29,14 +27,17 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.llm.client import LLMUnavailable, warm_up_model  # noqa: E402
+from web.job_manager import JobManager  # noqa: E402
 
 
 LOG_ROOT = REPO_ROOT / "logs" / "web"
 PROFILE_DIR = REPO_ROOT / "profiles"
+JOB_ROOT = LOG_ROOT / "jobs"
 
 app = FastAPI(title="Kubebuilder Agent MVP")
 app.mount("/static", StaticFiles(directory=REPO_ROOT / "web" / "static"), name="static")
 templates = Jinja2Templates(directory=REPO_ROOT / "web" / "templates")
+jobs = JobManager(REPO_ROOT, JOB_ROOT)
 
 
 @app.on_event("startup")
@@ -64,6 +65,7 @@ async def index(request: Request) -> HTMLResponse:
             "selected_mode": "dry-run",
             "selected_run_level": "fast",
             "result": None,
+            "job": None,
         },
     )
 
@@ -93,15 +95,7 @@ async def run_requirement(request: Request) -> HTMLResponse:
             "safety_json": "",
             "recovery_json": "",
         }
-        return render_result(
-            request,
-            result,
-            requirement_text=requirement_text,
-            selected_profile=profile,
-            selected_planner=planner,
-            selected_mode=mode,
-            selected_run_level=run_level,
-        )
+        return render_result(request, result, requirement_text=requirement_text, selected_profile=profile, selected_planner=planner, selected_mode=mode, selected_run_level=run_level)
 
     run_dir = make_run_dir("requirement")
     requirement_path = run_dir / "requirement.txt"
@@ -125,16 +119,19 @@ async def run_requirement(request: Request) -> HTMLResponse:
         command.append("--kind-deploy")
     if resume_existing:
         command.append("--resume-existing")
-    result = run_agent_command(command)
-    return render_result(
-        request,
-        result,
-        requirement_text=requirement_text,
-        selected_profile=profile,
-        selected_planner=planner,
-        selected_mode=mode,
-        selected_run_level=run_level,
+    job = jobs.submit(
+        "requirement",
+        command,
+        metadata={
+            "requirementPath": str(requirement_path.relative_to(REPO_ROOT)),
+            "profile": profile,
+            "mode": mode,
+            "runLevel": run_level,
+            "kindDeploy": kind_deploy,
+            "resumeExisting": resume_existing,
+        },
     )
+    return RedirectResponse(f"/runs/job/{job['jobId']}", status_code=303)
 
 
 @app.post("/analyze-log", response_class=HTMLResponse)
@@ -149,12 +146,32 @@ async def analyze_log(request: Request) -> HTMLResponse:
         "--analyze-log",
         log_dir,
     ]
-    result = run_agent_command(command)
-    return render_result(request, result, selected_planner=planner)
+    job = jobs.submit("log-analysis", command, metadata={"sourceLogDir": log_dir, "planner": planner})
+    return RedirectResponse(f"/runs/job/{job['jobId']}", status_code=303)
 
 
 @app.get("/runs/{run_type}/{run_id}", response_class=HTMLResponse)
 async def view_web_run(request: Request, run_type: str, run_id: str) -> HTMLResponse:
+    if run_type == "job":
+        job = jobs.result(run_id)
+        if not job:
+            return RedirectResponse("/")
+        metadata = job.get("metadata") or {}
+        requirement_path = metadata.get("requirementPath") or ""
+        requirement_text = read_text(REPO_ROOT / requirement_path) if requirement_path else None
+        return templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context=page_context(
+                request,
+                result=result_from_job(job) if job.get("state") in {"succeeded", "failed"} else None,
+                job=job,
+                requirement_text=requirement_text,
+                selected_profile=str(metadata.get("profile") or ""),
+                selected_mode=str(metadata.get("mode") or "dry-run"),
+                selected_run_level=str(metadata.get("runLevel") or "fast"),
+            ),
+        )
     run_dir = LOG_ROOT / run_type / run_id
     if not run_dir.is_dir():
         return RedirectResponse("/")
@@ -176,7 +193,33 @@ async def view_web_run(request: Request, run_type: str, run_id: str) -> HTMLResp
                 "agent_report": "",
                 "web_run_dir": str(run_dir.relative_to(REPO_ROOT)),
             },
+            "job": None,
         },
+    )
+
+
+@app.get("/api/jobs/{job_id}")
+async def job_status(job_id: str) -> JSONResponse:
+    try:
+        job = jobs.result(job_id)
+    except ValueError:
+        job = None
+    if not job:
+        return JSONResponse({"error": "job not found"}, status_code=404)
+    return JSONResponse(
+        {
+            "jobId": job.get("jobId"),
+            "state": job.get("state"),
+            "phase": job.get("phase"),
+            "exitCode": job.get("exitCode"),
+            "createdAt": job.get("createdAt"),
+            "startedAt": job.get("startedAt"),
+            "finishedAt": job.get("finishedAt"),
+            "agentLogDir": job.get("agentLogDir"),
+            "stdoutTail": job.get("stdoutTail"),
+            "stderrTail": job.get("stderrTail"),
+            "terminal": job.get("state") in {"succeeded", "failed"},
+        }
     )
 
 
@@ -192,66 +235,57 @@ def render_result(
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={
-            "request": request,
-            "profiles": list_profiles(),
-            "default_requirement": requirement_text or read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
-            "default_log_dir": "logs/e2e/20260607-213346",
-            "selected_profile": selected_profile,
-            "selected_planner": selected_planner,
-            "selected_mode": selected_mode,
-            "selected_run_level": selected_run_level,
-            "result": result,
-        },
+        context=page_context(
+            request=request,
+            result=result,
+            requirement_text=requirement_text,
+            selected_profile=selected_profile,
+            selected_planner=selected_planner,
+            selected_mode=selected_mode,
+            selected_run_level=selected_run_level,
+        ),
     )
 
 
-def run_agent_command(command: list[str]) -> dict[str, Any]:
-    completed = subprocess.run(command, cwd=REPO_ROOT, text=True, capture_output=True)
-    stdout = completed.stdout
-    stderr = completed.stderr
-    agent_log_dir = extract_agent_log_dir(stdout)
-    report = read_agent_report(agent_log_dir)
-    summary = read_agent_json(agent_log_dir, "summary.json")
-    evidence = read_agent_json(agent_log_dir, "evidence-trace.json")
-    safety = read_agent_json(agent_log_dir, "safety-evaluation.json")
-    recovery = (summary.get("recovery") or {}) if isinstance(summary, dict) else {}
+def page_context(
+    request: Request | None = None,
+    *,
+    result: dict[str, Any] | None = None,
+    job: dict[str, Any] | None = None,
+    requirement_text: str | None = None,
+    selected_profile: str = "",
+    selected_planner: str = "llm",
+    selected_mode: str = "dry-run",
+    selected_run_level: str = "fast",
+) -> dict[str, Any]:
     return {
-        "title": "Agent Result",
-        "command": " ".join(command),
-        "stdout": stdout,
-        "stderr": stderr,
-        "exit_code": completed.returncode,
-        "agent_log_dir": agent_log_dir,
-        "agent_report": report,
-        "summary_json": pretty_json(summary),
-        "evidence_json": pretty_json(evidence),
-        "safety_json": pretty_json(safety),
-        "recovery_json": pretty_json(recovery),
+        "request": request,
+        "profiles": list_profiles(),
+        "default_requirement": requirement_text or read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
+        "default_log_dir": "logs/e2e/20260607-213346",
+        "selected_profile": selected_profile,
+        "selected_planner": selected_planner,
+        "selected_mode": selected_mode,
+        "selected_run_level": selected_run_level,
+        "result": result,
+        "job": job,
     }
 
 
-def extract_agent_log_dir(stdout: str) -> str:
-    match = re.search(r"Agent logs:\s*(\S+)", stdout)
-    return match.group(1) if match else ""
-
-
-def read_agent_report(agent_log_dir: str) -> str:
-    if not agent_log_dir:
-        return ""
-    report_path = REPO_ROOT / agent_log_dir / "agent-report.md"
-    return read_text(report_path)
-
-
-def read_agent_json(agent_log_dir: str, name: str) -> dict[str, Any]:
-    if not agent_log_dir:
-        return {}
-    path = REPO_ROOT / agent_log_dir / name
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+def result_from_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "title": "Agent Result",
+        "command": job.get("commandText") or "",
+        "stdout": job.get("stdoutTail") or "",
+        "stderr": job.get("stderrTail") or "",
+        "exit_code": job.get("exitCode"),
+        "agent_log_dir": job.get("agentLogDir") or "",
+        "agent_report": job.get("agentReport") or "",
+        "summary_json": pretty_json(job.get("summary") or {}),
+        "evidence_json": pretty_json(job.get("evidence") or {}),
+        "safety_json": pretty_json(job.get("safety") or {}),
+        "recovery_json": pretty_json(job.get("recovery") or {}),
+    }
 
 
 def pretty_json(value: dict[str, Any]) -> str:
@@ -273,7 +307,7 @@ def list_profiles() -> list[dict[str, str]]:
 
 
 def make_run_dir(kind: str) -> Path:
-    run_dir = LOG_ROOT / kind / datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = LOG_ROOT / kind / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
 

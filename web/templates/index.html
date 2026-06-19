@@ -85,6 +85,42 @@
         </div>
       </section>
 
+      {% if job %}
+      <section class="panel result-panel job-panel" id="job-panel" data-job-id="{{ job.jobId }}">
+        <div class="panel-header">
+          <h2>Background Job</h2>
+          <span class="job-state state-{{ job.state }}" id="job-state">{{ job.state }}</span>
+        </div>
+        <div class="job-progress">
+          <div>
+            <strong>Job ID</strong>
+            <code>{{ job.jobId }}</code>
+          </div>
+          <div>
+            <strong>Current phase</strong>
+            <code id="job-phase">{{ job.phase }}</code>
+          </div>
+          <div>
+            <strong>Started</strong>
+            <code>{{ job.startedAt or "waiting" }}</code>
+          </div>
+          <div>
+            <strong>Agent logs</strong>
+            <code id="job-agent-log">{{ job.agentLogDir or "pending" }}</code>
+          </div>
+        </div>
+        {% if job.state not in ["succeeded", "failed"] %}
+        <p class="job-note">이 페이지는 실행 중에도 응답합니다. 상태와 로그는 자동으로 갱신됩니다.</p>
+        {% endif %}
+        <h3>Live stdout</h3>
+        <pre class="live-log" id="job-stdout">{{ job.stdoutTail }}</pre>
+        <details {% if job.stderrTail %}open{% endif %}>
+          <summary>Live stderr</summary>
+          <pre class="live-log" id="job-stderr">{{ job.stderrTail }}</pre>
+        </details>
+      </section>
+      {% endif %}
+
       {% if result %}
       <section class="panel result-panel">
         <div class="panel-header">
@@ -145,5 +181,37 @@
       </section>
       {% endif %}
     </main>
+    {% if job and job.state not in ["succeeded", "failed"] %}
+    <script>
+      (() => {
+        const panel = document.getElementById("job-panel");
+        const jobId = panel.dataset.jobId;
+        const state = document.getElementById("job-state");
+        const phase = document.getElementById("job-phase");
+        const agentLog = document.getElementById("job-agent-log");
+        const stdout = document.getElementById("job-stdout");
+        const stderr = document.getElementById("job-stderr");
+
+        async function refreshJob() {
+          const response = await fetch(`/api/jobs/${jobId}`, {cache: "no-store"});
+          if (!response.ok) return;
+          const job = await response.json();
+          state.textContent = job.state;
+          state.className = `job-state state-${job.state}`;
+          phase.textContent = job.phase || "running";
+          agentLog.textContent = job.agentLogDir || "pending";
+          stdout.textContent = job.stdoutTail || "";
+          stderr.textContent = job.stderrTail || "";
+          stdout.scrollTop = stdout.scrollHeight;
+          if (job.terminal) {
+            window.location.reload();
+            return;
+          }
+          window.setTimeout(refreshJob, 1200);
+        }
+        window.setTimeout(refreshJob, 500);
+      })();
+    </script>
+    {% endif %}
   </body>
 </html>

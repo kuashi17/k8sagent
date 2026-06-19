@@ -1029,6 +1029,10 @@ Web UI에서 할 수 있는 작업:
 - 기존 scaffold resume
 - 기존 e2e 로그 분석
 - Agent report, evidence trace, safety evaluation, recovery 상태 확인
+- 작업 ID 기반 백그라운드 실행
+- 현재 단계와 stdout/stderr 로그 자동 갱신
+
+긴 LLM planning이나 kind 배포 중에도 최초 HTTP 요청은 즉시 작업 페이지로 이동합니다. 상태는 `GET /api/jobs/<job-id>`로 조회하며 실행 정보는 `logs/web/jobs/<job-id>/status.json`, `stdout.log`, `stderr.log`에 저장됩니다. 서버 재시작 후에도 완료된 작업 결과를 다시 열 수 있습니다.
 
 Web UI execute는 Mode를 `execute`로 선택하고 별도의 실제 변경 승인 체크박스까지 선택해야 합니다. kind deployment는 capability가 정의된 profile을 선택해야 합니다.
 
