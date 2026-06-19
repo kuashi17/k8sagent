@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 os.environ["LOCAL_LLM_WARMUP"] = "false"
 
-from fastapi.testclient import TestClient  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 from web.app import app  # noqa: E402
 
@@ -54,43 +54,56 @@ class FakeJobs:
         return job
 
 
-class AsyncWebRouteTest(unittest.TestCase):
-    def test_requirement_submission_redirects_to_job_immediately(self) -> None:
+class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
+    async def request(self, method, path, **kwargs):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            return await client.request(method, path, **kwargs)
+
+    async def test_requirement_submission_redirects_to_job_immediately(self) -> None:
         with patch("web.app.jobs", FakeJobs()):
-            with TestClient(app) as client:
-                response = client.post(
-                    "/run-requirement",
-                    data={
-                        "requirement_text": "Create an Operator.",
-                        "mode": "dry-run",
-                        "run_level": "fast",
-                    },
-                    follow_redirects=False,
-                )
+            response = await self.request(
+                "POST",
+                "/run-requirement",
+                data={
+                    "requirement_text": "Create an Operator.",
+                    "mode": "dry-run",
+                    "run_level": "fast",
+                },
+                follow_redirects=False,
+            )
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/runs/job/20260619-async0001")
 
-    def test_job_status_endpoint_exposes_progress(self) -> None:
+    async def test_job_status_endpoint_exposes_progress(self) -> None:
         with patch("web.app.jobs", FakeJobs()):
-            with TestClient(app) as client:
-                response = client.get("/api/jobs/20260619-async0001")
+            response = await self.request(
+                "GET",
+                "/api/jobs/20260619-async0001",
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["phase"], "LLM planning")
         self.assertFalse(response.json()["terminal"])
 
-    def test_job_can_be_canceled(self) -> None:
+    async def test_job_can_be_canceled(self) -> None:
         with patch("web.app.jobs", FakeJobs()):
-            with TestClient(app) as client:
-                response = client.post("/api/jobs/20260619-async0001/cancel")
+            response = await self.request(
+                "POST",
+                "/api/jobs/20260619-async0001/cancel",
+            )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["state"], "canceled")
 
-    def test_failed_job_can_be_retried(self) -> None:
+    async def test_failed_job_can_be_retried(self) -> None:
         with patch("web.app.jobs", FakeJobs()):
-            with TestClient(app) as client:
-                response = client.post("/api/jobs/20260619-async0001/retry")
+            response = await self.request(
+                "POST",
+                "/api/jobs/20260619-async0001/retry",
+            )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["attempt"], 2)
 

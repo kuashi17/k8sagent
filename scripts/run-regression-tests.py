@@ -13,6 +13,10 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from agent.evaluation.unified_evaluation import write_unified_evaluation  # noqa: E402
 
 
 def main() -> int:
@@ -158,8 +162,9 @@ def run_suite(suite: str, output_dir: Path) -> int:
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    print(json.dumps({"status": summary["status"], "outputDir": relative(output_dir)}, indent=2))
     write_performance_trend(output_dir, summary)
+    write_unified_evaluation(output_dir)
+    print(json.dumps({"status": summary["status"], "outputDir": relative(output_dir)}, indent=2))
     return 0 if summary["status"] == "passed" else 1
 
 

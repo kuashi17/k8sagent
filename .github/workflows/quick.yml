@@ -14,9 +14,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python3 scripts/run-regression-tests.py --suite quick
+      - run: python3 -m py_compile $(git ls-files '*.py')
+      - run: python3 scripts/run-regression-tests.py --suite quick --output-dir evaluation/results/regression/ci-quick
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: quick-regression
-          path: evaluation/results/regression/
+          path: evaluation/results/regression/ci-quick/

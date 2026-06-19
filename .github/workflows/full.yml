@@ -9,9 +9,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker info
-      - run: python3 scripts/run-regression-tests.py --suite full
+      - run: python3 -m py_compile $(git ls-files '*.py')
+      - run: python3 scripts/run-regression-tests.py --suite full --output-dir evaluation/results/regression/ci-full
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: full-regression
-          path: evaluation/results/regression/
+          path: evaluation/results/regression/ci-full/
