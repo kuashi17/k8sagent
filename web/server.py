@@ -41,12 +41,18 @@ class AgentHandler(BaseHTTPRequestHandler):
             self.respond_text(read_text(REPO_ROOT / "web" / "static" / "styles.css"), "text/css")
             return
         if path.startswith("/api/jobs/"):
+            if path.endswith("/cancel"):
+                self.send_error(405)
+                return
             job_id = path.rsplit("/", 1)[-1]
             try:
                 job = JOBS.result(job_id)
             except ValueError:
                 job = None
             self.respond_json(job or {"error": "job not found"}, status=200 if job else 404)
+            return
+        if path == "/api/jobs":
+            self.respond_json({"jobs": JOBS.list(20)})
             return
         if path.startswith("/runs/job/"):
             job_id = path.rsplit("/", 1)[-1]
@@ -62,11 +68,20 @@ class AgentHandler(BaseHTTPRequestHandler):
         self.respond_html(render_page())
 
     def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        if path.startswith("/api/jobs/") and path.endswith("/cancel"):
+            job_id = path.split("/")[-2]
+            try:
+                job = JOBS.cancel(job_id)
+            except ValueError:
+                job = None
+            self.respond_json(job or {"error": "job not found"}, status=200 if job else 404)
+            return
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length).decode("utf-8")
         form = {key: values[0] for key, values in parse_qs(body).items()}
 
-        if self.path == "/run-requirement":
+        if path == "/run-requirement":
             requirement_text = form.get("requirement_text", "").strip()
             profile = form.get("profile", "")
             mode = form.get("mode", "dry-run")
@@ -115,7 +130,7 @@ class AgentHandler(BaseHTTPRequestHandler):
             self.redirect(f"/runs/job/{job['jobId']}")
             return
 
-        if self.path == "/analyze-log":
+        if path == "/analyze-log":
             log_dir = form.get("log_dir", "logs/e2e/20260607-213346").strip()
             planner = "llm"
             command = [
@@ -244,7 +259,7 @@ def render_result(result: dict[str, str]) -> str:
 
 
 def render_job_page(job: dict[str, object]) -> str:
-    terminal = job.get("state") in {"succeeded", "failed"}
+    terminal = job.get("state") in {"succeeded", "failed", "canceled", "interrupted"}
     result_html = ""
     if terminal:
         result_html = render_result(
@@ -268,11 +283,22 @@ def render_job_page(job: dict[str, object]) -> str:
           document.getElementById('phase').textContent = value.phase;
           document.getElementById('stdout').textContent = value.stdoutTail || '';
           document.getElementById('stderr').textContent = value.stderrTail || '';
-          if (value.state === 'succeeded' || value.state === 'failed') window.location.reload();
+          if (['succeeded', 'failed', 'canceled', 'interrupted'].includes(value.state)) window.location.reload();
           else setTimeout(poll, 1200);
         }}
         setTimeout(poll, 500);
         </script>"""
+    )
+    cancel_button = (
+        f"""<button type="button" class="cancel-button" id="cancel-job">Cancel Job</button>
+<script>
+document.getElementById('cancel-job').addEventListener('click', async () => {{
+  await fetch('/api/jobs/{escape(job.get("jobId", ""))}/cancel', {{method: 'POST'}});
+  window.location.reload();
+}});
+</script>"""
+        if not terminal
+        else ""
     )
     return f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -281,6 +307,7 @@ def render_job_page(job: dict[str, object]) -> str:
 <div class="badge" id="state">{escape(job.get("state", ""))}</div></header>
 <main class="layout"><section class="panel result-panel"><div class="panel-header"><h2>{escape(job.get("jobId", ""))}</h2>
 <span id="phase">{escape(job.get("phase", ""))}</span></div>
+{cancel_button}
 <h3>Live stdout</h3><pre id="stdout">{escape(job.get("stdoutTail", ""))}</pre>
 <details><summary>Live stderr</summary><pre id="stderr">{escape(job.get("stderrTail", ""))}</pre></details></section>
 {result_html}</main>{refresh_script}</body></html>"""

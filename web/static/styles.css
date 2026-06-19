@@ -118,6 +118,35 @@ h3 {
   color: var(--muted);
 }
 
+.job-list {
+  display: grid;
+  gap: 8px;
+}
+
+.job-list-item {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.job-list-item:hover {
+  border-color: var(--accent);
+}
+
+.cancel-button {
+  background: #be123c;
+}
+
+.cancel-button:hover {
+  background: #9f1239;
+}
+
 .live-log {
   min-height: 110px;
   max-height: 360px;

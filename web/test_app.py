@@ -32,6 +32,15 @@ class FakeJobs:
             "startedAt": "2026-06-19T00:00:00+09:00",
         }
 
+    def list(self, limit=20):
+        return []
+
+    def cancel(self, job_id):
+        job = self.result(job_id)
+        if job:
+            job.update({"state": "canceled", "phase": "canceled"})
+        return job
+
 
 class AsyncWebRouteTest(unittest.TestCase):
     def test_requirement_submission_redirects_to_job_immediately(self) -> None:
@@ -58,6 +67,13 @@ class AsyncWebRouteTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["phase"], "LLM planning")
         self.assertFalse(response.json()["terminal"])
+
+    def test_job_can_be_canceled(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            with TestClient(app) as client:
+                response = client.post("/api/jobs/20260619-async0001/cancel")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["state"], "canceled")
 
 
 if __name__ == "__main__":

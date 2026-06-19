@@ -64,6 +64,24 @@
         </form>
       </section>
 
+      {% if recent_jobs %}
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Recent Jobs</h2>
+          <span>최근 {{ recent_jobs|length }}개 작업</span>
+        </div>
+        <div class="job-list">
+          {% for item in recent_jobs %}
+          <a href="/runs/job/{{ item.jobId }}" class="job-list-item">
+            <span>{{ item.jobType }}</span>
+            <code>{{ item.jobId }}</code>
+            <span class="job-state state-{{ item.state }}">{{ item.state }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
       <section class="panel">
         <div class="panel-header">
           <h2>Log Analysis</h2>
@@ -109,8 +127,11 @@
             <code id="job-agent-log">{{ job.agentLogDir or "pending" }}</code>
           </div>
         </div>
-        {% if job.state not in ["succeeded", "failed"] %}
+        {% if job.state not in ["succeeded", "failed", "canceled", "interrupted"] %}
         <p class="job-note">이 페이지는 실행 중에도 응답합니다. 상태와 로그는 자동으로 갱신됩니다.</p>
+        {% if job.state in ["queued", "running"] %}
+        <button type="button" class="cancel-button" id="cancel-job">Cancel Job</button>
+        {% endif %}
         {% endif %}
         <h3>Live stdout</h3>
         <pre class="live-log" id="job-stdout">{{ job.stdoutTail }}</pre>
@@ -181,7 +202,7 @@
       </section>
       {% endif %}
     </main>
-    {% if job and job.state not in ["succeeded", "failed"] %}
+    {% if job and job.state not in ["succeeded", "failed", "canceled", "interrupted"] %}
     <script>
       (() => {
         const panel = document.getElementById("job-panel");
@@ -191,6 +212,15 @@
         const agentLog = document.getElementById("job-agent-log");
         const stdout = document.getElementById("job-stdout");
         const stderr = document.getElementById("job-stderr");
+        const cancel = document.getElementById("cancel-job");
+
+        if (cancel) {
+          cancel.addEventListener("click", async () => {
+            cancel.disabled = true;
+            await fetch(`/api/jobs/${jobId}/cancel`, {method: "POST"});
+            window.location.reload();
+          });
+        }
 
         async function refreshJob() {
           const response = await fetch(`/api/jobs/${jobId}`, {cache: "no-store"});

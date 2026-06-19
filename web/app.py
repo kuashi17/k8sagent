@@ -66,6 +66,7 @@ async def index(request: Request) -> HTMLResponse:
             "selected_run_level": "fast",
             "result": None,
             "job": None,
+            "recent_jobs": jobs.list(10),
         },
     )
 
@@ -194,6 +195,7 @@ async def view_web_run(request: Request, run_type: str, run_id: str) -> HTMLResp
                 "web_run_dir": str(run_dir.relative_to(REPO_ROOT)),
             },
             "job": None,
+            "recent_jobs": jobs.list(10),
         },
     )
 
@@ -218,7 +220,30 @@ async def job_status(job_id: str) -> JSONResponse:
             "agentLogDir": job.get("agentLogDir"),
             "stdoutTail": job.get("stdoutTail"),
             "stderrTail": job.get("stderrTail"),
-            "terminal": job.get("state") in {"succeeded", "failed"},
+            "terminal": job.get("state")
+            in {"succeeded", "failed", "canceled", "interrupted"},
+        }
+    )
+
+
+@app.get("/api/jobs")
+async def job_list(limit: int = 20) -> JSONResponse:
+    return JSONResponse({"jobs": jobs.list(limit)})
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str) -> JSONResponse:
+    try:
+        job = jobs.cancel(job_id)
+    except ValueError:
+        job = None
+    if not job:
+        return JSONResponse({"error": "job not found"}, status_code=404)
+    return JSONResponse(
+        {
+            "jobId": job.get("jobId"),
+            "state": job.get("state"),
+            "phase": job.get("phase"),
         }
     )
 
@@ -269,6 +294,7 @@ def page_context(
         "selected_run_level": selected_run_level,
         "result": result,
         "job": job,
+        "recent_jobs": jobs.list(10),
     }
 
 
