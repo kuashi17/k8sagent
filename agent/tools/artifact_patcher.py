@@ -101,7 +101,7 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
     project = spec.get("project") or {}
     spec_fields = spec.get("specFields") or spec.get("spec", {}).get("fields") or []
     status_fields = spec.get("statusFields") or spec.get("status", {}).get("fields") or []
-    rbac_resources = spec.get("rbac", {}).get("resources") or []
+    rbac_resources = list(spec.get("rbac", {}).get("resources") or [])
     profile_sample_defaults = profile.get("sampleDefaults", {}).get("spec") or {}
 
     kind = api.get("kind", "")
@@ -111,6 +111,20 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
     api_group = f"{group}.{domain}" if group and domain else api.get("apiGroup", "")
 
     plural = api.get("plural") or pluralize(kind.lower())
+    if status_fields and api_group and plural:
+        status_resource = f"{plural}/status"
+        if not any(
+            item.get("apiGroup") == api_group
+            and item.get("resource") == status_resource
+            for item in rbac_resources
+        ):
+            rbac_resources.append(
+                {
+                    "apiGroup": api_group,
+                    "resource": status_resource,
+                    "verbs": ["get", "update", "patch"],
+                }
+            )
     return {
         "project": project,
         "api": {
@@ -300,8 +314,7 @@ def patch_controller(text: str, model: dict[str, Any]) -> str:
     marker_block = "\n".join(render_rbac_marker(item) for item in model["rbacResources"])
     marker_block += "\n"
     pattern = (
-        rf"(// {kind}Reconciler reconciles a {kind} object\n"
-        rf"type {kind}Reconciler struct \{{.*?\n\}}\n\n)"
+        rf"(type {kind}Reconciler struct \{{.*?\n\}}\n\n)"
         rf"(?:// \+kubebuilder:rbac:[^\n]*\n)+"
     )
     replacement = rf"\1{marker_block}"

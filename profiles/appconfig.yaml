@@ -50,9 +50,10 @@ kindDeployment:
     resource: appconfig
     sampleName: appconfig-sample
     configMapName: appconfig-sample-config
+    namespace: app-config-operator-system
     controllerPath: internal/controller/appconfig_controller.go
-  skipPrepareController: true
-  skipPrevalidation: true
+  skipPrepareController: false
+  skipPrevalidation: false
   lifecycleChecks:
     - create
     - update

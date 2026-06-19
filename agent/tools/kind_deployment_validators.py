@@ -162,6 +162,7 @@ class AppConfigConfigMapValidator:
         self.sample_name = str(config.get("sampleName") or "appconfig-sample")
         self.configmap_name = str(config.get("configMapName") or "appconfig-sample-config")
         self.controller_path = str(config.get("controllerPath") or "internal/controller/appconfig_controller.go")
+        self.namespace = str(config.get("namespace") or "")
 
     def planned_steps(self, include_prepare: bool, include_lifecycle: bool) -> list[dict[str, Any]]:
         steps = []
@@ -189,10 +190,14 @@ class AppConfigConfigMapValidator:
 
     def verify_initial(self, engine: DeploymentEngine) -> None:
         engine.failed_step = "apply-sample"
-        engine.run_cmd("kubectl-apply-sample", ["kubectl", "apply", "-f", str(engine.sample)], timeout=120)
+        engine.run_cmd(
+            "kubectl-apply-sample",
+            self.kubectl(["apply", "-f", str(engine.sample)]),
+            timeout=120,
+        )
         result = engine.run_cmd(
             "kubectl-get-custom-resource",
-            ["kubectl", "get", self.resource, self.sample_name, "-o", "json"],
+            self.kubectl(["get", self.resource, self.sample_name, "-o", "json"]),
             timeout=60,
         )
         engine.checks["customResource"] = parse_json(result["stdout"])
@@ -214,7 +219,11 @@ class AppConfigConfigMapValidator:
     def summary(self) -> dict[str, Any]:
         return {
             "name": self.name,
-            "customResource": {"resource": self.resource, "name": self.sample_name},
+            "customResource": {
+                "resource": self.resource,
+                "name": self.sample_name,
+                "namespace": self.namespace,
+            },
             "managedResource": {"kind": "ConfigMap", "name": self.configmap_name},
         }
 
@@ -227,7 +236,11 @@ class AppConfigConfigMapValidator:
         )
         updated_sample = write_temp_sample(engine, "update", updated)
         expected = expected_config_data(updated_sample)
-        engine.run_cmd("kubectl-apply-updated-sample", ["kubectl", "apply", "-f", str(updated_sample)], timeout=120)
+        engine.run_cmd(
+            "kubectl-apply-updated-sample",
+            self.kubectl(["apply", "-f", str(updated_sample)]),
+            timeout=120,
+        )
         data = self.wait_configmap_data(engine, expected, "updated")
         status = self.wait_phase(engine, "Ready", self.configmap_name, "updated")
         engine.checks["lifecycleUpdate"] = {"dataMatches": data == expected, "expectedData": expected, "actualData": data, "status": status}
@@ -237,7 +250,11 @@ class AppConfigConfigMapValidator:
         disabled = load_yaml(engine.sample)
         disabled.setdefault("spec", {})["enabled"] = False
         disabled_sample = write_temp_sample(engine, "disabled", disabled)
-        engine.run_cmd("kubectl-apply-disabled-sample", ["kubectl", "apply", "-f", str(disabled_sample)], timeout=120)
+        engine.run_cmd(
+            "kubectl-apply-disabled-sample",
+            self.kubectl(["apply", "-f", str(disabled_sample)]),
+            timeout=120,
+        )
         status = self.wait_phase(engine, "Disabled", "", "disabled")
         engine.checks["lifecycleDisabled"] = {
             "phase": status.get("phase"),
@@ -248,7 +265,9 @@ class AppConfigConfigMapValidator:
         engine.failed_step = "verify-delete"
         engine.run_cmd(
             "kubectl-delete-custom-resource",
-            ["kubectl", "delete", self.resource, self.sample_name, "--ignore-not-found"],
+            self.kubectl(
+                ["delete", self.resource, self.sample_name, "--ignore-not-found"]
+            ),
             timeout=120,
         )
         engine.checks["lifecycleDelete"] = {
@@ -256,7 +275,11 @@ class AppConfigConfigMapValidator:
             "managedResourceAbsent": self.wait_absent(engine, "configmap", self.configmap_name, "configmap"),
         }
         engine.failed_step = "restore-sample"
-        engine.run_cmd("kubectl-restore-sample", ["kubectl", "apply", "-f", str(engine.sample)], timeout=120)
+        engine.run_cmd(
+            "kubectl-restore-sample",
+            self.kubectl(["apply", "-f", str(engine.sample)]),
+            timeout=120,
+        )
         expected = expected_config_data(engine.sample)
         restored_data = self.wait_configmap_data(engine, expected, "restored")
         restored_status = self.wait_phase(engine, "Ready", self.configmap_name, "restored")
@@ -269,7 +292,9 @@ class AppConfigConfigMapValidator:
         while time.time() < deadline:
             result = engine.run_cmd(
                 f"kubectl-get-configmap-{label}",
-                ["kubectl", "get", "configmap", self.configmap_name, "-o", "json"],
+                self.kubectl(
+                    ["get", "configmap", self.configmap_name, "-o", "json"]
+                ),
                 check=False,
             )
             if result["exitCode"] == 0:
@@ -287,7 +312,9 @@ class AppConfigConfigMapValidator:
         while time.time() < deadline:
             result = engine.run_cmd(
                 f"kubectl-get-custom-resource-status-{label}",
-                ["kubectl", "get", self.resource, self.sample_name, "-o", "json"],
+                self.kubectl(
+                    ["get", self.resource, self.sample_name, "-o", "json"]
+                ),
                 check=False,
             )
             if result["exitCode"] == 0:
@@ -303,7 +330,7 @@ class AppConfigConfigMapValidator:
         while time.time() < deadline:
             result = engine.run_cmd(
                 f"kubectl-get-{label}-absent",
-                ["kubectl", "get", resource, name, "-o", "json"],
+                self.kubectl(["get", resource, name, "-o", "json"]),
                 check=False,
             )
             if result["exitCode"] != 0 and is_not_found(result):
@@ -312,6 +339,13 @@ class AppConfigConfigMapValidator:
                 return True
             time.sleep(3)
         return False
+
+    def kubectl(self, arguments: list[str]) -> list[str]:
+        command = ["kubectl"]
+        if self.namespace:
+            command.extend(["--namespace", self.namespace])
+        command.extend(arguments)
+        return command
 
 
 def create_validator(name: str, config: dict[str, Any]) -> DeploymentValidator:

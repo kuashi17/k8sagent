@@ -6,6 +6,7 @@ import json
 import unittest
 from unittest.mock import patch
 
+from agent.tools.kind_deployment_runner import KindDeploymentEngine
 from agent.tools.kind_deployment_validators import AppConfigConfigMapValidator, create_validator
 from agent.tools.langchain_wrappers import kind_deployment_runner
 
@@ -18,6 +19,7 @@ class KindDeploymentValidatorTest(unittest.TestCase):
                 "resource": "appconfig",
                 "sampleName": "sample",
                 "configMapName": "sample-config",
+                "namespace": "sample-system",
             },
         )
 
@@ -27,10 +29,41 @@ class KindDeploymentValidatorTest(unittest.TestCase):
         self.assertEqual(steps[0]["name"], "verify-appconfig-configmap-and-status")
         self.assertTrue(all(step["validator"] == "appconfig-configmap" for step in steps))
         self.assertEqual(validator.summary()["managedResource"]["kind"], "ConfigMap")
+        self.assertEqual(
+            validator.kubectl(["get", "appconfig", "sample"]),
+            [
+                "kubectl",
+                "--namespace",
+                "sample-system",
+                "get",
+                "appconfig",
+                "sample",
+            ],
+        )
 
     def test_unknown_validator_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unsupported kind deployment validator"):
             create_validator("unknown", {})
+
+    def test_engine_uses_deployment_namespace_as_validator_default(self) -> None:
+        args = type(
+            "Args",
+            (),
+            {
+                "project": "workspace/example",
+                "sample": "config/samples/example.yaml",
+                "timeout": "30s",
+                "validator_config": "{}",
+                "sample_name": "",
+                "configmap_name": "",
+                "validator": "appconfig-configmap",
+                "namespace": "example-system",
+            },
+        )()
+
+        engine = KindDeploymentEngine(args)
+
+        self.assertEqual(engine.validator.namespace, "example-system")
 
     @patch("agent.tools.langchain_wrappers.run_command")
     def test_wrapper_passes_validator_as_json_contract(self, run_command) -> None:

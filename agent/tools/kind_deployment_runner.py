@@ -35,6 +35,7 @@ class KindDeploymentEngine:
         self.sample = resolve_path(args.sample) if args.sample else self.project / "config" / "samples" / "app_v1alpha1_appconfig.yaml"
         self.timeout_seconds = parse_duration_seconds(args.timeout)
         validator_config = json.loads(args.validator_config) if args.validator_config else {}
+        validator_config.setdefault("namespace", args.namespace)
         if args.sample_name:
             validator_config.setdefault("sampleName", args.sample_name)
         if args.configmap_name:
