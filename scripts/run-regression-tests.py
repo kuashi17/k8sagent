@@ -38,6 +38,14 @@ def main() -> int:
         output_dir = REPO_ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    generated_snapshot = snapshot_tree(REPO_ROOT / "generated")
+    try:
+        return run_suite(args.suite, output_dir)
+    finally:
+        restore_tree(REPO_ROOT / "generated", generated_snapshot)
+
+
+def run_suite(suite: str, output_dir: Path) -> int:
     checks = [
         run_check(
             "agent-unit-tests",
@@ -53,17 +61,17 @@ def main() -> int:
         sys.executable,
         "agent/evaluation/reliability_test_runner.py",
         "--level",
-        "full" if args.suite == "full" else "fast",
+        "full" if suite == "full" else "fast",
         "--output-dir",
         str(output_dir / "reliability"),
     ]
-    if args.suite == "quick":
+    if suite == "quick":
         reliability_command.append("--skip-agent-consistency")
-    if args.suite != "full":
+    if suite != "full":
         reliability_command.append("--skip-kind-idempotency")
     checks.append(run_check("reliability", reliability_command))
 
-    if args.suite == "full":
+    if suite == "full":
         checks.append(
             run_check(
                 "profileless-requirements",
@@ -79,7 +87,7 @@ def main() -> int:
         )
 
     summary = {
-        "suite": args.suite,
+        "suite": suite,
         "status": "passed" if all(check["exitCode"] == 0 for check in checks) else "failed",
         "checks": checks,
     }
@@ -102,6 +110,36 @@ def relative(path: Path) -> str:
         return str(path.relative_to(REPO_ROOT))
     except ValueError:
         return str(path)
+
+
+def snapshot_tree(root: Path) -> dict[Path, bytes]:
+    return {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def restore_tree(root: Path, snapshot: dict[Path, bytes]) -> None:
+    current_files = [path for path in root.rglob("*") if path.is_file()]
+    for path in current_files:
+        relative_path = path.relative_to(root)
+        if relative_path not in snapshot:
+            path.unlink()
+    for relative_path, content in snapshot.items():
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.is_file() or path.read_bytes() != content:
+            path.write_bytes(content)
+    for path in sorted(
+        (path for path in root.rglob("*") if path.is_dir()),
+        key=lambda item: len(item.parts),
+        reverse=True,
+    ):
+        try:
+            path.rmdir()
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
