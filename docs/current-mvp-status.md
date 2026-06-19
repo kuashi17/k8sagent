@@ -60,8 +60,8 @@ python3 scripts/run-regression-tests.py --suite full
 
 2026-06-19 현재 확인 결과:
 
-- Agent core/LLM/Tool 단위 테스트 32개 통과
-- Web 단위 테스트 7개 통과
+- Agent core/LLM/Tool/Evaluation 단위 테스트 41개 통과
+- Web 단위 테스트 10개 통과
 - `quick` regression 통과
 - requirement RAG fixture Hit@3 1.0 통과
 - Local LLM Agent 1회를 포함한 `standard` regression 통과
@@ -70,6 +70,7 @@ python3 scripts/run-regression-tests.py --suite full
 - TrainingJob Job create/delete/restore lifecycle 통과
 - RedisCache StatefulSet/Service create/delete/restore lifecycle 통과
 - 실제 Agent standard execute → validation → kind deployment 경로 통과
+- 통합 standard regression 7.804초, full regression 76.647초
 
 ```bash
 python3 scripts/run-regression-tests.py --suite full
