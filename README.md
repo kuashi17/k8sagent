@@ -1087,6 +1087,8 @@ GitHub Actions 분리:
 - `.github/workflows/standard.yml`: `local-llm` self-hosted runner에서 수동 실행
 - `.github/workflows/full.yml`: `local-llm`, `docker`, `kind` self-hosted runner에서 수동 실행
 
+`full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다.
+
 빠른 정책/캐시 검증:
 
 ```bash

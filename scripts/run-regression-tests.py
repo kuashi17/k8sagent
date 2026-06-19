@@ -81,6 +81,20 @@ def run_suite(suite: str, output_dir: Path) -> int:
             ],
         ),
         run_check(
+            "evaluation-unit-tests",
+            [
+                sys.executable,
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "agent/evaluation",
+                "-p",
+                "test_*.py",
+                "-q",
+            ],
+        ),
+        run_check(
             "web-unit-tests",
             [sys.executable, "-m", "unittest", "discover", "-s", "web", "-p", "test_*.py", "-q"],
         ),
@@ -110,6 +124,17 @@ def run_suite(suite: str, output_dir: Path) -> int:
     checks.append(run_check("reliability", reliability_command))
 
     if suite == "full":
+        checks.append(
+            run_check(
+                "profile-kind-matrix",
+                [
+                    sys.executable,
+                    "agent/evaluation/profile_kind_matrix.py",
+                    "--output-dir",
+                    str(output_dir / "profile-kind"),
+                ],
+            )
+        )
         checks.append(
             run_check(
                 "profileless-requirements",
