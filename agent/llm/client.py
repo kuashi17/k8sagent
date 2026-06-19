@@ -27,20 +27,37 @@ class LLMConfig:
     keep_alive: str = "30m"
 
 
-def config_from_env(model: str | None = None) -> LLMConfig:
-    timeout = os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", "180")
+def config_from_env(
+    model: str | None = None,
+    *,
+    purpose: str = "default",
+) -> LLMConfig:
+    prefix = purpose.upper().replace("-", "_")
+    timeout_default = "30" if purpose == "final" else "90"
+    timeout = os.environ.get(
+        f"LOCAL_LLM_{prefix}_TIMEOUT_SECONDS",
+        os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", timeout_default),
+    )
     try:
         timeout_seconds = int(timeout)
     except ValueError:
-        timeout_seconds = 180
-    max_tokens_raw = os.environ.get("LOCAL_LLM_MAX_TOKENS", "700")
+        timeout_seconds = int(timeout_default)
+    max_tokens_default = "320" if purpose == "final" else "700"
+    max_tokens_raw = os.environ.get(
+        f"LOCAL_LLM_{prefix}_MAX_TOKENS",
+        os.environ.get("LOCAL_LLM_MAX_TOKENS", max_tokens_default),
+    )
     try:
         max_tokens = int(max_tokens_raw)
     except ValueError:
-        max_tokens = 700
+        max_tokens = int(max_tokens_default)
+    configured_model = os.environ.get(
+        f"LOCAL_LLM_{prefix}_MODEL",
+        os.environ.get("LOCAL_LLM_MODEL", DEFAULT_LOCAL_LLM_MODEL),
+    )
     return LLMConfig(
         base_url=os.environ.get("LOCAL_LLM_BASE_URL", DEFAULT_LOCAL_LLM_BASE_URL),
-        model=model or os.environ.get("LOCAL_LLM_MODEL", DEFAULT_LOCAL_LLM_MODEL),
+        model=model or configured_model,
         timeout_seconds=timeout_seconds,
         max_tokens=max_tokens,
         keep_alive=os.environ.get("LOCAL_LLM_KEEP_ALIVE", "30m"),

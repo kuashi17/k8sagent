@@ -53,6 +53,10 @@ Agent summary, LLM 입력/출력, Tool stdout/stderr, evidence/safety, recovery 
 
 planner, Tool 실행, final/recovery 결과를 최종 Agent summary 계약으로 합치는 작업은 `agent/summary_builder.py`가 담당한다.
 
+planning cache key/저장은 `agent/llm_cache.py`, Tool 결과의 최종 평가와 fallback 진입은 `agent/final_evaluator.py`, deterministic/LLM recovery 선택과 정책 적용은 `agent/recovery_orchestrator.py`가 담당한다.
+
+Local LLM 역할별 설정은 분리된다. `LOCAL_LLM_PLANNING_MODEL`, `LOCAL_LLM_FINAL_MODEL`, `LOCAL_LLM_RECOVERY_MODEL`과 각 역할의 `_TIMEOUT_SECONDS`, `_MAX_TOKENS`를 사용할 수 있다. 역할별 값이 없으면 기존 `LOCAL_LLM_MODEL`, `LOCAL_LLM_TIMEOUT_SECONDS`, `LOCAL_LLM_MAX_TOKENS`를 사용한다. 기본 timeout은 planning/recovery 90초, final 30초다.
+
 ## Profile-backed Kind Deployment
 
 kind 배포는 모든 Operator에 임의 적용하지 않는다. profile이 `kindDeployment` capability를 제공하고 사용자가 `--kind-deploy`를 명시한 경우에만 Agent allowlist에 Tool이 추가된다.

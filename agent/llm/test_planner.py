@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest.mock import patch
 
-from agent.llm.client import LLMConfig
+from agent.llm.client import LLMConfig, config_from_env
 from agent.llm.planner import normalize_requirement_plan, plan_requirement_with_llm
 
 
 class RequirementPlanStabilityTest(unittest.TestCase):
+    def test_final_config_has_shorter_default_timeout(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertLess(
+                config_from_env(purpose="final").timeout_seconds,
+                config_from_env(purpose="planning").timeout_seconds,
+            )
+
     def test_normalizer_fills_non_executable_optional_arrays(self) -> None:
         output = normalize_requirement_plan(
             {

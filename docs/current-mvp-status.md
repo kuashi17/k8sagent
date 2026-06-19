@@ -29,6 +29,9 @@
 | `agent/tool_validator.py` | LLM schema와 Tool 호출 검증 |
 | `agent/execution_engine.py` | Tool capability, 정렬, 실행, timing |
 | `agent/recovery_policy.py` | 오류 분류와 recovery 승인 정책 |
+| `agent/recovery_orchestrator.py` | deterministic/LLM recovery 흐름 선택 |
+| `agent/final_evaluator.py` | 축약 final LLM 평가와 fallback 진입 |
+| `agent/llm_cache.py` | planning cache key, read/write |
 | `agent/failure_context.py` | 실패 evidence와 누락 산출물 context 조립 |
 | `agent/summary_builder.py` | 최종 summary 계약 조립 |
 | `agent/evidence_builder.py` | safety/evidence 조립 |
@@ -79,8 +82,8 @@ python3 scripts/run-regression-tests.py --suite full
 
 ## 현재 한계와 다음 개선
 
-1. final LLM 평가가 작은 로컬 모델에서 오래 걸리므로 prompt 축소 또는 별도 timeout 기본값 조정이 필요하다.
-2. `langchain_agent.py`에는 final/recovery orchestration이 남아 있어 추가 분리가 가능하다.
+1. 역할별 모델 성능을 실제 장비에서 측정해 planning/final 기본 모델 조합을 조정해야 한다.
+2. `langchain_agent.py`에는 requirement/log-analysis 상위 orchestration이 남아 있어 추가 분리가 가능하다.
 3. Web job은 단일 프로세스의 메모리 process registry를 사용한다. 다중 worker 운영에는 외부 queue/worker가 필요하다.
 4. 취소는 Agent subprocess를 종료하지만 이미 외부 시스템에 반영된 변경을 자동 rollback하지 않는다.
 5. kind validator는 profile별 구현을 추가해야 새로운 Operator lifecycle을 깊게 검증할 수 있다.

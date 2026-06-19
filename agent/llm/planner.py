@@ -130,12 +130,17 @@ def evaluate_tool_results_with_llm(
     config: LLMConfig | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     compact_results = compact_tool_results(tool_results)
+    compact_validated = [
+        {
+            "tool": item.get("tool"),
+            "effectiveMode": item.get("effectiveMode"),
+        }
+        for item in validated_tool_calls
+    ]
     llm_input = {
         "mode": "tool-result-evaluation",
         "requirementSummary": requirement_summary,
-        "plannedSteps": planned_steps,
-        "toolCalls": tool_calls,
-        "validatedToolCalls": validated_tool_calls,
+        "validatedToolCalls": compact_validated,
         "rejectedToolCalls": rejected_tool_calls,
         "toolResults": compact_results,
         "generatedFiles": generated_files,
@@ -143,17 +148,18 @@ def evaluate_tool_results_with_llm(
         "errors": errors,
     }
     prompt = TOOL_RESULT_EVALUATION_PROMPT.format(
-        requirement_summary=json.dumps(requirement_summary, ensure_ascii=False, indent=2),
-        planned_steps=json.dumps(planned_steps, ensure_ascii=False, indent=2),
-        tool_calls=json.dumps(tool_calls, ensure_ascii=False, indent=2),
-        validated_tool_calls=json.dumps(validated_tool_calls, ensure_ascii=False, indent=2),
-        rejected_tool_calls=json.dumps(rejected_tool_calls, ensure_ascii=False, indent=2),
-        tool_results=json.dumps(compact_results, ensure_ascii=False, indent=2),
-        generated_files=json.dumps(generated_files, ensure_ascii=False, indent=2),
-        warnings=json.dumps(warnings, ensure_ascii=False, indent=2),
-        errors=json.dumps(errors, ensure_ascii=False, indent=2),
+        requirement_summary=compact_json(requirement_summary),
+        validated_tool_calls=compact_json(compact_validated),
+        rejected_tool_calls=compact_json(rejected_tool_calls),
+        tool_results=compact_json(compact_results),
+        warnings=compact_json(warnings),
+        errors=compact_json(errors),
     )
-    raw = chat_json(SYSTEM_PROMPT, prompt, config)
+    raw = chat_json(
+        SYSTEM_PROMPT,
+        prompt,
+        config or config_from_env(purpose="final"),
+    )
     return normalize_tool_result_evaluation(parse_json_object(raw), llm_input), llm_input, raw
 
 
@@ -293,7 +299,7 @@ def requirement_plan_validation_errors(data: dict[str, Any]) -> list[str]:
 
 
 def requirement_planning_config(config: LLMConfig | None) -> LLMConfig:
-    cfg = config or config_from_env()
+    cfg = config or config_from_env(purpose="planning")
     raw = os.environ.get("LOCAL_LLM_PLANNING_MAX_TOKENS", "460")
     try:
         max_tokens = max(320, int(raw))
@@ -427,13 +433,27 @@ def compact_tool_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             ]
         if item.get("deploymentSummary"):
             deployment = item.get("deploymentSummary") or {}
+            checks = deployment.get("checks") or {}
             compacted_item["deploymentSummary"] = {
                 "status": deployment.get("status"),
                 "failedStep": deployment.get("failedStep"),
                 "clusterName": deployment.get("clusterName"),
-                "project": deployment.get("project"),
                 "validator": deployment.get("validator") or {},
-                "checks": deployment.get("checks") or {},
+                "checks": {
+                    key: value
+                    for key, value in checks.items()
+                    if key
+                    in {
+                        "controllerDeployment",
+                        "managedResource",
+                        "customResourceStatus",
+                        "lifecycleUpdate",
+                        "lifecycleDisabled",
+                        "lifecycleDelete",
+                        "lifecycleRestore",
+                        "error",
+                    }
+                },
                 "elapsedSeconds": deployment.get("elapsedSeconds"),
                 "logDir": deployment.get("logDir"),
             }

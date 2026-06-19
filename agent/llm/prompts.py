@@ -153,32 +153,17 @@ Strict output rules:
 - Return JSON only.
 
 Context:
-Initial requirement summary:
+Requirement:
 {requirement_summary}
 
-Initial planned steps:
-{planned_steps}
-
-Initial tool calls:
-{tool_calls}
-
-Validated Tool calls:
+Validated/rejected calls:
 {validated_tool_calls}
-
-Rejected Tool calls:
 {rejected_tool_calls}
 
-Executed Tool results:
+Tool results:
 {tool_results}
 
-Generated files:
-{generated_files}
-
-Warnings:
-{warnings}
-
-Errors:
-{errors}
+Warnings/errors: {warnings} / {errors}
 """
 
 

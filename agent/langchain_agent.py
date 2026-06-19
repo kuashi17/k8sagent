@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -27,17 +26,22 @@ from agent.evidence_builder import (  # noqa: E402
     build_requirement_evidence_trace,
     build_requirement_safety_evaluation,
 )
-from agent.failure_context import build_failure_rag_query, detect_failure_context  # noqa: E402
+from agent.failure_context import detect_failure_context  # noqa: E402
+from agent.final_evaluator import evaluate_final_result  # noqa: E402
+from agent.llm_cache import (  # noqa: E402
+    read_requirement_plan_cache,
+    requirement_plan_cache_metadata,
+    write_requirement_plan_cache,
+)
 from agent.llm.planner import (  # noqa: E402
     LLMOutputParseError,
     analyze_log_with_llm,
-    evaluate_tool_results_with_llm,
     plan_recovery_with_llm,
     plan_requirement_with_llm,
 )
-from agent.recovery_policy import (  # noqa: E402
+from agent.recovery_orchestrator import plan_recovery  # noqa: E402
+from agent.recovery_policy import (  # noqa: E402,F401
     deterministic_recovery_classification,
-    scrub_failure_context,
     validate_recovery_plan,
 )
 from agent.retrieval_context import (  # noqa: E402
@@ -60,10 +64,6 @@ from agent.context_builder import (  # noqa: E402
 )
 from agent.tool_validator import normalize_tool_name, validate_llm_output_schema, validate_planned_tool_calls  # noqa: E402
 from agent.tools import langchain_wrappers as tools  # noqa: E402
-
-
-AGENT_CACHE_ROOT = Path(".cache") / "agent"
-REQUIREMENT_PLAN_CACHE_VERSION = "requirement-planning-v4"
 
 
 def main() -> int:
@@ -180,7 +180,15 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
             total_started,
         )
         recovery_started = time.perf_counter()
-        recovery_result = call_recovery_planner(context, planner_result, execution, failure_context, args)
+        recovery_result = plan_recovery(
+            context,
+            planner_result,
+            execution,
+            failure_context,
+            args.mode,
+            extract_tool_call_plan,
+            llm_result,
+        )
         context["timings"]["recoveryPlanningSeconds"] = elapsed(recovery_started)
         final_result = empty_final_result("Execution failed; recovery plan generated and waiting for user approval.")
     else:
@@ -189,7 +197,14 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
             final_result = rule_based_final_result(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors, args)
         else:
             final_started = time.perf_counter()
-            final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
+            final_result = evaluate_final_result(
+                context,
+                planner_result,
+                execution,
+                collect_warnings(execution["toolResults"], context),
+                initial_errors,
+                llm_result,
+            )
             context["timings"]["finalLlmEvaluationSeconds"] = elapsed(final_started)
             if final_result.get("error"):
                 final_result = fallback_final_result(
@@ -211,128 +226,6 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     print(report)
     print(f"\nAgent logs: {log_dir}")
     return 0 if not summary["errors"] else 1
-
-
-def call_final_evaluator(
-    context: dict[str, Any],
-    planner_result: dict[str, Any],
-    execution: dict[str, list[dict[str, Any]]],
-    warnings: list[str],
-    errors: list[str],
-) -> dict[str, Any]:
-    llm_output = planner_result.get("llmOutput") or {}
-    llm_input = {
-        "mode": "tool-result-evaluation",
-        "requirementSummary": context["requirementSummary"],
-        "plannedSteps": llm_output.get("plannedSteps") or [],
-        "toolCalls": extract_tool_call_plan(llm_output),
-        "validatedToolCalls": execution["validatedToolCalls"],
-        "rejectedToolCalls": execution["rejectedToolCalls"],
-        "deferredToolCalls": execution.get("deferredToolCalls") or [],
-        "toolResults": execution["toolResults"],
-        "generatedFiles": context["generatedFiles"],
-        "warnings": warnings,
-        "errors": errors,
-    }
-    try:
-        output, exact_input, raw = evaluate_tool_results_with_llm(
-            context["requirementSummary"],
-            llm_output.get("plannedSteps") or [],
-            extract_tool_call_plan(llm_output),
-            execution["validatedToolCalls"],
-            execution["rejectedToolCalls"],
-            execution["toolResults"],
-            context["generatedFiles"],
-            warnings,
-            errors,
-        )
-        validate_llm_output_schema("tool-result-evaluation", output, raw)
-        return llm_result(True, exact_input, output, raw)
-    except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
-        message = str(exc) or "Local LLM final evaluation failed."
-        print(f"Final LLM evaluation failed: {message}")
-        return llm_result(False, llm_input, {}, raw_from_exception(exc), message)
-
-
-def call_recovery_planner(
-    context: dict[str, Any],
-    planner_result: dict[str, Any],
-    execution: dict[str, list[dict[str, Any]]],
-    failure_context: dict[str, Any],
-    args: argparse.Namespace,
-) -> dict[str, Any]:
-    deterministic_classification = deterministic_recovery_classification(failure_context)
-    if deterministic_classification:
-        scrubbed = scrub_failure_context(failure_context)
-        policy = validate_recovery_plan(
-            {"classification": deterministic_classification},
-            scrubbed,
-            context,
-        )
-        cfg = config_from_env()
-        return {
-            "requestedPlanner": "policy",
-            "effectivePlanner": "deterministic-recovery-policy",
-            "llmPlannerUsed": False,
-            "localLLM": {"baseUrl": cfg.base_url, "model": cfg.model},
-            "llmInput": {
-                "mode": "recovery-planning",
-                "skipped": True,
-                "reason": f"Deterministic recovery classification: {deterministic_classification}",
-                "failureContext": scrubbed,
-            },
-            "llmOutput": policy["validatedRecoveryPlan"],
-            "rawOutput": "",
-            "error": "",
-            "skipped": True,
-            "skipReason": deterministic_classification,
-            "rawRecoveryPlan": {},
-            "policyEvaluation": policy["policyEvaluation"],
-            "rejectedRecoveryToolCalls": policy["rejectedRecoveryToolCalls"],
-            "retrievedTroubleshootingDocs": [],
-            "retrievalDetails": {},
-        }
-
-    query = build_failure_rag_query(failure_context)
-    retrieval = perform_retrieval(query, limit=3, purpose="recovery")
-    retrieved = retrieval["selectedContext"]
-    successful = [item for item in execution["toolResults"] if item.get("exitCode") == 0]
-    failed = failure_context.get("failedResult") or {}
-    llm_input = {
-        "mode": "recovery-planning",
-        "requirementSummary": context["requirementSummary"],
-        "toolPlan": extract_tool_call_plan(planner_result.get("llmOutput") or {}),
-        "successfulToolResults": successful,
-        "failedToolResult": failed,
-        "failureContext": scrub_failure_context(failure_context),
-        "retrievedDocs": retrieved,
-        "agentMode": args.mode,
-    }
-    try:
-        output, exact_input, raw = plan_recovery_with_llm(
-            context["requirementSummary"],
-            extract_tool_call_plan(planner_result.get("llmOutput") or {}),
-            successful,
-            failed,
-            scrub_failure_context(failure_context),
-            retrieved,
-            args.mode,
-        )
-        validate_llm_output_schema("recovery-planning", output, raw)
-        result = llm_result(True, exact_input, output, raw)
-    except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
-        message = str(exc) or "Local LLM recovery planning failed."
-        print(f"Recovery LLM planning failed: {message}")
-        result = llm_result(False, llm_input, {}, raw_from_exception(exc), message)
-        output = {}
-    policy = validate_recovery_plan(output, scrub_failure_context(failure_context), context)
-    result["rawRecoveryPlan"] = output
-    result["llmOutput"] = policy["validatedRecoveryPlan"]
-    result["policyEvaluation"] = policy["policyEvaluation"]
-    result["rejectedRecoveryToolCalls"] = policy["rejectedRecoveryToolCalls"]
-    result["retrievedTroubleshootingDocs"] = retrieved
-    result["retrievalDetails"] = retrieval
-    return result
 
 
 def write_recovery_checkpoint(
@@ -527,14 +420,22 @@ def call_requirement_planner(
     cache = requirement_plan_cache_metadata(llm_input)
     if not args.no_cache and not args.refresh_cache and cache["path"].is_file():
         try:
-            cached = json.loads(cache["path"].read_text(encoding="utf-8"))
-            result = llm_result(True, cached.get("llmInput") or llm_input, cached.get("llmOutput") or {}, cached.get("rawOutput") or "")
+            cached = read_requirement_plan_cache(cache, llm_input)
+            if not cached:
+                raise OSError("cache entry disappeared")
+            result = llm_result(
+                True,
+                cached["llmInput"],
+                cached["llmOutput"],
+                cached["rawOutput"],
+                config=config_from_env(purpose="planning"),
+            )
             result["cache"] = {
                 "enabled": True,
                 "hit": True,
                 "key": cache["key"],
                 "path": str(cache["path"]),
-                "createdAt": cached.get("createdAt", ""),
+                "createdAt": cached["createdAt"],
             }
             return result
         except (OSError, json.JSONDecodeError) as exc:
@@ -562,7 +463,13 @@ def call_requirement_planner(
             "refreshed": bool(args.refresh_cache),
         }
         if not args.no_cache:
-            write_requirement_plan_cache(cache["path"], exact_input, output, raw, result)
+            write_requirement_plan_cache(
+                cache["path"],
+                exact_input,
+                output,
+                raw,
+                result.get("localLLM") or {},
+            )
         return result
     except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
         message = str(exc) or "Local LLM planner failed."
@@ -690,52 +597,25 @@ def llm_result(
     output: dict[str, Any],
     raw: str,
     error: str = "",
+    *,
+    config: Any | None = None,
 ) -> dict[str, Any]:
+    cfg = config or config_from_env()
     return {
         "requestedPlanner": "llm",
         "effectivePlanner": "llm" if used else "none",
         "llmPlannerUsed": used,
         "localLLM": {
-            "baseUrl": config_from_env().base_url,
-            "model": config_from_env().model,
+            "baseUrl": cfg.base_url,
+            "model": cfg.model,
+            "timeoutSeconds": cfg.timeout_seconds,
+            "maxTokens": cfg.max_tokens,
         },
         "llmInput": llm_input,
         "llmOutput": output,
         "rawOutput": raw,
         "error": error,
     }
-
-
-def requirement_plan_cache_metadata(llm_input: dict[str, Any]) -> dict[str, Any]:
-    cfg = config_from_env()
-    payload = {
-        "version": REQUIREMENT_PLAN_CACHE_VERSION,
-        "localLLM": {"baseUrl": cfg.base_url, "model": cfg.model},
-        "llmInput": llm_input,
-    }
-    key = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
-    path = AGENT_CACHE_ROOT / "llm-plans" / f"{key}.json"
-    return {"key": key, "path": path}
-
-
-def write_requirement_plan_cache(
-    path: Path,
-    llm_input: dict[str, Any],
-    output: dict[str, Any],
-    raw: str,
-    planner_result: dict[str, Any],
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "createdAt": now_iso(),
-        "cacheVersion": REQUIREMENT_PLAN_CACHE_VERSION,
-        "localLLM": planner_result.get("localLLM") or {},
-        "llmInput": llm_input,
-        "llmOutput": output,
-        "rawOutput": raw,
-    }
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
 
 
 def load_profile(path: Path) -> dict[str, Any]:
