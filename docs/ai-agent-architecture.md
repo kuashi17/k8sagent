@@ -45,6 +45,8 @@ Agent summary, LLM 입력/출력, Tool stdout/stderr, evidence/safety, recovery 
 
 사용자용 requirement 실행 보고서와 log-analysis Markdown 렌더링은 `agent/report_renderer.py`가 담당한다.
 
+자연어 requirement 파싱, 누락 정보 검사, profile hint와 RAG 결과의 planning context 조립은 `agent/context_builder.py`가 담당한다. safety evaluation과 requirement/log-analysis evidence trace 조립은 `agent/evidence_builder.py`가 담당한다.
+
 ## Profile-backed Kind Deployment
 
 kind 배포는 모든 Operator에 임의 적용하지 않는다. profile이 `kindDeployment` capability를 제공하고 사용자가 `--kind-deploy`를 명시한 경우에만 Agent allowlist에 Tool이 추가된다.
