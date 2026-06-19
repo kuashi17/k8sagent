@@ -1,0 +1,49 @@
+PVCProvisioner라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+이 Operator의 목적은 요청한 스토리지 크기와 access mode를 반영한 PersistentVolumeClaim을 생성한다.
+
+domain은 sample.io, group은 storage, version은 v1alpha1, kind는 PVCProvisioner로 한다.
+
+spec에는 다음 필드를 포함한다.
+- claimName:string - 생성할 PersistentVolumeClaim 이름
+- storageSize:string - 요청할 스토리지 크기
+- storageClassName:string - 사용할 StorageClass 이름
+- accessModes:[]string - PVC access mode 목록
+
+status에는 다음 필드를 포함한다.
+- phase:string - PVC 처리 상태
+- claimName:string - 생성 또는 갱신된 PVC 이름
+- message:string - 현재 상태 설명 또는 오류 메시지
+
+Controller는 PVCProvisioner Custom Resource 변경을 감지한다.
+Controller는 PersistentVolumeClaim 리소스를 생성/수정/삭제한다.
+
+Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다.
+- spec.claimName -> PersistentVolumeClaim.metadata.name
+- spec.storageSize -> PersistentVolumeClaim.spec.resources.requests.storage
+- spec.storageClassName -> PersistentVolumeClaim.spec.storageClassName
+- spec.accessModes -> PersistentVolumeClaim.spec.accessModes
+
+Controller는 PersistentVolumeClaim 상태를 조회하여 status를 갱신한다.
+- status.phase는 PersistentVolumeClaim.status.phase를 기준으로 갱신한다.
+
+PVCProvisioner가 삭제되면 ownerReference 정책에 따라 하위 리소스를 정리한다.
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- core/persistentvolumeclaims
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test
+
+샘플 Custom Resource는 다음 값을 사용한다.
+apiVersion: storage.sample.io/v1alpha1
+kind: PVCProvisioner
+metadata:
+  name: pvc-provisioner-sample
+spec:
+  claimName: application-data
+  storageSize: 1Gi
+  storageClassName: standard
+  accessModes: ["ReadWriteOnce"]

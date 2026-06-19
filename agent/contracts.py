@@ -85,7 +85,7 @@ class FailureContext(AgentContract):
     missingArtifacts: list[str] = Field(default_factory=list)
     previousSuccessfulSteps: list[str] = Field(default_factory=list)
     workspace: str
-    targetProjectDir: str
+    targetProjectDir: str = ""
     agentMode: str = ""
     failedResult: dict[str, Any] = Field(default_factory=dict)
 
@@ -126,6 +126,7 @@ class AgentSummary(AgentContract):
     rejectedToolCalls: list[dict[str, Any]]
     deferredToolCalls: list[dict[str, Any]]
     generatedFiles: dict[str, Any]
+    targetProjectDir: str
     toolResults: list[ToolResult]
     finalLLM: dict[str, Any]
     failureContext: dict[str, Any]

@@ -217,6 +217,7 @@ flowchart TD
 | Report Renderer | `agent/report_renderer.py` | Agent summary | Markdown requirement/log report | safety, evidence, recovery 표시 |
 | Context Builder | `agent/context_builder.py` | requirement, profile hint, retrieval | normalized planning context | 요구사항 파싱과 누락 정보 조립 |
 | Agent Contracts | `agent/contracts.py` | planner, Tool, recovery, summary data | Pydantic 검증 모델 | 단계 간 JSON 계약과 타입 검증 |
+| Controller Quality | `agent/evaluation/controller_quality.py` | generated project, operator spec, validation result | CRD/RBAC/Reconcile/status/멱등성/삭제/test 점수 | profile 없는 생성 결과의 품질 증거 |
 | Evidence Builder | `agent/evidence_builder.py` | summary, Tool/retrieval results | safety and evidence trace | 근거 연결과 안전 정책 표시 |
 | Summary Builder | `agent/summary_builder.py` | context, planner, execution, recovery | Agent summary | 오류·warning·다음 조치 조립 |
 | Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |

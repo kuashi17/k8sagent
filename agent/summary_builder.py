@@ -96,6 +96,7 @@ def build_requirement_summary(
         "rejectedToolCalls": execution["rejectedToolCalls"],
         "deferredToolCalls": execution.get("deferredToolCalls") or [],
         "generatedFiles": context["generatedFiles"],
+        "targetProjectDir": context.get("targetProjectDir") or "",
         "toolResults": tool_results,
         "finalLLM": {
             "llmPlannerUsed": final_result.get("llmPlannerUsed"),

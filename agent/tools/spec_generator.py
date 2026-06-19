@@ -27,6 +27,7 @@ RESOURCE_API_GROUPS = {
     "daemonsets": "apps",
     "deployments": "apps",
     "jobs": "batch",
+    "namespaces": "",
     "persistentvolumeclaims": "",
     "pods": "",
     "secrets": "",
@@ -45,6 +46,8 @@ RESOURCE_ALIASES = {
     "deployments": "deployments",
     "job": "jobs",
     "jobs": "jobs",
+    "namespace": "namespaces",
+    "namespaces": "namespaces",
     "persistentvolumeclaim": "persistentvolumeclaims",
     "persistentvolumeclaims": "persistentvolumeclaims",
     "pvc": "persistentvolumeclaims",
@@ -270,7 +273,7 @@ def parse_rbac(text: str, api: dict[str, str], controller: dict[str, Any], warni
             {
                 "apiGroup": "" if api_group == "core" else api_group,
                 "resource": resource,
-                "verbs": list(DEFAULT_VERBS),
+                "verbs": verbs_for_resource(resource),
             }
         )
 
@@ -282,7 +285,7 @@ def parse_rbac(text: str, api: dict[str, str], controller: dict[str, Any], warni
             {
                 "apiGroup": RESOURCE_API_GROUPS[canonical],
                 "resource": canonical,
-                "verbs": list(DEFAULT_VERBS),
+                "verbs": verbs_for_resource(canonical),
             }
         )
 
@@ -303,6 +306,12 @@ def parse_validation(text: str, warnings: list[str]) -> dict[str, list[str]]:
         warnings.append("validation.commands were not found; default commands were used.")
         commands = ["make generate", "make manifests", "make test"]
     return {"commands": commands}
+
+
+def verbs_for_resource(resource: str) -> list[str]:
+    if resource == "namespaces":
+        return ["get", "list", "watch", "update", "patch"]
+    return list(DEFAULT_VERBS)
 
 
 def validate_spec(spec: dict[str, Any]) -> None:
@@ -365,6 +374,7 @@ def resource_kind(resource: str) -> str:
         "daemonsets": "DaemonSet",
         "deployments": "Deployment",
         "jobs": "Job",
+        "namespaces": "Namespace",
         "persistentvolumeclaims": "PVC",
         "pods": "Pod",
         "secrets": "Secret",
