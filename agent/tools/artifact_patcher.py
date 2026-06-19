@@ -16,6 +16,12 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from agent.tools.controller_renderer import render_controller
+
 
 GO_TYPES = {
     "string": "string",
@@ -143,6 +149,7 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
         },
         "specFields": spec_fields,
         "statusFields": status_fields,
+        "controller": spec.get("controller") or {},
         "rbacResources": normalize_rbac(api_group, plural, rbac_resources, spec_fields),
         "profile": {
             "path": profile_path or "",
@@ -332,6 +339,14 @@ def patch_sample(text: str, model: dict[str, Any]) -> str:
 
 
 def patch_controller(text: str, model: dict[str, Any]) -> str:
+    if (
+        not (model.get("profile") or {}).get("path")
+        and model.get("project")
+        and (model.get("controller") or {}).get("managedResources")
+    ):
+        rendered = render_controller(model)
+        validate_controller_markers(rendered, model)
+        return rendered
     kind = model["api"]["kind"]
     marker_block = "\n".join(render_rbac_marker(item) for item in model["rbacResources"])
     marker_block += "\n"
