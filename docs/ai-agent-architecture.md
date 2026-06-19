@@ -39,6 +39,8 @@ LLM 출력 schema, Tool 이름/모드 정규화, allowlist, 필수 인자, valid
 
 Tool capability 구성, `--resume-existing` 처리, 실행 순서 정렬, 첫 실패 중단, Tool timing 수집은 `agent/execution_engine.py`가 담당한다.
 
+결정론적 오류 분류, 지원되지 않는 API field type 검사, recovery Tool allowlist, 승인 대기 계획 생성은 `agent/recovery_policy.py`가 담당한다. recovery LLM은 제안을 만들 수 있지만 정책 모듈을 우회해 Tool을 자동 실행할 수 없다.
+
 ## Profile-backed Kind Deployment
 
 kind 배포는 모든 Operator에 임의 적용하지 않는다. profile이 `kindDeployment` capability를 제공하고 사용자가 `--kind-deploy`를 명시한 경우에만 Agent allowlist에 Tool이 추가된다.

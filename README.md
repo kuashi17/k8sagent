@@ -210,6 +210,7 @@ flowchart TD
 | Kind Deployment | `agent/tools/kind_deployment_runner.py` | profile capability, project | Controller Deployment와 lifecycle 검증 | `--kind-deploy --execute`일 때만 실제 배포 |
 | Tool Validator | `agent/tool_validator.py` | LLM JSON, Tool plan, arguments | validated/rejected/deferred calls | schema, allowlist, mode, path 검증 |
 | Execution Engine | `agent/execution_engine.py` | validated Tool plan, capability context | ordered Tool results and timings | resume, 실행 순서, 첫 실패 중단 |
+| Recovery Policy | `agent/recovery_policy.py` | failure context, raw recovery plan | approval-gated recovery plan | 결정론적 분류, allowlist, 자동 실행 차단 |
 | Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
 | Recovery Validator | `agent/langchain_agent.py` 내부 | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
 
