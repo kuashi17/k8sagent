@@ -132,9 +132,20 @@ class KindDeploymentEngine:
         if self.args.cluster_name in clusters:
             self.checks["cluster"] = {"name": self.args.cluster_name, "created": False}
             self.run_cmd("kubectl-context", ["kubectl", "cluster-info", "--context", f"kind-{self.args.cluster_name}"], timeout=60)
+            self.activate_context()
             return
         self.run_cmd("kind-create-cluster", ["kind", "create", "cluster", "--name", self.args.cluster_name], timeout=600)
         self.checks["cluster"] = {"name": self.args.cluster_name, "created": True}
+        self.activate_context()
+
+    def activate_context(self) -> None:
+        context = f"kind-{self.args.cluster_name}"
+        self.run_cmd(
+            "kubectl-use-context",
+            ["kubectl", "config", "use-context", context],
+            timeout=30,
+        )
+        self.checks["kubectlContext"] = context
 
     def wait_deployment(self) -> None:
         self.failed_step = "wait-deployment"

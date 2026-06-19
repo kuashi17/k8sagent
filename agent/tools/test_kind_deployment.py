@@ -95,6 +95,33 @@ class KindDeploymentValidatorTest(unittest.TestCase):
 
         self.assertEqual(engine.validator.namespace, "example-system")
 
+    @patch.object(KindDeploymentEngine, "run_cmd")
+    def test_engine_activates_target_kind_context(self, run_cmd) -> None:
+        args = type(
+            "Args",
+            (),
+            {
+                "project": "workspace/example",
+                "sample": "config/samples/example.yaml",
+                "timeout": "30s",
+                "validator_config": "{}",
+                "sample_name": "",
+                "configmap_name": "",
+                "validator": "appconfig-configmap",
+                "namespace": "example-system",
+                "cluster_name": "example",
+            },
+        )()
+        engine = KindDeploymentEngine(args)
+
+        engine.activate_context()
+
+        run_cmd.assert_called_once_with(
+            "kubectl-use-context",
+            ["kubectl", "config", "use-context", "kind-example"],
+            timeout=30,
+        )
+
     @patch("agent.tools.langchain_wrappers.run_command")
     def test_wrapper_passes_validator_as_json_contract(self, run_command) -> None:
         run_command.return_value = {"stdout": "{}", "stderr": "", "exitCode": 0, "status": "succeeded"}

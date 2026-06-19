@@ -15,6 +15,7 @@
 - 공통 kind 배포 엔진과 profile validator 분리
 - AppConfig, TrainingJob, RedisCache 실제 kind lifecycle validator
 - 공통 namespace/service-account RBAC preflight
+- 재사용 kind 클러스터별 kubectl context 강제 전환
 - profile별 artifact controller/RBAC hook과 멱등성 검증
 - 실패 시 Tool 실행 중단, deterministic recovery 분류, 승인 대기 recovery plan
 - Local Markdown 기반 Hybrid RAG와 keyword fallback
