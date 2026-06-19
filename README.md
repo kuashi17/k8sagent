@@ -145,7 +145,9 @@ flowchart TD
 
 ## Agent 내부 처리 흐름
 
-`agent/langchain_agent.py`는 전체 오케스트레이터입니다. 내부에서는 다음 순서로 동작합니다.
+`agent/langchain_agent.py`는 CLI 진입점이며, 실제 흐름은
+`requirement_orchestrator.py`와 `log_analysis_orchestrator.py`가 담당합니다.
+요구사항 실행은 다음 순서로 동작합니다.
 
 ```text
 1. 입력 확인
@@ -198,7 +200,7 @@ flowchart TD
 
 | Tool | 파일 | 입력 | 출력 | 실제 변경 여부 |
 | --- | --- | --- | --- | --- |
-| Requirement Planner | `agent/langchain_agent.py` | requirement, profile | LLM 계획, Tool 호출 계획 | 기본적으로 변경 없음 |
+| Requirement Planner | `agent/requirement_orchestrator.py` | requirement, profile | LLM 계획, Tool 호출 계획 | 기본적으로 변경 없음 |
 | RAG Retriever | `agent/rag/retriever.py` | 검색어 | 관련 Markdown 문서 발췌 | 변경 없음 |
 | LLM Client | `agent/llm/client.py` | prompt JSON | LLM JSON 응답 | 변경 없음 |
 | Spec Generator | `agent/tools/spec_generator.py` | `requirements/*.txt` | `generated/*-operator-spec.yaml` | 파일 생성 |
@@ -217,7 +219,7 @@ flowchart TD
 | Evidence Builder | `agent/evidence_builder.py` | summary, Tool/retrieval results | safety and evidence trace | 근거 연결과 안전 정책 표시 |
 | Summary Builder | `agent/summary_builder.py` | context, planner, execution, recovery | Agent summary | 오류·warning·다음 조치 조립 |
 | Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
-| Recovery Validator | `agent/langchain_agent.py` 내부 | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
+| Recovery Validator | `agent/recovery_policy.py` | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
 
 ## 산출물 위치
 
@@ -410,6 +412,9 @@ python3 agent/langchain_agent.py \
 ├── knowledge-base/
 ├── agent/
 │   ├── langchain_agent.py
+│   ├── requirement_orchestrator.py
+│   ├── log_analysis_orchestrator.py
+│   ├── orchestration_common.py
 │   ├── llm/
 │   ├── rag/
 │   ├── tools/
@@ -432,7 +437,10 @@ python3 agent/langchain_agent.py \
 | --- | --- |
 | `docs` | 요구사항, Agent 흐름, 검증 흐름, 오류 대응 가이드 문서 |
 | `knowledge-base` | RAG 검색에 사용하는 Kubebuilder 가이드, troubleshooting, 예시 문서 |
-| `agent/langchain_agent.py` | 전체 Agent 오케스트레이터 |
+| `agent/langchain_agent.py` | CLI 인자 처리와 오케스트레이터 진입점 |
+| `agent/requirement_orchestrator.py` | 요구사항 계획, Tool 실행, 최종 평가, 복구 흐름 |
+| `agent/log_analysis_orchestrator.py` | 기존 실행 로그 분석 흐름 |
+| `agent/orchestration_common.py` | 오케스트레이터 공통 LLM 결과, 시간, 로그 헬퍼 |
 | `agent/llm` | Ollama local LLM client, prompt, planner |
 | `agent/rag` | 로컬 Markdown RAG 검색기 |
 | `agent/tools` | 기존 CLI 자동화 도구와 Tool wrapper |
