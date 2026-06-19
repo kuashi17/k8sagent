@@ -69,6 +69,8 @@ artifact_patcher
   -> final Local LLM evaluation
 ```
 
+Tool 실행과 kind 검증이 모두 성공한 뒤 final Local LLM 평가만 timeout되거나 실패하면, 성공한 실행을 실패로 뒤집지 않는다. Tool exit code와 validation/deployment summary를 사용한 deterministic final summary로 강등하고 LLM 오류는 warning과 `finalLLM.fallbackError`에 기록한다.
+
 기존 scaffold를 보존하고 배포 검증을 이어갈 때는 `--resume-existing`을 사용한다. 이 옵션은 기존 디렉터리를 삭제하지 않고 scaffold_runner만 건너뛴다.
 
 kind runner의 `--dry-run`은 Docker build, kind cluster, kubectl apply, 파일 수정을 실행하지 않고 계획만 기록한다.

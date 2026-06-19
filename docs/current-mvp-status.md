@@ -50,17 +50,22 @@ python3 scripts/run-regression-tests.py --suite full
 
 2026-06-19 현재 확인 결과:
 
-- Agent 단위 테스트 23개 통과
+- Agent core/LLM/Tool 단위 테스트 32개 통과
 - Web 단위 테스트 7개 통과
 - `quick` regression 통과
 - Local LLM Agent 1회를 포함한 `standard` regression 통과
-- Docker daemon이 꺼져 있어 `full`의 kind 실배포 검증은 미실행
-
-Docker가 복구되면 다음 명령으로 공통 배포 엔진, AppConfig/ConfigMap validator, profileless 요구사항을 함께 재검증한다.
+- Docker/kind 기반 `full` regression 통과
+- AppConfig create/update/disabled/delete/restore lifecycle 통과
+- 실제 Agent standard execute → validation → kind deployment 경로 통과
 
 ```bash
 python3 scripts/run-regression-tests.py --suite full
 ```
+
+최근 성공 로그:
+
+- kind lifecycle: `logs/kind-deployment/20260619-160026/summary.json`
+- Agent standard workflow: `logs/agent/20260619-160009-672713/summary.json`
 
 ## 안전 정책
 
@@ -68,13 +73,14 @@ python3 scripts/run-regression-tests.py --suite full
 - 변경 Tool은 `--execute`와 사용자 승인이 모두 있어야 실제 실행된다.
 - invalid JSON 또는 schema 검증 실패가 복구되지 않으면 Tool을 실행하지 않는다.
 - Tool 실패 후 다음 Tool은 실행하지 않는다.
+- Tool이 모두 성공한 뒤 final LLM 평가만 timeout되면 deterministic summary로 강등하고 warning을 남긴다.
 - recovery Tool은 `requiresApproval=true`로 저장되며 자동 실행하지 않는다.
 - Docker/kind 연결 실패는 `docker-kind-connection`으로 분류하고 불필요한 recovery LLM 호출을 생략한다.
 
 ## 현재 한계와 다음 개선
 
-1. Docker 복구 후 `full` regression과 kind standard workflow를 실제로 완료해야 한다.
-2. `langchain_agent.py`에는 final/recovery orchestration, retrieval 선택, failure context 조립이 남아 있어 추가 분리가 가능하다.
+1. final LLM 평가가 작은 로컬 모델에서 오래 걸리므로 prompt 축소 또는 별도 timeout 기본값 조정이 필요하다.
+2. `langchain_agent.py`에는 final/recovery orchestration이 남아 있어 추가 분리가 가능하다.
 3. Web job은 단일 프로세스의 메모리 process registry를 사용한다. 다중 worker 운영에는 외부 queue/worker가 필요하다.
 4. 취소는 Agent subprocess를 종료하지만 이미 외부 시스템에 반영된 변경을 자동 rollback하지 않는다.
 5. kind validator는 profile별 구현을 추가해야 새로운 Operator lifecycle을 깊게 검증할 수 있다.

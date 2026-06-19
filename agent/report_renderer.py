@@ -226,6 +226,11 @@ def append_final_evaluation(lines: list[str], final: dict[str, Any]) -> None:
     output = final.get("output") or {}
     lines.extend(["", "## Final LLM Evaluation", ""])
     if output:
+        if final.get("fallbackUsed"):
+            lines.append(
+                "- fallback: deterministic Tool-result summary "
+                f"(`{final.get('fallbackError') or 'LLM evaluation failed'}`)"
+            )
         lines.extend(
             [
                 f"- executionDecision: `{output.get('executionDecision') or 'unknown'}`",

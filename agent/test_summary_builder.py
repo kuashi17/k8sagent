@@ -9,6 +9,68 @@ from agent.summary_builder import build_requirement_summary
 
 
 class SummaryBuilderTest(unittest.TestCase):
+    def test_final_llm_fallback_is_a_warning_not_an_error(self) -> None:
+        args = argparse.Namespace(
+            profile="",
+            mode="execute",
+            run_level="standard",
+            skip_final_llm_evaluation=False,
+            execute=True,
+            kind_deploy=False,
+            resume_existing=False,
+        )
+        summary = build_requirement_summary(
+            args,
+            {
+                "requirement": "requirements/widget.txt",
+                "requirementSummary": {"kind": "Widget"},
+                "intentAnalysis": {},
+                "missingInformation": [],
+                "retrievedKnowledge": [],
+                "retrievalDetails": {},
+                "selectedProfile": {},
+                "profileCandidates": [],
+                "generatedFiles": {
+                    "operatorSpec": "generated/spec.yaml",
+                    "commandPlan": "generated/plan.md",
+                },
+                "workspace": "workspace/generated-operators",
+            },
+            {
+                "llmPlannerUsed": True,
+                "localLLM": {},
+                "error": "",
+                "llmOutput": {"toolCalls": [{"tool": "validation"}]},
+            },
+            {
+                "validatedToolCalls": [{"tool": "validation"}],
+                "rejectedToolCalls": [],
+                "deferredToolCalls": [],
+                "toolResults": [
+                    {
+                        "tool": "validation",
+                        "exitCode": 0,
+                        "status": "succeeded",
+                        "stdout": "",
+                    }
+                ],
+            },
+            {
+                "llmPlannerUsed": False,
+                "localLLM": {},
+                "error": "",
+                "fallbackUsed": True,
+                "fallbackError": "request timed out",
+                "llmOutput": {"executionDecision": "succeeded"},
+            },
+        )
+
+        self.assertEqual(summary["errors"], [])
+        self.assertIn(
+            "Final LLM evaluation fallback: request timed out",
+            summary["warnings"],
+        )
+
     def test_failure_summary_keeps_recovery_and_removes_internal_wait_error(self) -> None:
         args = argparse.Namespace(
             profile="",

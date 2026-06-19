@@ -191,6 +191,16 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
             final_started = time.perf_counter()
             final_result = call_final_evaluator(context, planner_result, execution, collect_warnings(execution["toolResults"], context), initial_errors)
             context["timings"]["finalLlmEvaluationSeconds"] = elapsed(final_started)
+            if final_result.get("error"):
+                final_result = fallback_final_result(
+                    context,
+                    planner_result,
+                    execution,
+                    collect_warnings(execution["toolResults"], context),
+                    initial_errors,
+                    args,
+                    final_result,
+                )
     summary = build_requirement_summary(args, context, planner_result, execution, final_result, recovery_result, failure_context)
     summary["timings"] = finalize_timings(context, execution, total_started)
     summary["safetyEvaluation"] = build_requirement_safety_evaluation(args, context, execution, planner_result, failure_context)
@@ -439,6 +449,44 @@ def rule_based_final_result(
         "skipped": True,
         "skipReason": "fast mode" if args.run_level == "fast" else "--skip-final-llm-evaluation",
     }
+
+
+def fallback_final_result(
+    context: dict[str, Any],
+    planner_result: dict[str, Any],
+    execution: dict[str, Any],
+    warnings: list[str],
+    errors: list[str],
+    args: argparse.Namespace,
+    failed_result: dict[str, Any],
+) -> dict[str, Any]:
+    fallback_error = str(
+        failed_result.get("error") or "Final LLM evaluation failed."
+    )
+    result = rule_based_final_result(
+        context,
+        planner_result,
+        execution,
+        warnings + [f"Final LLM evaluation fallback: {fallback_error}"],
+        errors,
+        args,
+    )
+    result.update(
+        {
+            "effectivePlanner": "rule-based-final-fallback",
+            "llmInput": failed_result.get("llmInput") or {},
+            "rawOutput": failed_result.get("rawOutput") or "",
+            "fallbackUsed": True,
+            "fallbackError": fallback_error,
+            "skipped": False,
+            "skipReason": "",
+        }
+    )
+    result["llmOutput"]["beginnerSummary"] = (
+        "Tool execution succeeded, but the optional final LLM evaluation "
+        "timed out or failed. A deterministic Tool-result summary was used."
+    )
+    return result
 
 
 def validation_results_from_tool_results(tool_results: list[dict[str, Any]]) -> dict[str, str]:

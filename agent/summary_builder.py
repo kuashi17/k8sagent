@@ -37,6 +37,12 @@ def build_requirement_summary(
             if item
             != "Execution failed; recovery plan generated and waiting for user approval."
         ]
+    warnings = collect_warnings(tool_results, context)
+    if final_result.get("fallbackError"):
+        warnings.append(
+            "Final LLM evaluation fallback: "
+            + str(final_result["fallbackError"])
+        )
     return {
         "mode": "requirement-planning",
         "requirement": context["requirement"],
@@ -94,13 +100,15 @@ def build_requirement_summary(
             "llmPlannerUsed": final_result.get("llmPlannerUsed"),
             "localLLM": final_result.get("localLLM") or {},
             "error": final_result.get("error") or "",
+            "fallbackUsed": bool(final_result.get("fallbackUsed")),
+            "fallbackError": final_result.get("fallbackError") or "",
             "output": final_result.get("llmOutput") or {},
         },
         "failureContext": (
             scrub_failure_context(failure_context) if failure_context else {}
         ),
         "recovery": recovery_summary(recovery_result, failure_context),
-        "warnings": collect_warnings(tool_results, context),
+        "warnings": warnings,
         "errors": errors,
         "nextRecommendedActions": next_actions(
             context,
