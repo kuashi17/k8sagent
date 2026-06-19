@@ -17,6 +17,7 @@
 - Local Markdown 기반 Hybrid RAG와 keyword fallback
 - requirement/log-analysis evidence trace, safety evaluation, Markdown report
 - Web UI 백그라운드 작업, 상태 polling, 로그 표시, 최근 작업 목록, 취소
+- 외부 다중 worker queue, SSE 로그, 제한 재시도, 수동 rollback 정책
 - Web 서버 재시작 시 미완료 작업의 `interrupted` 복구
 
 ## 주요 모듈 경계
@@ -39,7 +40,8 @@
 | `agent/report_renderer.py` | 사용자용 보고서 렌더링 |
 | `agent/tools/kind_deployment_runner.py` | 공통 kind 배포 lifecycle |
 | `agent/tools/kind_deployment_validators.py` | profile별 리소스/status 검증 |
-| `web/job_manager.py` | 영속 백그라운드 작업과 취소/재시작 복구 |
+| `web/job_manager.py` | 영속 queue, claim, 취소, 재시도 정책 |
+| `web/worker.py` | 다중 프로세스 외부 작업 실행 |
 
 ## 검증 상태
 

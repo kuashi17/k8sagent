@@ -132,6 +132,20 @@
         {% if job.state in ["queued", "running"] %}
         <button type="button" class="cancel-button" id="cancel-job">Cancel Job</button>
         {% endif %}
+        {% else %}
+        {% if job.state in ["failed", "canceled", "interrupted"] and job.attempt < job.maxAttempts %}
+        <button type="button" id="retry-job">Retry Job</button>
+        {% endif %}
+        {% endif %}
+        {% if job.rollbackPolicy and job.rollbackPolicy.mode != "not-applicable" %}
+        <details>
+          <summary>Rollback policy: {{ job.rollbackPolicy.mode }}</summary>
+          <ul>
+          {% for action in job.rollbackPolicy.actions %}
+            <li>{{ action }}</li>
+          {% endfor %}
+          </ul>
+        </details>
         {% endif %}
         <h3>Live stdout</h3>
         <pre class="live-log" id="job-stdout">{{ job.stdoutTail }}</pre>
@@ -221,11 +235,7 @@
             window.location.reload();
           });
         }
-
-        async function refreshJob() {
-          const response = await fetch(`/api/jobs/${jobId}`, {cache: "no-store"});
-          if (!response.ok) return;
-          const job = await response.json();
+        function renderJob(job) {
           state.textContent = job.state;
           state.className = `job-state state-${job.state}`;
           phase.textContent = job.phase || "running";
@@ -235,12 +245,26 @@
           stdout.scrollTop = stdout.scrollHeight;
           if (job.terminal) {
             window.location.reload();
-            return;
           }
-          window.setTimeout(refreshJob, 1200);
         }
-        window.setTimeout(refreshJob, 500);
+        const events = new EventSource(`/api/jobs/${jobId}/events`);
+        events.onmessage = (event) => renderJob(JSON.parse(event.data));
+        events.onerror = () => {
+          events.close();
+          window.setTimeout(() => window.location.reload(), 1500);
+        };
       })();
+    </script>
+    {% endif %}
+    {% if job and job.state in ["failed", "canceled", "interrupted"] and job.attempt < job.maxAttempts %}
+    <script>
+      document.getElementById("retry-job").addEventListener("click", async (event) => {
+        event.currentTarget.disabled = true;
+        const response = await fetch(`/api/jobs/{{ job.jobId }}/retry`, {method: "POST"});
+        const retried = await response.json();
+        if (response.ok) window.location.href = `/runs/job/${retried.jobId}`;
+        else event.currentTarget.disabled = false;
+      });
     </script>
     {% endif %}
   </body>

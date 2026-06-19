@@ -1043,6 +1043,21 @@ Web UI에서 할 수 있는 작업:
 
 긴 LLM planning이나 kind 배포 중에도 최초 HTTP 요청은 즉시 작업 페이지로 이동합니다. 최근 작업은 `GET /api/jobs`, 개별 상태는 `GET /api/jobs/<job-id>`, 취소는 `POST /api/jobs/<job-id>/cancel`로 처리합니다. 실행 정보는 `logs/web/jobs/<job-id>/status.json`, `stdout.log`, `stderr.log`에 저장됩니다. 서버 재시작 시 실행 중이던 작업은 `interrupted`로 표시되고 완료된 작업 결과는 계속 열 수 있습니다.
 
+다중 Web worker 운영에서는 Web 프로세스와 실행 worker를 분리합니다.
+
+```bash
+export WEB_JOB_EXECUTION_MODE=external
+uvicorn web.app:app --host 0.0.0.0 --port 8000 --workers 2
+
+# 별도 터미널 또는 서비스에서 여러 개 실행 가능
+WEB_JOB_EXECUTION_MODE=external python3 web/worker.py
+WEB_JOB_EXECUTION_MODE=external python3 web/worker.py
+```
+
+각 worker는 `claim.lock`을 원자적으로 생성해 하나의 작업만 가져갑니다. 진행 로그는 `GET /api/jobs/<job-id>/events` SSE로 전송됩니다. 실패/중단/취소 작업은 `POST /api/jobs/<job-id>/retry`로 제한된 횟수 안에서 새 작업으로 재시도합니다.
+
+kind 배포 작업의 rollback은 자동 실행하지 않습니다. UI와 상태 API의 `rollbackPolicy`에는 rollout revision 확인, sample CR 삭제, CRD 제거 순서가 수동 승인 절차로 표시됩니다.
+
 Web UI execute는 Mode를 `execute`로 선택하고 별도의 실제 변경 승인 체크박스까지 선택해야 합니다. kind deployment는 capability가 정의된 profile을 선택해야 합니다.
 
 ## 신뢰성/응답속도 검증

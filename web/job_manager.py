@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -18,13 +19,24 @@ TERMINAL_STATES = {"succeeded", "failed", "canceled", "interrupted"}
 
 
 class JobManager:
-    def __init__(self, repo_root: Path, root: Path) -> None:
+    def __init__(
+        self,
+        repo_root: Path,
+        root: Path,
+        *,
+        execution_mode: str | None = None,
+    ) -> None:
         self.repo_root = repo_root
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
+        self.execution_mode = execution_mode or os.environ.get(
+            "WEB_JOB_EXECUTION_MODE",
+            "embedded",
+        )
         self._lock = threading.RLock()
         self._processes: dict[str, subprocess.Popen[str]] = {}
-        self._recover_interrupted_jobs()
+        if self.execution_mode == "embedded":
+            self._recover_interrupted_jobs()
 
     def submit(
         self,
@@ -54,10 +66,19 @@ class JobManager:
             "exitCode": None,
             "agentLogDir": "",
             "jobDir": relative(job_dir, self.repo_root),
+            "attempt": int((metadata or {}).get("attempt") or 1),
+            "maxAttempts": int((metadata or {}).get("maxAttempts") or 2),
+            "rollbackPolicy": rollback_policy(job_type, metadata or {}),
         }
         self._write_status(job_dir, status)
-        thread = threading.Thread(target=self._run, args=(job_dir, status), daemon=True, name=f"web-job-{job_id}")
-        thread.start()
+        if self.execution_mode == "embedded":
+            thread = threading.Thread(
+                target=self._run,
+                args=(job_dir, status),
+                daemon=True,
+                name=f"web-job-{job_id}",
+            )
+            thread.start()
         return status
 
     def get(self, job_id: str, *, tail_chars: int = 16000) -> dict[str, Any] | None:
@@ -130,6 +151,71 @@ class JobManager:
                 process.kill()
         return self.get(safe_id)
 
+    def retry(self, job_id: str) -> dict[str, Any] | None:
+        original = self.get(job_id)
+        if not original:
+            return None
+        if original.get("state") not in {"failed", "interrupted", "canceled"}:
+            raise ValueError("Only failed, interrupted, or canceled jobs can be retried")
+        attempt = int(original.get("attempt") or 1) + 1
+        max_attempts = int(original.get("maxAttempts") or 2)
+        if attempt > max_attempts:
+            raise ValueError("Maximum retry attempts reached")
+        metadata = dict(original.get("metadata") or {})
+        metadata.update(
+            {
+                "retryOf": original.get("jobId"),
+                "attempt": attempt,
+                "maxAttempts": max_attempts,
+            }
+        )
+        retried = self.submit(
+            str(original.get("jobType") or "retry"),
+            [str(item) for item in original.get("command") or []],
+            metadata=metadata,
+        )
+        job_dir = self.root / retried["jobId"]
+        retried["attempt"] = attempt
+        retried["maxAttempts"] = max_attempts
+        self._write_status(job_dir, retried)
+        return retried
+
+    def claim_next(self, worker_id: str) -> dict[str, Any] | None:
+        for status in reversed(self.list(100)):
+            if status.get("state") != "queued":
+                continue
+            job_id = str(status.get("jobId") or "")
+            if not job_id:
+                continue
+            job_dir = self.root / safe_job_id(job_id)
+            claim_path = job_dir / "claim.lock"
+            try:
+                descriptor = os.open(
+                    claim_path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                )
+            except FileExistsError:
+                continue
+            with os.fdopen(descriptor, "w", encoding="utf-8") as claim:
+                claim.write(worker_id)
+            with self._lock:
+                current = self._read_status(job_dir)
+                if not current or current.get("state") != "queued":
+                    claim_path.unlink(missing_ok=True)
+                    continue
+                current["workerId"] = worker_id
+                current["claimedAt"] = now_iso()
+                self._write_status(job_dir, current)
+            return current
+        return None
+
+    def run_claimed(self, status: dict[str, Any]) -> None:
+        job_dir = self.root / safe_job_id(str(status["jobId"]))
+        try:
+            self._run(job_dir, status)
+        finally:
+            (job_dir / "claim.lock").unlink(missing_ok=True)
+
     def _run(self, job_dir: Path, status: dict[str, Any]) -> None:
         with self._lock:
             current = self._read_status(job_dir)
@@ -158,6 +244,12 @@ class JobManager:
                     canceled = bool(current and current.get("state") == "canceled")
                 if canceled and process.poll() is None:
                     process.terminate()
+                while process.poll() is None:
+                    time.sleep(0.25)
+                    current = self._read_status(job_dir)
+                    if current and current.get("state") == "canceled":
+                        process.terminate()
+                        break
                 exit_code = process.wait()
                 state = "succeeded" if exit_code == 0 else "failed"
             except Exception as exc:  # noqa: BLE001
@@ -186,8 +278,9 @@ class JobManager:
 
     def _write_status(self, job_dir: Path, status: dict[str, Any]) -> None:
         payload = json.dumps(status, indent=2, ensure_ascii=False)
-        temp = job_dir / "status.json.tmp"
+        temp = job_dir / f"status.{uuid4().hex}.tmp"
         with self._lock:
+            job_dir.mkdir(parents=True, exist_ok=True)
             temp.write_text(payload, encoding="utf-8")
             temp.replace(job_dir / "status.json")
 
@@ -271,3 +364,24 @@ def relative(path: Path, root: Path) -> str:
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def rollback_policy(
+    job_type: str,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    if job_type == "requirement" and metadata.get("kindDeploy"):
+        return {
+            "mode": "manual-approval",
+            "automatic": False,
+            "actions": [
+                "Inspect kind deployment summary and generated manifests.",
+                "Use kubectl rollout undo only when a previous revision exists.",
+                "Delete the sample Custom Resource before uninstalling CRDs.",
+            ],
+        }
+    return {
+        "mode": "not-applicable",
+        "automatic": False,
+        "actions": [],
+    }

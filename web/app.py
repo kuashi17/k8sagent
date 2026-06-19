@@ -8,6 +8,7 @@ core behavior.
 
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import os
@@ -18,7 +19,12 @@ from typing import Any
 
 import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -222,6 +228,9 @@ async def job_status(job_id: str) -> JSONResponse:
             "stderrTail": job.get("stderrTail"),
             "terminal": job.get("state")
             in {"succeeded", "failed", "canceled", "interrupted"},
+            "attempt": job.get("attempt"),
+            "maxAttempts": job.get("maxAttempts"),
+            "rollbackPolicy": job.get("rollbackPolicy") or {},
         }
     )
 
@@ -245,6 +254,73 @@ async def cancel_job(job_id: str) -> JSONResponse:
             "state": job.get("state"),
             "phase": job.get("phase"),
         }
+    )
+
+
+@app.post("/api/jobs/{job_id}/retry")
+async def retry_job(job_id: str) -> JSONResponse:
+    try:
+        job = jobs.retry(job_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    if not job:
+        return JSONResponse({"error": "job not found"}, status_code=404)
+    return JSONResponse(
+        {
+            "jobId": job.get("jobId"),
+            "state": job.get("state"),
+            "attempt": job.get("attempt"),
+        },
+        status_code=201,
+    )
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(job_id: str) -> StreamingResponse:
+    async def stream():
+        previous = ""
+        while True:
+            try:
+                job = jobs.get(job_id)
+            except ValueError:
+                job = None
+            if not job:
+                yield 'event: error\ndata: {"error":"job not found"}\n\n'
+                return
+            payload = json.dumps(
+                {
+                    "jobId": job.get("jobId"),
+                    "state": job.get("state"),
+                    "phase": job.get("phase"),
+                    "exitCode": job.get("exitCode"),
+                    "agentLogDir": job.get("agentLogDir"),
+                    "stdoutTail": job.get("stdoutTail"),
+                    "stderrTail": job.get("stderrTail"),
+                    "terminal": job.get("state") in {
+                        "succeeded",
+                        "failed",
+                        "canceled",
+                        "interrupted",
+                    },
+                },
+                ensure_ascii=False,
+            )
+            if payload != previous:
+                yield f"data: {payload}\n\n"
+                previous = payload
+            if job.get("state") in {
+                "succeeded",
+                "failed",
+                "canceled",
+                "interrupted",
+            }:
+                return
+            await asyncio.sleep(0.75)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

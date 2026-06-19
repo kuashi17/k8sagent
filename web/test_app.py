@@ -41,6 +41,18 @@ class FakeJobs:
             job.update({"state": "canceled", "phase": "canceled"})
         return job
 
+    def retry(self, job_id):
+        job = self.result(job_id)
+        if job:
+            job.update(
+                {
+                    "jobId": "20260619-retry0001",
+                    "state": "queued",
+                    "attempt": 2,
+                }
+            )
+        return job
+
 
 class AsyncWebRouteTest(unittest.TestCase):
     def test_requirement_submission_redirects_to_job_immediately(self) -> None:
@@ -74,6 +86,13 @@ class AsyncWebRouteTest(unittest.TestCase):
                 response = client.post("/api/jobs/20260619-async0001/cancel")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["state"], "canceled")
+
+    def test_failed_job_can_be_retried(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            with TestClient(app) as client:
+                response = client.post("/api/jobs/20260619-async0001/retry")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["attempt"], 2)
 
 
 if __name__ == "__main__":
