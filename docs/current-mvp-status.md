@@ -1,135 +1,84 @@
 # Current MVP Status
 
-## 현재 완료된 기능
+기준일: 2026-06-19
 
-- 범용 Operator 요구사항 작성 템플릿 작성
-- 자연어 요구사항을 `operator-spec.yaml`로 변환하는 `spec_generator.py` 구현
-- `operator-spec.yaml` 기반 Kubebuilder command plan 생성
-- `scaffold_runner.py` 기반 dry-run, preflight, execute 실행
-- Kubebuilder scaffold 생성
-- `artifact_patcher.py` 기반 API 타입, sample YAML, RBAC marker 보정
-- TrainingJob Controller Reconcile 로직 구현
+## 현재 동작하는 범위
+
+- 자연어 요구사항 분석과 profile hint 선택
+- Local LLM 기반 requirement planning, tool-result evaluation, recovery planning
+- LLM JSON schema 검증, 누락 필드 정규화, schema 재요청 1회
+- 계획 캐시, 짧은 planning prompt, Web 시작 시 선택적 model warm-up
+- Tool allowlist, 필수 인자, repository path, execute 승인 검증
+- `operator-spec.yaml`, command plan, Kubebuilder scaffold, artifact patch 생성
 - `make generate`, `make manifests`, `make test` 검증
-- kind 기반 e2e runner 구현
-- clean e2e 재검증 구현
-- Job spec validation 구현
-- `log_analyzer.py` 기반 성공/경고 분석 리포트 생성
-- LangChain-style Agent Orchestrator 구현
-- LLM planner 구조 구현 및 심사 시연 기본 planner를 `llm`으로 정리
-- 규칙 기반 planner 제거, LLM planner 전용 흐름으로 정리
-- 기존 CLI 도구를 Agent Tool wrapper로 호출하는 구조 구현
-- 로컬 Markdown `knowledge-base` 기반 RAG 검색 구현
-- Agent 기반 requirement dry-run 구현
-- Agent 기반 e2e 로그 분석과 GPU Pending warning 자연어 판단 구현
-- core/profile 구조 문서화
-- TrainingJob, RedisCache profile YAML 초안 작성
+- profile capability 기반 kind deployment
+- 공통 kind 배포 엔진과 profile validator 분리
+- 실패 시 Tool 실행 중단, deterministic recovery 분류, 승인 대기 recovery plan
+- Local Markdown 기반 Hybrid RAG와 keyword fallback
+- requirement/log-analysis evidence trace, safety evaluation, Markdown report
+- Web UI 백그라운드 작업, 상태 polling, 로그 표시, 최근 작업 목록, 취소
+- Web 서버 재시작 시 미완료 작업의 `interrupted` 복구
 
-## 검증 완료된 로그 경로
+## 주요 모듈 경계
 
-| 단계 | 로그 경로 | 결과 |
-| --- | --- | --- |
-| scaffold | `logs/scaffold/` | Kubebuilder scaffold 및 generate/manifests/test 성공 로그 저장 |
-| patch | `logs/patch/` | API 타입, sample, RBAC 보정 및 검증 성공 로그 저장 |
-| clean e2e | `logs/e2e/20260607-213346/summary.json` | 성공, GPU Pending warning |
-| log analysis | `logs/e2e/20260607-213346/analysis.md` | 성공 분석 리포트 생성 |
-| Agent requirement dry-run | `logs/agent/20260608-225601/agent-report.md` | AppConfig 요구사항 요약, RAG 검색, Tool dry-run 성공 |
-| Agent log analysis | `logs/agent/20260608-230117/agent-report.md` | TrainingJob e2e 로그를 `succeeded-with-warning`으로 판단 |
+| 모듈 | 책임 |
+| --- | --- |
+| `agent/langchain_agent.py` | CLI와 상위 orchestration |
+| `agent/context_builder.py` | requirement/profile/RAG context 조립 |
+| `agent/tool_validator.py` | LLM schema와 Tool 호출 검증 |
+| `agent/execution_engine.py` | Tool capability, 정렬, 실행, timing |
+| `agent/recovery_policy.py` | 오류 분류와 recovery 승인 정책 |
+| `agent/summary_builder.py` | 최종 summary 계약 조립 |
+| `agent/evidence_builder.py` | safety/evidence 조립 |
+| `agent/report_writer.py` | JSON/Markdown 보조 산출물 기록 |
+| `agent/report_renderer.py` | 사용자용 보고서 렌더링 |
+| `agent/tools/kind_deployment_runner.py` | 공통 kind 배포 lifecycle |
+| `agent/tools/kind_deployment_validators.py` | profile별 리소스/status 검증 |
+| `web/job_manager.py` | 영속 백그라운드 작업과 취소/재시작 복구 |
 
-## clean e2e 결과 요약
+## 검증 상태
 
-실행 명령:
-
-```bash
-python3 agent/tools/e2e_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --clean \
-  --execute
-```
-
-결과:
-
-- kind 클러스터 `trainingjob-e2e` 확인 성공
-- CRD 설치 성공
-- 기존 TrainingJob/Job/Pod 삭제 및 삭제 확인 성공
-- sample PVC 적용 성공
-- Controller 실행 성공
-- sample TrainingJob CR 적용 성공
-- Kubernetes Job `trainingjob-sample-job` 생성 확인
-- TrainingJob status 갱신 확인
-- `failedStep: null`
-
-Job spec validation:
-
-| 항목 | 기대값 | 실제값 | 결과 |
-| --- | --- | --- | --- |
-| container image | `busybox:latest` | `busybox:latest` | passed |
-| GPU limit | `1` | `1` | passed |
-| PVC claimName | `sample-pvc` | `sample-pvc` | passed |
-| `/workspace` volumeMount | `workspace` | `workspace` | passed |
-| `DATASET_PATH` | `/workspace/dataset` | `/workspace/dataset` | passed |
-| `OUTPUT_PATH` | `/workspace/output` | `/workspace/output` | passed |
-
-Pod 상태:
-
-- Pod phase: `Pending`
-- 원인: `Insufficient nvidia.com/gpu`
-- 처리: kind 환경의 GPU 리소스 부족이므로 warning으로 분류
-
-Agent 로그 분석 결과:
+공통 진입점:
 
 ```bash
-python3 agent/langchain_agent.py \
-  --analyze-log logs/e2e/20260607-213346 \
-  --planner llm
+python3 scripts/run-regression-tests.py --suite quick
+python3 scripts/run-regression-tests.py --suite standard
+python3 scripts/run-regression-tests.py --suite full
 ```
 
-- `log_analyzer.py` Tool 호출 성공
-- `analysis.md`와 `summary.json` 읽기 성공
-- `knowledge-base/examples/trainingjob.md`, `knowledge-base/troubleshooting/common-errors.md` 등 RAG 검색
-- Decision: `succeeded-with-warning`
-- Classification: `succeeded-with-gpu-pending-warning`
-- 판단: Controller가 Job을 생성하지 못한 오류가 아니라, kind 클러스터에 `nvidia.com/gpu` 리소스가 없어 Pod가 Pending인 케이스
+2026-06-19 현재 확인 결과:
 
-TrainingJob status:
+- Agent 단위 테스트 17개 통과
+- Web 단위 테스트 7개 통과
+- `quick` regression 통과
+- Local LLM Agent 1회를 포함한 `standard` regression 통과
+- Docker daemon이 꺼져 있어 `full`의 kind 실배포 검증은 미실행
 
-```json
-{
-  "phase": "Running",
-  "jobName": "trainingjob-sample-job",
-  "podName": "trainingjob-sample-job-j4lp2",
-  "message": "TrainingJob is running"
-}
+Docker가 복구되면 다음 명령으로 공통 배포 엔진, AppConfig/ConfigMap validator, profileless 요구사항을 함께 재검증한다.
+
+```bash
+python3 scripts/run-regression-tests.py --suite full
 ```
 
-## 현재 한계
+## 안전 정책
 
-- `e2e_runner.py`에 TrainingJob Job/GPU/PVC 검증 로직이 직접 포함되어 있음
-- `artifact_patcher.py`에 sample 값과 RBAC 보강 로직이 profile과 분리되어 있지 않음
-- `log_analyzer.py`의 추천 명령과 evidence 수집 일부가 TrainingJob 흐름에 묶여 있음
-- RAG는 현재 로컬 Markdown 검색이며 Vector DB/Reranker는 아직 미적용
-- 실제 LLM 품질 검증은 `OPENAI_API_KEY`, `OPENAI_MODEL` 설정 후 추가 검증 필요
-- Jenkins, Harbor, Argo CD 연계는 문서화 단계
-- 실패 로그 분석은 규칙 기반이며, 더 많은 실패 사례 축적이 필요함
+- 기본 모드는 `dry-run`이다.
+- 변경 Tool은 `--execute`와 사용자 승인이 모두 있어야 실제 실행된다.
+- invalid JSON 또는 schema 검증 실패가 복구되지 않으면 Tool을 실행하지 않는다.
+- Tool 실패 후 다음 Tool은 실행하지 않는다.
+- recovery Tool은 `requiresApproval=true`로 저장되며 자동 실행하지 않는다.
+- Docker/kind 연결 실패는 `docker-kind-connection`으로 분류하고 불필요한 recovery LLM 호출을 생략한다.
 
-## 남은 과제
+## 현재 한계와 다음 개선
 
-- `e2e_runner.py`를 core runner와 profile validation으로 분리
-- `artifact_patcher.py`의 sample/RBAC profile hook 설계
-- `log_analyzer.py`의 profile별 warning/evidence rule 분리
-- PVC not found, ImagePullBackOff, RBAC forbidden 등 의도적 실패 시나리오 검증
-- RedisCache profile 기반 e2e 시나리오 추가
-- 문서화된 profile 구조를 실제 코드 로딩 구조로 연결
-- LLM planner의 prompt, JSON schema, fallback 정책 고도화
-- RAG 검색을 Vector DB와 Reranker 기반으로 고도화
+1. Docker 복구 후 `full` regression과 kind standard workflow를 실제로 완료해야 한다.
+2. `langchain_agent.py`에는 final/recovery orchestration, retrieval 선택, failure context 조립이 남아 있어 추가 분리가 가능하다.
+3. Web job은 단일 프로세스의 메모리 process registry를 사용한다. 다중 worker 운영에는 외부 queue/worker가 필요하다.
+4. 취소는 Agent subprocess를 종료하지만 이미 외부 시스템에 반영된 변경을 자동 rollback하지 않는다.
+5. kind validator는 profile별 구현을 추가해야 새로운 Operator lifecycle을 깊게 검증할 수 있다.
+6. RAG 품질은 fixture 확대와 reranker 성능 측정이 더 필요하다.
+7. Jenkins, Harbor, Argo CD 연계는 아직 문서/확장 단계다.
 
-## 2차 확장 항목
+## 내부 fixture의 위치
 
-- LLM 기반 요구사항 Semantic Parsing
-- RAG 기반 Kubebuilder 문서와 사내 예제 검색
-- Reranker 기반 참조 문서 선별
-- Few-shot 기반 산출물 생성 품질 개선
-- Jenkins 검증 로그 수집
-- Harbor 이미지 빌드/푸시 확인
-- Argo CD 배포 Sync/Health 확인
-- GitHub branch, commit, PR 초안 자동화
-- 오류 유형 축적 기반 프롬프트와 생성 규칙 개선
+AppConfig/ConfigMap과 TrainingJob은 회귀 검증용 fixture다. Agent core는 특정 Operator에 종속되지 않으며 자연어 requirement를 우선하고 profile은 capability와 검증 hint로만 사용한다.

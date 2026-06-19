@@ -73,7 +73,7 @@ Docker daemon 연결 실패는 `docker-kind-connection`으로 분류한다. reco
 
 Docker 연결 실패처럼 로컬 정책으로 확정할 수 있는 오류는 recovery LLM 호출을 생략한다. Tool 실패 직후에는 recovery planning 전에 plan, Tool 결과, failure context를 Agent log에 체크포인트로 기록한다.
 
-Web UI는 Agent CLI를 백그라운드 job으로 실행한다. 각 job은 `logs/web/jobs/<job-id>`에 상태와 stdout/stderr를 기록하며, UI는 상태 API를 polling해 현재 단계와 로그를 갱신한다. Web 요청 스레드는 LLM 또는 배포 완료를 기다리지 않는다.
+Web UI는 Agent CLI를 백그라운드 job으로 실행한다. 각 job은 `logs/web/jobs/<job-id>`에 상태와 stdout/stderr를 기록하며, UI는 상태 API를 polling해 현재 단계와 로그를 갱신한다. 최근 작업 목록과 실행 중 취소를 지원하고, 서버 재시작 시 남아 있던 `queued`/`running` 작업은 `interrupted`로 전환한다. Web 요청 스레드는 LLM 또는 배포 완료를 기다리지 않는다.
 
 ## Requirement Analyzer와 Profile Hint
 
