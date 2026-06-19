@@ -12,6 +12,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class ControllerQualityTest(unittest.TestCase):
+    @unittest.skipUnless(
+        (
+            REPO_ROOT
+            / "workspace"
+            / "generated-operators"
+            / "app-config-operator"
+        ).is_dir(),
+        "local generated AppConfig fixture is not tracked in CI",
+    )
     def test_existing_appconfig_fixture_meets_quality_contract(self) -> None:
         result = evaluate_controller_quality(
             REPO_ROOT
