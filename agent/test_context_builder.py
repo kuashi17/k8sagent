@@ -11,7 +11,9 @@ from agent.context_builder import (
     extract_tool_call_plan,
     missing_information,
     summarize_requirement,
+    target_project_dir,
 )
+from agent.requirement_orchestrator import reconcile_plan_with_context
 
 
 REQUIREMENT = """\
@@ -56,10 +58,70 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertTrue(context["targetProjectDir"].endswith("web-service-operator"))
         self.assertEqual(context["retrievedKnowledge"][0]["path"], "guide.md")
 
+    def test_parses_inline_trainingjob_fields(self) -> None:
+        text = Path("requirements/trainingjob.txt").read_text(
+            encoding="utf-8"
+        )
+
+        summary = summarize_requirement(text)
+
+        self.assertEqual(
+            summary["specFields"],
+            [
+                "image",
+                "gpuCount",
+                "pvcName",
+                "datasetPath",
+                "outputPath",
+            ],
+        )
+        self.assertEqual(
+            summary["statusFields"],
+            ["phase", "jobName", "podName", "message"],
+        )
+        self.assertEqual(missing_information(summary, text), [])
+
+    def test_profile_kind_project_overrides_inferred_directory(self) -> None:
+        target = target_project_dir(
+            "workspace/generated-operators",
+            "TrainingJob",
+            "trainingjob",
+            {
+                "kindDeployment": {
+                    "project": (
+                        "workspace/generated-operators/"
+                        "trainingjob-operator"
+                    )
+                }
+            },
+        )
+
+        self.assertEqual(
+            target,
+            "workspace/generated-operators/trainingjob-operator",
+        )
+
     def test_extracts_only_well_formed_planner_collections(self) -> None:
         data = {"reasoning": ["one"], "toolCalls": [{"tool": "validation"}, "bad"]}
         self.assertEqual(extract_list(data, "reasoning"), ["one"])
         self.assertEqual(extract_tool_call_plan(data), [{"tool": "validation"}])
+
+    def test_complete_context_removes_false_llm_missing_fields(self) -> None:
+        plan = reconcile_plan_with_context(
+            {
+                "missingInformation": ["spec.image"],
+                "risks": ["Missing spec.image", "Docker may be unavailable"],
+                "nextActions": ["Define spec.image"],
+            },
+            {"missingInformation": []},
+        )
+
+        self.assertEqual(plan["missingInformation"], [])
+        self.assertEqual(plan["risks"], ["Docker may be unavailable"])
+        self.assertEqual(
+            plan["nextActions"],
+            ["Review generated artifacts and validated Tool evidence."],
+        )
 
 
 if __name__ == "__main__":

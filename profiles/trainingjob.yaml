@@ -17,6 +17,14 @@ sampleDefaults:
     pvcName: sample-pvc
     datasetPath: /workspace/dataset
     outputPath: /workspace/output
+artifactPatcher:
+  rbacResources:
+    - apiGroup: ""
+      resource: persistentvolumeclaims
+      verbs:
+        - get
+        - list
+        - watch
 e2e:
   clusterName: trainingjob-e2e
   samplePath: config/samples/ml_v1alpha1_trainingjob.yaml

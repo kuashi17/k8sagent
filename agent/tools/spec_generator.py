@@ -303,7 +303,6 @@ def parse_validation(text: str, warnings: list[str]) -> dict[str, list[str]]:
         if match:
             commands.append(match.group(1).strip())
     if not commands:
-        warnings.append("validation.commands were not found; default commands were used.")
         commands = ["make generate", "make manifests", "make test"]
     return {"commands": commands}
 

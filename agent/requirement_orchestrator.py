@@ -373,7 +373,10 @@ def call_requirement_planner(
             result = llm_result(
                 True,
                 cached["llmInput"],
-                cached["llmOutput"],
+                reconcile_plan_with_context(
+                    cached["llmOutput"],
+                    context,
+                ),
                 cached["rawOutput"],
                 config=config_from_env(purpose="planning"),
             )
@@ -401,6 +404,7 @@ def call_requirement_planner(
             },
         )
         validate_llm_output_schema("requirement-planning", output, raw)
+        output = reconcile_plan_with_context(output, context)
         result = llm_result(True, exact_input, output, raw)
         result["cache"] = {
             "enabled": not args.no_cache,
@@ -435,6 +439,27 @@ def call_requirement_planner(
             "path": str(cache["path"]),
         }
         return result
+
+
+def reconcile_plan_with_context(
+    output: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = dict(output)
+    missing = list(context.get("missingInformation") or [])
+    normalized["missingInformation"] = missing
+    if missing:
+        return normalized
+    normalized["risks"] = [
+        item
+        for item in normalized.get("risks") or []
+        if "missing" not in str(item).lower()
+        and "누락" not in str(item)
+    ]
+    normalized["nextActions"] = [
+        "Review generated artifacts and validated Tool evidence."
+    ]
+    return normalized
 
 
 def print_planner_cache_status(planner_result: dict[str, Any]) -> None:

@@ -361,6 +361,7 @@ def patch_controller(text: str, model: dict[str, Any]) -> str:
     ):
         rendered = render_controller(model)
         validate_controller_markers(rendered, model)
+        validate_controller_behavior(rendered, model)
         return rendered
     kind = model["api"]["kind"]
     marker_block = "\n".join(render_rbac_marker(item) for item in model["rbacResources"])
@@ -378,6 +379,7 @@ def patch_controller(text: str, model: dict[str, Any]) -> str:
         model.get("controllerPatches") or [],
     )
     validate_controller_markers(updated, model)
+    validate_controller_behavior(updated, model)
     return updated
 
 
@@ -416,6 +418,24 @@ def validate_controller_markers(
     if missing:
         raise SystemExit(
             "controller RBAC marker validation failed: " + ", ".join(missing)
+        )
+
+
+def validate_controller_behavior(
+    text: str,
+    model: dict[str, Any],
+) -> None:
+    managed = (model.get("controller") or {}).get(
+        "managedResources",
+        [],
+    )
+    if not managed:
+        return
+    if "TODO(user): your logic here" in text:
+        raise SystemExit(
+            "controller behavior validation failed: scaffold TODO remains "
+            "for managed resources "
+            + ", ".join(str(item) for item in managed)
         )
 
 

@@ -82,6 +82,69 @@ func (r *WidgetReconciler) Reconcile() {}
             patched,
         )
 
+    def test_profile_patch_rejects_remaining_scaffold_todo(self) -> None:
+        model = {
+            "api": {"kind": "Widget"},
+            "controller": {"managedResources": ["ConfigMap"]},
+            "rbacResources": [
+                {
+                    "apiGroup": "apps.example.io",
+                    "resource": "widgets",
+                    "verbs": ["get", "list", "watch"],
+                }
+            ],
+        }
+        controller = """package controller
+
+type WidgetReconciler struct {
+\tClient any
+}
+
+// +kubebuilder:rbac:groups=apps.example.io,resources=widgets,verbs=get
+
+func (r *WidgetReconciler) Reconcile() {
+\t// TODO(user): your logic here
+}
+"""
+
+        with self.assertRaisesRegex(
+            SystemExit,
+            "scaffold TODO remains",
+        ):
+            patch_controller(controller, model)
+
+    def test_profile_patch_allows_implemented_reconcile_with_scaffold_docs(
+        self,
+    ) -> None:
+        model = {
+            "api": {"kind": "Widget"},
+            "controller": {"managedResources": ["ConfigMap"]},
+            "rbacResources": [
+                {
+                    "apiGroup": "apps.example.io",
+                    "resource": "widgets",
+                    "verbs": ["get", "list", "watch"],
+                }
+            ],
+        }
+        controller = """package controller
+
+type WidgetReconciler struct {
+\tClient any
+}
+
+// +kubebuilder:rbac:groups=apps.example.io,resources=widgets,verbs=get
+
+// TODO(user): Modify the Reconcile function to compare desired state.
+func (r *WidgetReconciler) Reconcile() {
+\tr.Create()
+}
+"""
+
+        patched = patch_controller(controller, model)
+
+        self.assertIn("r.Create()", patched)
+
     def test_profile_rbac_and_controller_patch_are_idempotent(self) -> None:
         model = normalize_spec(
             {

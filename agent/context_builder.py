@@ -34,6 +34,7 @@ def build_requirement_context(
     profile_hint = select_profile_hint(requirement_text, profile_path, profile)
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
+    selected_profile = profile_hint["selectedProfile"]
     retrieval = retrieve(requirement_text, rag_limit, "requirement")
     retrieved = retrieval["selectedContext"]
     return {
@@ -43,15 +44,14 @@ def build_requirement_context(
         "missingInformation": missing_information(summary, requirement_text),
         "retrievedKnowledge": retrieved,
         "retrievalDetails": retrieval,
-        "selectedProfile": profile_hint["selectedProfile"],
+        "selectedProfile": selected_profile,
         "profileCandidates": profile_hint["profileCandidates"],
         "workspace": workspace,
-        "targetProjectDir": str(
-            Path(workspace)
-            / infer_project_name(
-                kind,
-                f"generated/{kind_slug}-operator-spec.yaml",
-            )
+        "targetProjectDir": target_project_dir(
+            workspace,
+            kind,
+            kind_slug,
+            selected_profile,
         ),
         "generatedFiles": {
             "operatorSpec": f"generated/{kind_slug}-operator-spec.yaml",
@@ -101,11 +101,6 @@ def missing_information(summary: dict[str, Any], text: str) -> list[str]:
         "spec fields": summary.get("specFields"),
         "status fields": summary.get("statusFields"),
         "managed Kubernetes resource": summary.get("managedResources"),
-        "validation commands": (
-            "make generate" in text
-            and "make manifests" in text
-            and "make test" in text
-        ),
     }
     return [name for name, value in checks.items() if not value]
 
@@ -141,10 +136,48 @@ def parse_field_names(text: str, section: str) -> list[str]:
         flags=re.DOTALL,
     )
     block = match.group(0) if match else ""
-    return re.findall(
+    listed = re.findall(
         r"^\s*-\s*([a-z][A-Za-z0-9]*)\s*:",
         block,
         flags=re.MULTILINE,
+    )
+    if listed:
+        return listed
+    inline = re.search(
+        rf"{section}\s*에는\s+(.+?)을\s*포함한다",
+        text,
+        flags=re.DOTALL,
+    )
+    if not inline:
+        return []
+    return [
+        match.group(1)
+        for item in re.split(r"\s*,\s*", inline.group(1))
+        if (
+            match := re.match(
+                r"\s*([a-z][A-Za-z0-9]*)\s*:",
+                item,
+            )
+        )
+    ]
+
+
+def target_project_dir(
+    workspace: str,
+    kind: str,
+    kind_slug: str,
+    selected_profile: dict[str, Any],
+) -> str:
+    capability = selected_profile.get("kindDeployment") or {}
+    profile_project = str(capability.get("project") or "")
+    if profile_project:
+        return profile_project
+    return str(
+        Path(workspace)
+        / infer_project_name(
+            kind,
+            f"generated/{kind_slug}-operator-spec.yaml",
+        )
     )
 
 
