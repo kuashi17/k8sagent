@@ -1,0 +1,37 @@
+QueueWorker라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+이 Operator는 worker 컨테이너를 Deployment와 Service로 실행한다.
+
+domain은 sample.io, group은 workload, version은 v1alpha1, kind는 QueueWorker로 한다.
+
+spec에는 다음 필드를 포함한다.
+- image:string - worker 컨테이너 이미지
+- replicas:int32 - worker replica 수
+- port:int32 - worker 포트
+
+status에는 다음 필드를 포함한다.
+- phase:string - 현재 처리 상태
+- deploymentName:string - 관리되는 Deployment 이름
+- serviceName:string - 관리되는 Service 이름
+- readyReplicas:int32 - 준비된 replica 수
+- message:string - 상태 설명
+
+Controller는 QueueWorker Custom Resource 변경을 감지한다.
+Controller는 Deployment, Service 리소스를 생성/수정/삭제한다.
+
+Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다.
+- spec.image -> Deployment container image
+- spec.replicas -> Deployment.spec.replicas
+- spec.port -> Deployment containerPort and Service port
+
+Controller는 Deployment 상태를 조회하여 status.readyReplicas를 갱신한다.
+QueueWorker가 삭제되면 ownerReference 정책에 따라 하위 리소스를 정리한다.
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- apps/deployments
+- core/services
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test

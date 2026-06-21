@@ -20,35 +20,22 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.evaluation.profile_kind_matrix import parse_summary
+from agent.evaluation.kind_contract_builder import (
+    build_validation_contract,
+)
 from agent.evaluation.profileless_compile_runner import (
     compile_requirement,
 )
 from agent.tools.artifact_patcher import normalize_spec
-from agent.tools.controller_ir import (
-    DeletionPolicy,
-    ReconcileStrategy,
-)
 from agent.tools.controller_ir_builder import build_controller_ir
 
 
-DEFAULT_REQUIREMENTS = [
-    "requirements/web-service.txt",
-    "requirements/secret-sync.txt",
-    "requirements/scheduled-task.txt",
-    "requirements/namespace-label-policy.txt",
-]
-
-RESOURCE_NAMES = {
-    "ConfigMap": "configmap",
-    "Secret": "secret",
-    "PersistentVolumeClaim": "persistentvolumeclaim",
-    "CronJob": "cronjob",
-    "Deployment": "deployment",
-    "StatefulSet": "statefulset",
-    "Service": "service",
-    "Namespace": "namespace",
-}
-
+DEFAULT_MATRIX = (
+    REPO_ROOT
+    / "evaluation"
+    / "fixtures"
+    / "profileless-kind-matrix.yaml"
+)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -61,8 +48,13 @@ def main() -> int:
     parser.add_argument(
         "--requirements",
         nargs="*",
-        default=DEFAULT_REQUIREMENTS,
-        help="Requirement matrix used when --requirement is omitted.",
+        default=[],
+        help="Requirement matrix used instead of the fixture file.",
+    )
+    parser.add_argument(
+        "--matrix",
+        default=str(DEFAULT_MATRIX),
+        help="YAML fixture listing requirements for generalized E2E.",
     )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument(
@@ -71,9 +63,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    configured = (
+        args.requirement
+        or args.requirements
+        or load_matrix(resolve(args.matrix))
+    )
     requirements = [
         resolve(value)
-        for value in (args.requirement or args.requirements)
+        for value in configured
     ]
     output_dir = resolve(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -192,69 +189,15 @@ def build_kind_contract(
         / f"{api['group']}_{api['version']}_{api['kind'].lower()}.yaml"
     )
     sample = read_yaml(sample_path)
-    sample_name = str((sample.get("metadata") or {}).get("name") or "")
-    sample_spec = sample.get("spec") or {}
-    managed_resources = []
-    update_spec: dict[str, Any] = {}
-    update_assertions = []
-    setup_resources = []
-    rbac_checks = [
-        {
-            "verb": "update",
-            "resource": (
-                f"{str(api.get('plural') or pluralize(api['kind'].lower()))}"
-                "/status"
-            ),
-            "apiGroup": api["apiGroup"],
-        }
-    ]
-    for resource in ir.renderable_resources():
-        name = managed_name(resource, sample_name, sample_spec)
-        resource_name = RESOURCE_NAMES[resource.kind]
-        managed_resources.append(
-            {
-                "resource": resource_name,
-                "name": name,
-                "deletionPolicy": (
-                    "retain"
-                    if resource.deletion_policy == DeletionPolicy.RETAIN
-                    else "garbage-collect"
-                ),
-            }
-        )
-        if resource.strategy == ReconcileStrategy.PATCH_EXISTING:
-            setup_resources.append(
-                {
-                    "apiVersion": resource.api_version,
-                    "kind": resource.kind,
-                    "metadata": {"name": name},
-                }
-            )
-        update = lifecycle_update(resource, sample_spec, name)
-        if update and not update_spec:
-            update_spec.update(update["spec"])
-            update_assertions.extend(update["assertions"])
-        rbac_checks.append(
-            {
-                "verb": (
-                    "update"
-                    if resource.strategy
-                    == ReconcileStrategy.PATCH_EXISTING
-                    else "create"
-                ),
-                "resource": pluralize(resource_name),
-                "apiGroup": resource_api_group(resource_name),
-            }
-        )
-    validator_config = {
-        "resource": api["kind"].lower(),
-        "sampleName": sample_name,
-        "managedResources": managed_resources,
-        "updateSpec": update_spec,
-        "updateAssertions": update_assertions,
-        "setupResources": setup_resources,
-        "rbacChecks": rbac_checks,
-    }
+    validator_config = build_validation_contract(
+        ir,
+        sample,
+        str(
+            api.get("plural")
+            or pluralize(api["kind"].lower())
+        ),
+        str(api["apiGroup"]),
+    ).model_dump(mode="json")
     return {
         "project": str(project_dir),
         "clusterName": cluster_name,
@@ -263,74 +206,6 @@ def build_kind_contract(
         "namespace": f"{project_name}-system",
         "deployment": f"{project_name}-controller-manager",
         "validatorConfig": validator_config,
-    }
-
-
-def lifecycle_update(
-    resource: Any,
-    sample_spec: dict[str, Any],
-    name: str,
-) -> dict[str, Any]:
-    for mapping in resource.field_mappings:
-        field = mapping.source_path.removeprefix("spec.")
-        current = sample_spec.get(field)
-        if mapping.target_path == "spec.replicas" and isinstance(
-            current,
-            int,
-        ):
-            updated = current + 1
-            return update_contract(
-                field,
-                updated,
-                resource,
-                name,
-                "spec.replicas",
-            )
-        if mapping.target_path == "spec.suspend" and isinstance(
-            current,
-            bool,
-        ):
-            return update_contract(
-                field,
-                not current,
-                resource,
-                name,
-                "spec.suspend",
-            )
-        if (
-            mapping.target_path == "metadata.labels"
-            and isinstance(current, dict)
-        ):
-            updated = {**current, "profileless-e2e": "updated"}
-            return update_contract(
-                field,
-                updated,
-                resource,
-                name,
-                "metadata.labels.profileless-e2e",
-                "updated",
-            )
-    return {}
-
-
-def update_contract(
-    field: str,
-    updated: Any,
-    resource: Any,
-    name: str,
-    path: str,
-    expected: Any | None = None,
-) -> dict[str, Any]:
-    return {
-        "spec": {field: updated},
-        "assertions": [
-            {
-                "resource": RESOURCE_NAMES[resource.kind],
-                "name": name,
-                "path": path,
-                "equals": updated if expected is None else expected,
-            }
-        ],
     }
 
 
@@ -360,31 +235,6 @@ def build_kind_command(contract: dict[str, Any]) -> list[str]:
         "--skip-prepare-controller",
         "--skip-prevalidation",
     ]
-
-
-def managed_name(
-    resource: Any,
-    sample_name: str,
-    sample_spec: dict[str, Any],
-) -> str:
-    source = resource.name.source_path
-    if source.startswith("spec."):
-        value = sample_spec.get(source.removeprefix("spec."))
-        if value:
-            return str(value)
-    suffix = resource.name.fallback_template.replace(
-        "{metadata.name}-",
-        "",
-    )
-    return f"{sample_name}-{suffix}"
-
-
-def resource_api_group(resource: str) -> str:
-    if resource in {"deployment", "statefulset", "daemonset"}:
-        return "apps"
-    if resource in {"cronjob", "job"}:
-        return "batch"
-    return ""
 
 
 def pluralize(value: str) -> str:
@@ -431,6 +281,15 @@ def read_yaml(path: Path) -> dict[str, Any]:
     except (OSError, yaml.YAMLError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def load_matrix(path: Path) -> list[str]:
+    data = read_yaml(path)
+    return [
+        str(item)
+        for item in data.get("requirements") or []
+        if item
+    ]
 
 
 def resolve(value: str) -> Path:

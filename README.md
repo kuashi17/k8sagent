@@ -1200,6 +1200,16 @@ python3 agent/evaluation/profileless_kind_runner.py \
 
 이 검증은 임시 workspace에서 WebService, SecretSync, ScheduledTask, NamespaceLabelPolicy Operator를 새로 생성·컴파일합니다. 생성된 Controller를 같은 kind 클러스터에 순차 배포하여 관리 리소스 생성, 재적용 멱등성, 변경 반영, 삭제 정책, sample 복구를 확인합니다. profile fixture나 전용 Controller 준비 코드는 사용하지 않으며 결과는 `profileless-kind-results.json`에 저장됩니다.
 
+Controller 생성의 일반화 경계는 다음과 같습니다.
+
+- resource catalog는 Kubernetes resource를 행동형 emitter와 기본 field mapping으로 변환
+- IR은 field mutability, in-place/recreate update, ownership, delete/retain 계약을 보관
+- `controller_renderer.py`는 resource Kind를 분기하지 않고 IR의 emitter만 호출
+- kind lifecycle 계약은 동일한 IR에서 생성되며 setup, update, recreate, delete, retain을 결정
+- 실제 사례 목록과 held-out 요구사항은 `evaluation/fixtures/`에만 위치
+
+`evaluation/fixtures/requirements/queue-worker.txt`는 core 변경 없이 새로운 Custom Resource Kind를 생성·컴파일할 수 있는지 확인하는 held-out fixture입니다.
+
 ## 스펙 기반 Kubebuilder Scaffold
 
 구조화 스펙 YAML을 기반으로 Kubebuilder 프로젝트를 생성할 수 있습니다.

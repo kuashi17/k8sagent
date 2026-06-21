@@ -22,8 +22,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.evaluation.controller_quality import evaluate_controller_quality
-from agent.evaluation.profileless_requirement_runner import (
-    DEFAULT_REQUIREMENTS,
+from agent.evaluation.profileless_requirement_runner import load_matrix
+
+
+DEFAULT_MATRIX = (
+    REPO_ROOT
+    / "evaluation"
+    / "fixtures"
+    / "profileless-compile-matrix.yaml"
 )
 
 
@@ -32,8 +38,9 @@ def main() -> int:
     parser.add_argument(
         "--requirements",
         nargs="*",
-        default=DEFAULT_REQUIREMENTS,
+        default=[],
     )
+    parser.add_argument("--matrix", default=str(DEFAULT_MATRIX))
     parser.add_argument("--output-dir", required=True)
     parser.add_argument(
         "--work-root",
@@ -57,13 +64,16 @@ def main() -> int:
     )
     work_root.mkdir(parents=True, exist_ok=True)
     try:
+        requirements = args.requirements or load_matrix(
+            resolve(args.matrix)
+        )
         results = [
             compile_requirement(
                 resolve(value),
                 output_dir,
                 work_root,
             )
-            for value in args.requirements
+            for value in requirements
         ]
     finally:
         if temporary and not args.keep_workspaces:

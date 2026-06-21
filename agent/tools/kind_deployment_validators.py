@@ -377,6 +377,9 @@ class ManagedResourceValidator:
                 "deletionPolicy": str(
                     item.get("deletionPolicy") or "garbage-collect"
                 ),
+                "updatePolicy": str(
+                    item.get("updatePolicy") or "in-place"
+                ),
             }
             for item in config.get("managedResources") or []
             if isinstance(item, dict) and item.get("resource")
@@ -395,6 +398,9 @@ class ManagedResourceValidator:
             dict(config.get("updateSpec") or {})
             if isinstance(config.get("updateSpec"), dict)
             else {}
+        )
+        self.update_mode = str(
+            config.get("updateMode") or "in-place"
         )
         self.update_assertions = [
             {
@@ -555,6 +561,25 @@ class ManagedResourceValidator:
 
     def verify_update(self, engine: DeploymentEngine) -> None:
         engine.failed_step = "verify-update"
+        if self.update_mode == "recreate":
+            for item in self.managed_resources:
+                if item["updatePolicy"] != "recreate":
+                    continue
+                engine.run_cmd(
+                    (
+                        "kubectl-delete-recreate-"
+                        f"{item['resource']}-{item['name']}"
+                    ),
+                    self.kubectl(
+                        [
+                            "delete",
+                            item["resource"],
+                            item["name"],
+                            "--ignore-not-found",
+                        ]
+                    ),
+                    timeout=120,
+                )
         patch_payload = json.dumps(
             {"spec": self.update_spec},
             separators=(",", ":"),
@@ -580,6 +605,7 @@ class ManagedResourceValidator:
         ]
         engine.checks["lifecycleUpdate"] = {
             "specPatch": self.update_spec,
+            "mode": self.update_mode,
             "assertions": assertions,
         }
 
@@ -639,6 +665,7 @@ class ManagedResourceValidator:
             "managedResources": self.managed_resources,
             "updateSpec": self.update_spec,
             "updateAssertions": self.update_assertions,
+            "updateMode": self.update_mode,
         }
 
     def rbac_checks(self) -> list[dict[str, str]]:

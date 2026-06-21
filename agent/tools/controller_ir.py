@@ -35,6 +35,18 @@ class DeletionPolicy(str, Enum):
     RETAIN = "retain"
 
 
+class UpdatePolicy(str, Enum):
+    IN_PLACE = "in-place"
+    RECREATE = "recreate"
+    IMMUTABLE = "immutable"
+    NONE = "none"
+
+
+class FieldMutability(str, Enum):
+    MUTABLE = "mutable"
+    IMMUTABLE = "immutable"
+
+
 class ResourceCapability(str, Enum):
     CREATE = "create"
     UPDATE = "update"
@@ -53,6 +65,8 @@ class FieldMapping(IRModel):
     source_path: str
     target_path: str
     transform: str = "direct"
+    mutability: FieldMutability = FieldMutability.MUTABLE
+    update_policy: UpdatePolicy = UpdatePolicy.IN_PLACE
 
 
 class StatusMapping(IRModel):
@@ -75,9 +89,11 @@ class ManagedResourceSpec(IRModel):
     scope: ResourceScope
     name: NameRule
     strategy: ReconcileStrategy
+    emitter: str
     capabilities: list[ResourceCapability]
     ownership: OwnershipPolicy
     deletion_policy: DeletionPolicy
+    update_policy: UpdatePolicy = UpdatePolicy.IN_PLACE
     watch: bool
     field_mappings: list[FieldMapping] = Field(default_factory=list)
     status_mappings: list[StatusMapping] = Field(default_factory=list)

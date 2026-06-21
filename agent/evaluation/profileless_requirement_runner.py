@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -20,19 +22,18 @@ if str(REPO_ROOT) not in sys.path:
 from agent.evaluation.controller_quality import evaluate_controller_quality
 
 
-DEFAULT_REQUIREMENTS = [
-    "requirements/redis-cache.txt",
-    "requirements/secret-sync.txt",
-    "requirements/scheduled-task.txt",
-    "requirements/web-service.txt",
-    "requirements/pvc-provisioner.txt",
-    "requirements/namespace-label-policy.txt",
-]
+DEFAULT_MATRIX = (
+    REPO_ROOT
+    / "evaluation"
+    / "fixtures"
+    / "profileless-agent-matrix.yaml"
+)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate that the Agent can handle requirements without a profile.")
-    parser.add_argument("--requirements", nargs="*", default=DEFAULT_REQUIREMENTS)
+    parser.add_argument("--requirements", nargs="*", default=[])
+    parser.add_argument("--matrix", default=str(DEFAULT_MATRIX))
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--run-level", default="fast", choices=["fast", "standard"])
     parser.add_argument(
@@ -45,9 +46,12 @@ def main() -> int:
 
     out_dir = Path(args.output_dir) if args.output_dir else Path("evaluation/results/profileless") / datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
+    requirements = args.requirements or load_matrix(
+        Path(args.matrix)
+    )
     results = [
         run_requirement(path, args.run_level, args.mode)
-        for path in args.requirements
+        for path in requirements
     ]
     summary = {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -126,6 +130,20 @@ def run_requirement(
         "controllerQuality": quality,
         "passed": bool(passed),
     }
+
+
+def load_matrix(path: Path) -> list[str]:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    return [
+        str(item)
+        for item in data.get("requirements") or []
+        if item
+    ]
 
 
 def infer_project_dir(kind: str) -> str:

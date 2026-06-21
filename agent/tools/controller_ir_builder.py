@@ -17,6 +17,8 @@ from agent.tools.controller_ir import (
     ResourceCapability,
     ResourceScope,
     StatusMapping,
+    UpdatePolicy,
+    FieldMutability,
 )
 
 
@@ -25,6 +27,7 @@ class ResourceDefaults:
     api_version: str
     canonical_kind: str
     suffix: str
+    emitter: str
     scope: ResourceScope = ResourceScope.NAMESPACED
     strategy: ReconcileStrategy = ReconcileStrategy.CREATE_OR_UPDATE
     ownership: OwnershipPolicy = OwnershipPolicy.OWNER_REFERENCE
@@ -32,26 +35,29 @@ class ResourceDefaults:
 
 
 RESOURCE_DEFAULTS = {
-    "ConfigMap": ResourceDefaults("v1", "ConfigMap", "config"),
-    "Secret": ResourceDefaults("v1", "Secret", "secret"),
-    "PVC": ResourceDefaults("v1", "PersistentVolumeClaim", "pvc"),
+    "ConfigMap": ResourceDefaults("v1", "ConfigMap", "config", "string-map"),
+    "Secret": ResourceDefaults("v1", "Secret", "secret", "string-map"),
+    "PVC": ResourceDefaults("v1", "PersistentVolumeClaim", "pvc", "storage-claim"),
     "PersistentVolumeClaim": ResourceDefaults(
         "v1",
         "PersistentVolumeClaim",
         "pvc",
+        "storage-claim",
     ),
-    "CronJob": ResourceDefaults("batch/v1", "CronJob", "cronjob"),
-    "Deployment": ResourceDefaults("apps/v1", "Deployment", "deployment"),
+    "CronJob": ResourceDefaults("batch/v1", "CronJob", "cronjob", "scheduled-workload"),
+    "Deployment": ResourceDefaults("apps/v1", "Deployment", "deployment", "replicated-workload"),
     "StatefulSet": ResourceDefaults(
         "apps/v1",
         "StatefulSet",
         "statefulset",
+        "stateful-workload",
     ),
-    "Service": ResourceDefaults("v1", "Service", "service"),
+    "Service": ResourceDefaults("v1", "Service", "service", "network-service"),
     "Namespace": ResourceDefaults(
         "v1",
         "Namespace",
         "namespace",
+        "label-patch",
         scope=ResourceScope.CLUSTER,
         strategy=ReconcileStrategy.PATCH_EXISTING,
         ownership=OwnershipPolicy.NONE,
@@ -61,6 +67,7 @@ RESOURCE_DEFAULTS = {
         "v1",
         "Pod",
         "pod",
+        "read-only",
         strategy=ReconcileStrategy.READ_ONLY,
         ownership=OwnershipPolicy.NONE,
         deletion_policy=DeletionPolicy.RETAIN,
@@ -69,6 +76,7 @@ RESOURCE_DEFAULTS = {
         "batch/v1",
         "Job",
         "job",
+        "read-only",
         strategy=ReconcileStrategy.READ_ONLY,
         ownership=OwnershipPolicy.NONE,
         deletion_policy=DeletionPolicy.RETAIN,
@@ -236,9 +244,11 @@ def build_managed_resource(
             fallback_template=f"{{metadata.name}}-{defaults.suffix}",
         ),
         strategy=defaults.strategy,
+        emitter=defaults.emitter,
         capabilities=capabilities,
         ownership=defaults.ownership,
         deletion_policy=defaults.deletion_policy,
+        update_policy=resource_update_policy(defaults, mappings),
         watch=ResourceCapability.WATCH in capabilities,
         field_mappings=mappings,
         status_mappings=status_mappings_for(
@@ -284,7 +294,21 @@ def mappings_for(
     explicit: list[FieldMapping],
 ) -> list[FieldMapping]:
     result = [
-        item
+        item.model_copy(
+            update={
+                "target_path": normalize_target_path(
+                    item.target_path
+                ),
+                "mutability": field_mutability(
+                    kind,
+                    normalize_target_path(item.target_path),
+                ),
+                "update_policy": field_update_policy(
+                    kind,
+                    normalize_target_path(item.target_path),
+                ),
+            }
+        )
         for item in explicit
         if target_resource(item.target_path) == kind
     ]
@@ -299,9 +323,55 @@ def mappings_for(
                 FieldMapping(
                     source_path=source,
                     target_path=target,
+                    mutability=field_mutability(kind, target),
+                    update_policy=field_update_policy(kind, target),
                 )
             )
     return result
+
+
+def normalize_target_path(path: str) -> str:
+    prefix = path.split(".", 1)[0]
+    if prefix not in RESOURCE_DEFAULTS:
+        return path
+    return path.split(".", 1)[1]
+
+
+def field_mutability(
+    kind: str,
+    target: str,
+) -> FieldMutability:
+    immutable_targets = {
+        "PersistentVolumeClaim": {
+            "spec.storageClassName",
+            "spec.accessModes",
+        },
+        "Service": {"spec.clusterIP"},
+        "StatefulSet": {"spec.volumeClaimTemplates"},
+    }
+    if target in immutable_targets.get(kind, set()):
+        return FieldMutability.IMMUTABLE
+    return FieldMutability.MUTABLE
+
+
+def field_update_policy(kind: str, target: str) -> UpdatePolicy:
+    if field_mutability(kind, target) == FieldMutability.IMMUTABLE:
+        return UpdatePolicy.RECREATE
+    return UpdatePolicy.IN_PLACE
+
+
+def resource_update_policy(
+    defaults: ResourceDefaults,
+    mappings: list[FieldMapping],
+) -> UpdatePolicy:
+    if defaults.strategy == ReconcileStrategy.READ_ONLY:
+        return UpdatePolicy.NONE
+    if any(
+        item.update_policy == UpdatePolicy.RECREATE
+        for item in mappings
+    ):
+        return UpdatePolicy.RECREATE
+    return UpdatePolicy.IN_PLACE
 
 
 def status_mappings_for(

@@ -1,0 +1,7 @@
+requirements:
+  - requirements/redis-cache.txt
+  - requirements/secret-sync.txt
+  - requirements/scheduled-task.txt
+  - requirements/web-service.txt
+  - requirements/pvc-provisioner.txt
+  - requirements/namespace-label-policy.txt

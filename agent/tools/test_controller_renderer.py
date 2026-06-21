@@ -153,7 +153,10 @@ class ControllerRendererTest(unittest.TestCase):
         self.assertIn("reconcileStatefulSet", rendered)
         self.assertIn('serviceName = instance.Name + "-service"', rendered)
         self.assertIn('"serviceName": serviceName', rendered)
-        self.assertIn('statefulSetSpec["replicas"] = int64(instance.Spec.Size)', rendered)
+        self.assertIn(
+            'resourceSpec["replicas"] = int64(instance.Spec.Size)',
+            rendered,
+        )
         self.assertIn('"volumeClaimTemplates"', rendered)
         self.assertIn('"storage": instance.Spec.StorageSize', rendered)
         self.assertIn('"mountPath": "/data"', rendered)

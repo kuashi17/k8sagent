@@ -12,6 +12,10 @@ from agent.tools.controller_ir import (
     ResourceScope,
 )
 from agent.tools.controller_ir_builder import build_controller_ir
+from agent.tools.controller_emitters import (
+    render_dependencies,
+    render_mutations,
+)
 
 
 def render_controller(model: dict[str, Any]) -> str:
@@ -31,7 +35,7 @@ def render_controller(model: dict[str, Any]) -> str:
         variable = resource.resource_id
         reconcile_calls.append(
             f"\t{variable}Name, err := "
-            f"r.reconcile{resource_function(resource.kind)}"
+            f"r.reconcile{go_name(resource.resource_id)}"
             f"(ctx, &instance)\n"
             "\tif err != nil {\n"
             f'\t\t_ = r.updateStatus(ctx, &instance, "Error", err.Error(), names)\n'
@@ -130,7 +134,7 @@ def render_resource_function(
 ) -> str:
     kind = ir.kind
     group, version = split_api_version(resource.api_version)
-    function_name = resource_function(resource.kind)
+    function_name = go_name(resource.resource_id)
     name_expression = source_expression(resource.name.source_path)
     suffix = resource.name.fallback_template.replace(
         "{metadata.name}-",
@@ -142,7 +146,7 @@ def render_resource_function(
         else "instance.Namespace"
     )
     mutations = render_mutations(resource, ir)
-    dependencies = render_resource_dependencies(resource, ir)
+    dependencies = render_dependencies(resource, ir)
     disable_guard = render_disable_guard(
         resource,
         namespace,
@@ -241,194 +245,6 @@ def dedent_mutations(value: str) -> str:
         for line in value.splitlines()
     )
     return dedented.replace("{ return err }", "{ return name, err }")
-
-
-def render_mutations(
-    resource: ManagedResourceSpec,
-    ir: ControllerGenerationIR,
-) -> str:
-    fields = mapping_source_fields(resource)
-    lines: list[str] = []
-    if resource.kind == "ConfigMap":
-        source = first_field(fields, "configData", "data")
-        if source:
-            lines.append(
-                f'\t\tif err := unstructured.SetNestedStringMap(object.Object, '
-                f"copyStringMap(instance.Spec.{go_name(source)}), \"data\"); err != nil {{ return err }}"
-            )
-    elif resource.kind == "Secret":
-        source = first_field(fields, "data", "secretData")
-        if source:
-            lines.append(
-                f'\t\tif err := unstructured.SetNestedStringMap(object.Object, '
-                f"copyStringMap(instance.Spec.{go_name(source)}), \"stringData\"); err != nil {{ return err }}"
-            )
-    elif resource.kind == "PersistentVolumeClaim":
-        storage = first_field(fields, "storageSize", "size")
-        storage_class = first_field(fields, "storageClassName")
-        access_modes = first_field(fields, "accessModes")
-        if storage:
-            lines.append(
-                '\t\tif err := unstructured.SetNestedMap(object.Object, '
-                f'map[string]interface{{}}{{"requests": map[string]interface{{}}{{"storage": instance.Spec.{go_name(storage)}}}}}, '
-                '"spec", "resources"); err != nil { return err }'
-            )
-        if storage_class:
-            lines.append(
-                f'\t\tif err := unstructured.SetNestedField(object.Object, instance.Spec.{go_name(storage_class)}, '
-                '"spec", "storageClassName"); err != nil { return err }'
-            )
-        if access_modes:
-            lines.append(
-                f'\t\tmodes := make([]interface{{}}, len(instance.Spec.{go_name(access_modes)}))\n'
-                f'\t\tfor index, value := range instance.Spec.{go_name(access_modes)} {{ modes[index] = value }}\n'
-                '\t\tif err := unstructured.SetNestedSlice(object.Object, modes, "spec", "accessModes"); err != nil { return err }'
-            )
-    elif resource.kind == "CronJob":
-        schedule = first_field(fields, "schedule")
-        image = first_field(fields, "image")
-        command = first_field(fields, "command")
-        suspend = first_field(fields, "suspend")
-        container = (
-            f'map[string]interface{{}}{{"name": "task", "image": instance.Spec.{go_name(image or "image")}}}'
-        )
-        lines.append(f"\t\tcontainer := {container}")
-        if command:
-            lines.append(
-                f'\t\tcommand := make([]interface{{}}, len(instance.Spec.{go_name(command)}))\n'
-                f'\t\tfor index, value := range instance.Spec.{go_name(command)} {{ command[index] = value }}\n'
-                '\t\tcontainer["command"] = command'
-            )
-        cron_spec = (
-            'map[string]interface{}{"jobTemplate": map[string]interface{}{"spec": '
-            'map[string]interface{}{"template": map[string]interface{}{"spec": '
-            'map[string]interface{}{"restartPolicy": "Never", "containers": '
-            '[]interface{}{container}}}}}}'
-        )
-        lines.append(f"\t\tcronSpec := {cron_spec}")
-        if schedule:
-            lines.append(
-                f'\t\tcronSpec["schedule"] = instance.Spec.{go_name(schedule)}'
-            )
-        if suspend:
-            lines.append(
-                f'\t\tcronSpec["suspend"] = instance.Spec.{go_name(suspend)}'
-            )
-        lines.append(
-            '\t\tif err := unstructured.SetNestedMap(object.Object, cronSpec, "spec"); err != nil { return err }'
-        )
-    elif resource.kind == "Deployment":
-        image = first_field(fields, "image")
-        replicas = first_field(fields, "replicas", "size")
-        port = first_field(fields, "port", "containerPort")
-        lines.append(
-            f'\t\tcontainer := map[string]interface{{}}{{"name": "application", "image": instance.Spec.{go_name(image or "image")}}}'
-        )
-        if port:
-            lines.append(
-                f'\t\tcontainer["ports"] = []interface{{}}{{map[string]interface{{}}{{"containerPort": int64(instance.Spec.{go_name(port)})}}}}'
-            )
-        lines.append(
-            '\t\tnestedLabels := stringMapToInterface(labels)\n'
-            '\t\ttemplate := map[string]interface{}{"metadata": map[string]interface{}{"labels": nestedLabels}, '
-            '"spec": map[string]interface{}{"containers": []interface{}{container}}}'
-        )
-        lines.append(
-            '\t\tdeploymentSpec := map[string]interface{}{"selector": map[string]interface{}{"matchLabels": nestedLabels}, "template": template}'
-        )
-        if replicas:
-            lines.append(
-                f'\t\tdeploymentSpec["replicas"] = int64(instance.Spec.{go_name(replicas)})'
-            )
-        lines.append(
-            '\t\tif err := unstructured.SetNestedMap(object.Object, deploymentSpec, "spec"); err != nil { return err }'
-        )
-    elif resource.kind == "StatefulSet":
-        image = first_field(fields, "image")
-        replicas = first_field(fields, "replicas", "size")
-        port = first_field(fields, "port", "containerPort")
-        storage = first_field(fields, "storageSize")
-        lines.append(
-            f'\t\tcontainer := map[string]interface{{}}{{"name": "application", "image": instance.Spec.{go_name(image or "image")}}}'
-        )
-        if port:
-            lines.append(
-                f'\t\tcontainer["ports"] = []interface{{}}{{map[string]interface{{}}{{"containerPort": int64(instance.Spec.{go_name(port)})}}}}'
-            )
-        if storage:
-            lines.append(
-                '\t\tcontainer["volumeMounts"] = []interface{}{'
-                'map[string]interface{}{"name": "data", "mountPath": "/data"}}'
-            )
-        lines.append(
-            '\t\tnestedLabels := stringMapToInterface(labels)\n'
-            '\t\ttemplate := map[string]interface{}{"metadata": map[string]interface{}{"labels": nestedLabels}, '
-            '"spec": map[string]interface{}{"containers": []interface{}{container}}}'
-        )
-        lines.append(
-            '\t\tstatefulSetSpec := map[string]interface{}{"serviceName": serviceName, '
-            '"selector": map[string]interface{}{"matchLabels": nestedLabels}, '
-            '"template": template}'
-        )
-        if replicas:
-            lines.append(
-                f'\t\tstatefulSetSpec["replicas"] = int64(instance.Spec.{go_name(replicas)})'
-            )
-        if storage:
-            storage_value = f"instance.Spec.{go_name(storage)}"
-            lines.append(
-                '\t\tstatefulSetSpec["volumeClaimTemplates"] = []interface{}{'
-                'map[string]interface{}{"metadata": map[string]interface{}{"name": "data"}, '
-                '"spec": map[string]interface{}{"accessModes": []interface{}{"ReadWriteOnce"}, '
-                '"resources": map[string]interface{}{"requests": map[string]interface{}'
-                '{"storage": '
-                + storage_value
-                + "}}}}}"
-            )
-        lines.append(
-            '\t\tif err := unstructured.SetNestedMap(object.Object, statefulSetSpec, "spec"); err != nil { return err }'
-        )
-    elif resource.kind == "Service":
-        port = first_field(fields, "port")
-        lines.append(
-            '\t\tserviceSpec := map[string]interface{}'
-            '{"selector": stringMapToInterface(labels)}'
-        )
-        if port:
-            lines.append(
-                f'\t\tserviceSpec["ports"] = []interface{{}}{{map[string]interface{{}}{{"port": int64(instance.Spec.{go_name(port)}), "targetPort": int64(instance.Spec.{go_name(port)})}}}}'
-            )
-        lines.append(
-            '\t\tif err := unstructured.SetNestedMap(object.Object, serviceSpec, "spec"); err != nil { return err }'
-        )
-    elif resource.kind == "Namespace":
-        labels = first_field(fields, "labels")
-        if labels:
-            lines.append(
-                f"\t\tfor key, value := range instance.Spec.{go_name(labels)} {{ labels[key] = value }}\n"
-                "\t\tobject.SetLabels(labels)"
-            )
-    return "\n".join(lines)
-
-
-def render_resource_dependencies(
-    resource: ManagedResourceSpec,
-    ir: ControllerGenerationIR,
-) -> str:
-    if resource.kind != "StatefulSet":
-        return ""
-    service = ir.resource("Service")
-    if not service:
-        return "\tserviceName := name"
-    expression = source_expression(service.name.source_path)
-    suffix = service.name.fallback_template.replace(
-        "{metadata.name}-",
-        "",
-    )
-    return f'''\tserviceName := {expression}
-\tif serviceName == "" {{
-\t\tserviceName = instance.Name + "-{suffix}"
-\t}}'''
 
 
 def render_disable_guard(
@@ -625,22 +441,6 @@ def render_marker_block(ir: ControllerGenerationIR) -> str:
             f"resources={item.resource},verbs={verbs}"
         )
     return "\n".join(lines)
-
-
-def mapping_source_fields(resource: ManagedResourceSpec) -> set[str]:
-    return {
-        item.source_path.removeprefix("spec.")
-        for item in resource.field_mappings
-        if item.source_path.startswith("spec.")
-    }
-
-
-def first_field(fields: set[str], *candidates: str) -> str:
-    return next((item for item in candidates if item in fields), "")
-
-
-def resource_function(resource: str) -> str:
-    return "PVC" if resource == "PersistentVolumeClaim" else resource
 
 
 def source_expression(path: str) -> str:

@@ -1,0 +1,5 @@
+requirements:
+  - requirements/web-service.txt
+  - requirements/secret-sync.txt
+  - requirements/scheduled-task.txt
+  - requirements/namespace-label-policy.txt

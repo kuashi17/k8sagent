@@ -10,6 +10,8 @@ from agent.tools.controller_ir import (
     ReconcileStrategy,
     ResourceCapability,
     ResourceScope,
+    FieldMutability,
+    UpdatePolicy,
 )
 from agent.tools.controller_ir_builder import build_controller_ir
 
@@ -81,10 +83,21 @@ class ControllerIRBuilderTest(unittest.TestCase):
             DeletionPolicy.GARBAGE_COLLECT,
         )
         self.assertIn(ResourceCapability.CREATE, deployment.capabilities)
+        self.assertEqual(deployment.emitter, "replicated-workload")
+        self.assertEqual(
+            deployment.update_policy,
+            UpdatePolicy.IN_PLACE,
+        )
         self.assertEqual(deployment.name.source_path, "spec.appName")
         self.assertTrue(
             any(
                 item.target_path == "spec.replicas"
+                for item in deployment.field_mappings
+            )
+        )
+        self.assertFalse(
+            any(
+                item.target_path.startswith("Deployment.")
                 for item in deployment.field_mappings
             )
         )
@@ -121,6 +134,7 @@ class ControllerIRBuilderTest(unittest.TestCase):
             ResourceCapability.PATCH_EXISTING,
             namespace.capabilities,
         )
+        self.assertEqual(namespace.emitter, "label-patch")
 
     def test_enabled_resource_has_explicit_disable_condition(self) -> None:
         secret = build_controller_ir(
@@ -180,6 +194,39 @@ class ControllerIRBuilderTest(unittest.TestCase):
                 for item in statefulset.status_mappings
             )
         )
+
+    def test_immutable_fields_are_explicit_lifecycle_contracts(
+        self,
+    ) -> None:
+        claim = build_controller_ir(
+            model(
+                ["PersistentVolumeClaim"],
+                [
+                    "claimName",
+                    "storageSize",
+                    "storageClassName",
+                    "accessModes",
+                ],
+                ["phase", "claimName"],
+            )
+        ).resource("PersistentVolumeClaim")
+
+        immutable = {
+            item.target_path: item
+            for item in claim.field_mappings
+            if item.mutability == FieldMutability.IMMUTABLE
+        }
+        self.assertEqual(
+            set(immutable),
+            {"spec.storageClassName", "spec.accessModes"},
+        )
+        self.assertTrue(
+            all(
+                item.update_policy == UpdatePolicy.RECREATE
+                for item in immutable.values()
+            )
+        )
+        self.assertEqual(claim.update_policy, UpdatePolicy.RECREATE)
 
 
 if __name__ == "__main__":
