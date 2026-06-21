@@ -11,6 +11,8 @@ from agent.tools.kind_deployment_validators import (
     AppConfigConfigMapValidator,
     ManagedResourceValidator,
     create_validator,
+    get_path,
+    normalized_resource_snapshot,
 )
 from agent.tools.langchain_wrappers import kind_deployment_runner
 
@@ -56,7 +58,20 @@ class KindDeploymentValidatorTest(unittest.TestCase):
                 "resource": "trainingjob",
                 "sampleName": "sample",
                 "managedResources": [
-                    {"resource": "job", "name": "sample-job"}
+                    {
+                        "resource": "job",
+                        "name": "sample-job",
+                        "deletionPolicy": "retain",
+                    }
+                ],
+                "updateSpec": {"image": "busybox:1.36"},
+                "updateAssertions": [
+                    {
+                        "resource": "job",
+                        "name": "sample-job",
+                        "path": "spec.parallelism",
+                        "equals": 2,
+                    }
                 ],
                 "rbacChecks": [
                     {
@@ -71,9 +86,49 @@ class KindDeploymentValidatorTest(unittest.TestCase):
         self.assertIsInstance(validator, ManagedResourceValidator)
         self.assertEqual(
             validator.summary()["managedResources"],
-            [{"resource": "job", "name": "sample-job"}],
+            [
+                {
+                    "resource": "job",
+                    "name": "sample-job",
+                    "deletionPolicy": "retain",
+                }
+            ],
         )
         self.assertEqual(validator.rbac_checks()[0]["verb"], "create")
+        self.assertIn(
+            "verify-update",
+            [
+                item["name"]
+                for item in validator.planned_steps(True, True)
+            ],
+        )
+        self.assertIn(
+            "verify-idempotency",
+            [
+                item["name"]
+                for item in validator.planned_steps(True, True)
+            ],
+        )
+
+    def test_declarative_assertion_and_snapshot_helpers(self) -> None:
+        resource = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": "sample",
+                "resourceVersion": "17",
+                "uid": "volatile",
+                "labels": {"app": "sample"},
+            },
+            "spec": {"replicas": 2},
+            "status": {"readyReplicas": 1},
+        }
+
+        self.assertEqual(get_path(resource, "spec.replicas"), 2)
+        snapshot = normalized_resource_snapshot(resource)
+        self.assertNotIn("resourceVersion", snapshot["metadata"])
+        self.assertNotIn("uid", snapshot["metadata"])
+        self.assertNotIn("status", snapshot)
 
     def test_engine_uses_deployment_namespace_as_validator_default(self) -> None:
         args = type(

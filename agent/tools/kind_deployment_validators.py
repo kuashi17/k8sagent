@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -373,6 +374,9 @@ class ManagedResourceValidator:
             {
                 "resource": str(item.get("resource") or ""),
                 "name": str(item.get("name") or self.sample_name),
+                "deletionPolicy": str(
+                    item.get("deletionPolicy") or "garbage-collect"
+                ),
             }
             for item in config.get("managedResources") or []
             if isinstance(item, dict) and item.get("resource")
@@ -386,6 +390,23 @@ class ManagedResourceValidator:
             item
             for item in config.get("setupResources") or []
             if isinstance(item, dict)
+        ]
+        self.update_spec = (
+            dict(config.get("updateSpec") or {})
+            if isinstance(config.get("updateSpec"), dict)
+            else {}
+        )
+        self.update_assertions = [
+            {
+                "resource": str(item.get("resource") or ""),
+                "name": str(item.get("name") or self.sample_name),
+                "path": str(item.get("path") or ""),
+                "equals": item.get("equals"),
+            }
+            for item in config.get("updateAssertions") or []
+            if isinstance(item, dict)
+            and item.get("resource")
+            and item.get("path")
         ]
         self._rbac_checks = [
             {
@@ -415,6 +436,21 @@ class ManagedResourceValidator:
             {"name": "verify-managed-resources", "validator": self.name},
         ])
         if include_lifecycle:
+            steps.append(
+                {
+                    "name": "verify-idempotency",
+                    "mutating": True,
+                    "validator": self.name,
+                }
+            )
+            if self.update_spec:
+                steps.append(
+                    {
+                        "name": "verify-update",
+                        "mutating": True,
+                        "validator": self.name,
+                    }
+                )
             steps.extend(
                 {"name": name, "mutating": True, "validator": self.name}
                 for name in ("verify-delete", "restore-sample")
@@ -466,6 +502,9 @@ class ManagedResourceValidator:
         engine.checks["customResourceStatus"] = status
 
     def verify_lifecycle(self, engine: DeploymentEngine) -> None:
+        self.verify_idempotency(engine)
+        if self.update_spec:
+            self.verify_update(engine)
         engine.failed_step = "verify-delete"
         engine.run_cmd(
             "kubectl-delete-custom-resource",
@@ -479,25 +518,115 @@ class ManagedResourceValidator:
             ),
             timeout=120,
         )
-        absent = {
-            f"{item['resource']}/{item['name']}": self.wait_absent(
-                engine,
-                item["resource"],
-                item["name"],
-            )
-            for item in self.managed_resources
-        }
+        managed_results = {}
+        for item in self.managed_resources:
+            key = f"{item['resource']}/{item['name']}"
+            if item["deletionPolicy"] == "retain":
+                managed_results[key] = {
+                    "expected": "present",
+                    "passed": bool(
+                        self.wait_present(
+                            engine,
+                            item["resource"],
+                            item["name"],
+                        )
+                    ),
+                }
+            else:
+                managed_results[key] = {
+                    "expected": "absent",
+                    "passed": self.wait_absent(
+                        engine,
+                        item["resource"],
+                        item["name"],
+                    ),
+                }
         engine.checks["lifecycleDelete"] = {
             "customResourceAbsent": self.wait_absent(
                 engine,
                 self.resource,
                 self.sample_name,
             ),
-            "managedResourcesAbsent": absent,
+            "managedResources": managed_results,
         }
         engine.failed_step = "restore-sample"
         self.verify_initial(engine)
         engine.checks["lifecycleRestore"] = {"restored": True}
+
+    def verify_update(self, engine: DeploymentEngine) -> None:
+        engine.failed_step = "verify-update"
+        patch_payload = json.dumps(
+            {"spec": self.update_spec},
+            separators=(",", ":"),
+        )
+        engine.run_cmd(
+            "kubectl-patch-custom-resource",
+            self.kubectl(
+                [
+                    "patch",
+                    self.resource,
+                    self.sample_name,
+                    "--type",
+                    "merge",
+                    "-p",
+                    patch_payload,
+                ]
+            ),
+            timeout=120,
+        )
+        assertions = [
+            self.wait_assertion(engine, item)
+            for item in self.update_assertions
+        ]
+        engine.checks["lifecycleUpdate"] = {
+            "specPatch": self.update_spec,
+            "assertions": assertions,
+        }
+
+    def verify_idempotency(self, engine: DeploymentEngine) -> None:
+        engine.failed_step = "verify-idempotency"
+        before = {
+            f"{item['resource']}/{item['name']}": normalized_resource_snapshot(
+                self.wait_present(
+                    engine,
+                    item["resource"],
+                    item["name"],
+                )
+            )
+            for item in self.managed_resources
+        }
+        engine.run_cmd(
+            "kubectl-reapply-sample",
+            self.kubectl(["apply", "-f", str(engine.sample)]),
+            timeout=120,
+        )
+        deadline = time.time() + engine.timeout_seconds
+        after: dict[str, Any] = {}
+        while time.time() < deadline:
+            after = {
+                f"{item['resource']}/{item['name']}": (
+                    normalized_resource_snapshot(
+                        self.wait_present(
+                            engine,
+                            item["resource"],
+                            item["name"],
+                        )
+                    )
+                )
+                for item in self.managed_resources
+            }
+            if after == before:
+                break
+            time.sleep(2)
+        if after != before:
+            raise RuntimeError(
+                "Managed resource desired state changed after reapplying "
+                f"the same sample: before={before}, after={after}"
+            )
+        engine.checks["lifecycleIdempotency"] = {
+            "reapplyStable": True,
+            "resources": sorted(before),
+        }
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -508,6 +637,8 @@ class ManagedResourceValidator:
                 "namespace": self.namespace,
             },
             "managedResources": self.managed_resources,
+            "updateSpec": self.update_spec,
+            "updateAssertions": self.update_assertions,
         }
 
     def rbac_checks(self) -> list[dict[str, str]]:
@@ -564,6 +695,33 @@ class ManagedResourceValidator:
             time.sleep(2)
         return False
 
+    def wait_assertion(
+        self,
+        engine: DeploymentEngine,
+        assertion: dict[str, Any],
+    ) -> dict[str, Any]:
+        deadline = time.time() + engine.timeout_seconds
+        last = None
+        while time.time() < deadline:
+            value = get_path(
+                self.wait_present(
+                    engine,
+                    assertion["resource"],
+                    assertion["name"],
+                ),
+                assertion["path"],
+            )
+            last = value
+            if value == assertion["equals"]:
+                return {**assertion, "actual": value, "passed": True}
+            time.sleep(2)
+        raise RuntimeError(
+            "Managed resource assertion failed: "
+            f"{assertion['resource']}/{assertion['name']} "
+            f"{assertion['path']} expected={assertion['equals']!r} "
+            f"actual={last!r}"
+        )
+
     def kubectl(self, arguments: list[str]) -> list[str]:
         command = ["kubectl"]
         if self.namespace:
@@ -596,10 +754,39 @@ def write_temp_sample(engine: DeploymentEngine, suffix: str, data: dict[str, Any
 
 
 def parse_json(text: str) -> dict[str, Any]:
-    import json
-
     data = json.loads(text)
     return data if isinstance(data, dict) else {}
+
+
+def get_path(value: dict[str, Any], path: str) -> Any:
+    current: Any = value
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def normalized_resource_snapshot(
+    value: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = dict(value.get("metadata") or {})
+    for key in (
+        "creationTimestamp",
+        "generation",
+        "managedFields",
+        "resourceVersion",
+        "uid",
+    ):
+        metadata.pop(key, None)
+    return {
+        "apiVersion": value.get("apiVersion"),
+        "kind": value.get("kind"),
+        "metadata": metadata,
+        "spec": value.get("spec"),
+        "data": value.get("data"),
+        "stringData": value.get("stringData"),
+    }
 
 
 def is_not_found(result: dict[str, Any]) -> bool:

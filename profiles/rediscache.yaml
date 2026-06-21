@@ -55,8 +55,17 @@ kindDeployment:
     managedResources:
       - resource: statefulset
         name: rediscache-sample
+        deletionPolicy: garbage-collect
       - resource: service
         name: rediscache-sample
+        deletionPolicy: garbage-collect
+    updateSpec:
+      size: 2
+    updateAssertions:
+      - resource: statefulset
+        name: rediscache-sample
+        path: spec.replicas
+        equals: 2
     acceptedStatusPhases:
       - Pending
       - Progressing
