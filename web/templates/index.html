@@ -1,271 +1,145 @@
-<!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Kubebuilder Agent MVP</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
-  </head>
-  <body>
-    <header class="topbar">
-      <div>
-        <h1>Kubebuilder Agent MVP</h1>
-        <p>자연어 요구사항과 실행 로그를 Agent가 해석하고, RAG 문서와 Tool 실행 결과를 함께 요약합니다.</p>
+{% extends "base.html" %}
+{% block title %}새 Operator 만들기 · Kubebuilder Agent{% endblock %}
+{% block body %}
+<main class="page home-page">
+  <section class="hero">
+    <p class="eyebrow">새 Operator 만들기</p>
+    <h1>원하는 동작을 평소 말하듯 적어주세요.</h1>
+    <p class="lead">
+      Agent가 필요한 Kubernetes 리소스와 작업 순서를 먼저 계획합니다.
+      계획을 확인하기 전에는 프로젝트나 클러스터를 변경하지 않습니다.
+    </p>
+  </section>
+
+  <section class="card composer-card">
+    {% if form_error %}
+    <div class="alert alert-error" role="alert">{{ form_error }}</div>
+    {% endif %}
+    <form method="post" action="/run-requirement" id="requirement-form">
+      <label class="question-label" for="requirement_text">
+        어떤 Operator를 만들고 싶나요?
+      </label>
+      <p class="field-help">
+        관리할 리소스, 입력값, 생성할 Kubernetes 리소스를 포함하면 더 정확합니다.
+      </p>
+      <textarea
+        id="requirement_text"
+        name="requirement_text"
+        spellcheck="false"
+        placeholder="예: RedisCache 리소스를 만들면 StatefulSet과 Service를 생성하고, size와 image 변경을 자동으로 반영해 주세요."
+      >{{ default_requirement }}</textarea>
+
+      <input type="hidden" name="mode" id="mode" value="{{ selected_mode or 'dry-run' }}">
+      <div class="primary-actions">
+        <button class="primary-button" type="submit" id="primary-submit">
+          계획 확인하기
+        </button>
+        <span class="action-note">파일이나 클러스터를 변경하지 않습니다.</span>
       </div>
-      <div class="badge">Dry-run first</div>
-    </header>
 
-    <main class="layout">
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Requirement Workflow</h2>
-          <span>자연어 요구사항 → RAG → Tool 검증 → 실행 → 평가</span>
+      <details class="advanced-settings" {% if selected_mode == "execute" %}open{% endif %}>
+        <summary>고급 설정</summary>
+        <p>대부분의 경우 기본값 그대로 시작하면 됩니다.</p>
+        <div class="settings-grid">
+          <label>
+            참고 Profile
+            <select name="profile">
+              <option value="" {% if not selected_profile %}selected{% endif %}>
+                자동 판단
+              </option>
+              {% for profile in profiles %}
+              <option value="{{ profile.path }}" {% if selected_profile == profile.path %}selected{% endif %}>
+                {{ profile.name }}
+              </option>
+              {% endfor %}
+            </select>
+            <small>특정 예제의 기본값과 검증 규칙을 참고할 때만 선택합니다.</small>
+          </label>
+          <label>
+            평가 방식
+            <select name="run_level">
+              <option value="fast" {% if selected_run_level == "fast" %}selected{% endif %}>
+                빠른 평가
+              </option>
+              <option value="standard" {% if selected_run_level == "standard" %}selected{% endif %}>
+                상세 LLM 평가
+              </option>
+            </select>
+            <small>처음에는 빠른 평가를 권장합니다.</small>
+          </label>
         </div>
-        <form method="post" action="/run-requirement">
-          <label for="requirement_text">Operator requirement</label>
-          <textarea id="requirement_text" name="requirement_text" spellcheck="false">{{ default_requirement }}</textarea>
-
-          <div class="form-grid">
-            <label>
-              Profile
-              <select name="profile">
-                <option value="" {% if not selected_profile %}selected{% endif %}>없음 - requirement 기반 자동 판단</option>
-                {% for profile in profiles %}
-                  <option value="{{ profile.path }}" {% if selected_profile == profile.path %}selected{% endif %}>
-                    {{ profile.name }} - {{ profile.path }}
-                  </option>
-                {% endfor %}
-              </select>
-            </label>
-            <label>
-              Run level
-              <select name="run_level">
-                <option value="fast" {% if selected_run_level == "fast" %}selected{% endif %}>fast - 빠른 Tool 결과 요약</option>
-                <option value="standard" {% if selected_run_level == "standard" %}selected{% endif %}>standard - 최종 LLM 재평가</option>
-              </select>
-            </label>
-            <label>
-              Mode
-              <select name="mode">
-                <option value="dry-run" {% if selected_mode == "dry-run" %}selected{% endif %}>dry-run</option>
-                <option value="execute" {% if selected_mode == "execute" %}selected{% endif %}>execute</option>
-              </select>
-            </label>
-            <div class="field-note">Planner: <strong>local LLM</strong></div>
-          </div>
-
-          <div class="option-list">
-            <label class="check"><input type="checkbox" name="kind_deploy"> 검증 성공 후 profile 기반 kind 배포 포함</label>
-            <label class="check"><input type="checkbox" name="resume_existing"> 기존 scaffold가 있으면 재생성을 건너뛰고 계속</label>
-            <label class="check critical"><input type="checkbox" name="confirm_execute"> execute 모드의 실제 파일/클러스터 변경을 승인</label>
-          </div>
-
-          <button type="submit">Run Agent Workflow</button>
-        </form>
-      </section>
-
-      {% if recent_jobs %}
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Recent Jobs</h2>
-          <span>최근 {{ recent_jobs|length }}개 작업</span>
+        <div class="switch-list">
+          <label class="switch-row">
+            <input type="checkbox" name="kind_deploy">
+            <span>
+              <strong>kind 클러스터 배포 포함</strong>
+              <small>Docker와 배포 설정이 있는 Profile이 필요합니다.</small>
+            </span>
+          </label>
+          <label class="switch-row">
+            <input type="checkbox" name="resume_existing">
+            <span>
+              <strong>기존 프로젝트에서 계속</strong>
+              <small>이미 생성된 scaffold를 다시 만들지 않습니다.</small>
+            </span>
+          </label>
+          <label class="switch-row danger-setting">
+            <input type="checkbox" id="direct-execute" {% if selected_mode == "execute" %}checked{% endif %}>
+            <span>
+              <strong>계획 확인 없이 바로 실행</strong>
+              <small>숙련자용입니다. 실제 파일을 변경할 수 있습니다.</small>
+            </span>
+          </label>
+          <label class="switch-row execution-confirmation" id="execution-confirmation">
+            <input type="checkbox" name="confirm_execute">
+            <span>
+              <strong>실제 변경을 이해했고 실행을 승인합니다</strong>
+            </span>
+          </label>
         </div>
-        <div class="job-list">
-          {% for item in recent_jobs %}
-          <a href="/runs/job/{{ item.jobId }}" class="job-list-item">
-            <span>{{ item.jobType }}</span>
-            <code>{{ item.jobId }}</code>
-            <span class="job-state state-{{ item.state }}">{{ item.state }}</span>
-          </a>
-          {% endfor %}
-        </div>
-      </section>
-      {% endif %}
+      </details>
+    </form>
+  </section>
 
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Log Analysis</h2>
-          <span>summary.json + analysis.md + troubleshooting RAG</span>
-        </div>
-        <form method="post" action="/analyze-log">
-          <label for="log_dir">Log directory</label>
-          <input id="log_dir" name="log_dir" value="{{ default_log_dir }}">
+  <section class="how-it-works">
+    <h2>진행 방식</h2>
+    <ol class="steps">
+      <li><span>1</span><div><strong>요구사항 분석</strong><small>필요한 정보와 관리 리소스를 찾습니다.</small></div></li>
+      <li><span>2</span><div><strong>계획 확인</strong><small>생성 대상과 위험 요소를 먼저 보여줍니다.</small></div></li>
+      <li><span>3</span><div><strong>실행 승인</strong><small>사용자가 승인한 경우에만 파일을 생성합니다.</small></div></li>
+      <li><span>4</span><div><strong>검증 결과</strong><small>테스트 결과와 다음 행동을 쉽게 설명합니다.</small></div></li>
+    </ol>
+  </section>
 
-          <div class="field-note">
-            Planner: <strong>llm</strong>
-          </div>
+  {% if recent_jobs %}
+  <section class="card compact-card">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">최근 작업</p>
+        <h2>이어서 확인하기</h2>
+      </div>
+    </div>
+    <div class="recent-list">
+      {% for item in recent_jobs %}
+      <a href="/runs/job/{{ item.jobId }}" class="recent-item">
+        <span>
+          <strong>{{ "Operator 작업" if item.jobType == "requirement" else "로그 분석" }}</strong>
+          <small>{{ item.createdAt }}</small>
+        </span>
+        <span class="status status-{{ item.state }}">{{ item.state }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
-          <button type="submit">Analyze Log</button>
-        </form>
-
-        <div class="note">
-          <strong>Safety:</strong> execute는 Mode와 승인 체크박스를 모두 선택해야 합니다. kind 배포는 해당 capability가 정의된 profile에서만 허용됩니다.
-        </div>
-      </section>
-
-      {% if job %}
-      <section class="panel result-panel job-panel" id="job-panel" data-job-id="{{ job.jobId }}">
-        <div class="panel-header">
-          <h2>Background Job</h2>
-          <span class="job-state state-{{ job.state }}" id="job-state">{{ job.state }}</span>
-        </div>
-        <div class="job-progress">
-          <div>
-            <strong>Job ID</strong>
-            <code>{{ job.jobId }}</code>
-          </div>
-          <div>
-            <strong>Current phase</strong>
-            <code id="job-phase">{{ job.phase }}</code>
-          </div>
-          <div>
-            <strong>Started</strong>
-            <code>{{ job.startedAt or "waiting" }}</code>
-          </div>
-          <div>
-            <strong>Agent logs</strong>
-            <code id="job-agent-log">{{ job.agentLogDir or "pending" }}</code>
-          </div>
-        </div>
-        {% if job.state not in ["succeeded", "failed", "canceled", "interrupted"] %}
-        <p class="job-note">이 페이지는 실행 중에도 응답합니다. 상태와 로그는 자동으로 갱신됩니다.</p>
-        {% if job.state in ["queued", "running"] %}
-        <button type="button" class="cancel-button" id="cancel-job">Cancel Job</button>
-        {% endif %}
-        {% else %}
-        {% if job.state in ["failed", "canceled", "interrupted"] and job.attempt < job.maxAttempts %}
-        <button type="button" id="retry-job">Retry Job</button>
-        {% endif %}
-        {% endif %}
-        {% if job.rollbackPolicy and job.rollbackPolicy.mode != "not-applicable" %}
-        <details>
-          <summary>Rollback policy: {{ job.rollbackPolicy.mode }}</summary>
-          <ul>
-          {% for action in job.rollbackPolicy.actions %}
-            <li>{{ action }}</li>
-          {% endfor %}
-          </ul>
-        </details>
-        {% endif %}
-        <h3>Live stdout</h3>
-        <pre class="live-log" id="job-stdout">{{ job.stdoutTail }}</pre>
-        <details {% if job.stderrTail %}open{% endif %}>
-          <summary>Live stderr</summary>
-          <pre class="live-log" id="job-stderr">{{ job.stderrTail }}</pre>
-        </details>
-      </section>
-      {% endif %}
-
-      {% if result %}
-      <section class="panel result-panel">
-        <div class="panel-header">
-          <h2>Result</h2>
-          <span>exitCode={{ result.exit_code }}</span>
-        </div>
-
-        <div class="meta-grid">
-          <div>
-            <strong>Command</strong>
-            <code>{{ result.command }}</code>
-          </div>
-          {% if result.agent_log_dir %}
-          <div>
-            <strong>Agent logs</strong>
-            <code>{{ result.agent_log_dir }}</code>
-          </div>
-          {% endif %}
-        </div>
-
-        {% if result.agent_report %}
-        <h3>Agent Report</h3>
-        <pre class="report">{{ result.agent_report }}</pre>
-        {% endif %}
-
-        {% if result.safety_json %}
-        <details open>
-          <summary>Safety Evaluation</summary>
-          <pre>{{ result.safety_json }}</pre>
-        </details>
-        {% endif %}
-        {% if result.evidence_json %}
-        <details>
-          <summary>Evidence Trace</summary>
-          <pre>{{ result.evidence_json }}</pre>
-        </details>
-        {% endif %}
-        {% if result.recovery_json %}
-        <details>
-          <summary>Recovery Plan / Approval State</summary>
-          <pre>{{ result.recovery_json }}</pre>
-        </details>
-        {% endif %}
-        {% if result.summary_json %}
-        <details>
-          <summary>Agent Summary JSON</summary>
-          <pre>{{ result.summary_json }}</pre>
-        </details>
-        {% endif %}
-        <details>
-          <summary>stdout</summary>
-          <pre>{{ result.stdout }}</pre>
-        </details>
-        <details>
-          <summary>stderr</summary>
-          <pre>{{ result.stderr }}</pre>
-        </details>
-      </section>
-      {% endif %}
-    </main>
-    {% if job and job.state not in ["succeeded", "failed", "canceled", "interrupted"] %}
-    <script>
-      (() => {
-        const panel = document.getElementById("job-panel");
-        const jobId = panel.dataset.jobId;
-        const state = document.getElementById("job-state");
-        const phase = document.getElementById("job-phase");
-        const agentLog = document.getElementById("job-agent-log");
-        const stdout = document.getElementById("job-stdout");
-        const stderr = document.getElementById("job-stderr");
-        const cancel = document.getElementById("cancel-job");
-
-        if (cancel) {
-          cancel.addEventListener("click", async () => {
-            cancel.disabled = true;
-            await fetch(`/api/jobs/${jobId}/cancel`, {method: "POST"});
-            window.location.reload();
-          });
-        }
-        function renderJob(job) {
-          state.textContent = job.state;
-          state.className = `job-state state-${job.state}`;
-          phase.textContent = job.phase || "running";
-          agentLog.textContent = job.agentLogDir || "pending";
-          stdout.textContent = job.stdoutTail || "";
-          stderr.textContent = job.stderrTail || "";
-          stdout.scrollTop = stdout.scrollHeight;
-          if (job.terminal) {
-            window.location.reload();
-          }
-        }
-        const events = new EventSource(`/api/jobs/${jobId}/events`);
-        events.onmessage = (event) => renderJob(JSON.parse(event.data));
-        events.onerror = () => {
-          events.close();
-          window.setTimeout(() => window.location.reload(), 1500);
-        };
-      })();
-    </script>
-    {% endif %}
-    {% if job and job.state in ["failed", "canceled", "interrupted"] and job.attempt < job.maxAttempts %}
-    <script>
-      document.getElementById("retry-job").addEventListener("click", async (event) => {
-        event.currentTarget.disabled = true;
-        const response = await fetch(`/api/jobs/{{ job.jobId }}/retry`, {method: "POST"});
-        const retried = await response.json();
-        if (response.ok) window.location.href = `/runs/job/${retried.jobId}`;
-        else event.currentTarget.disabled = false;
-      });
-    </script>
-    {% endif %}
-  </body>
-</html>
+  <details class="support-tools" {% if show_log_analysis %}open{% endif %}>
+    <summary>기존 실패 로그 분석하기</summary>
+    <form method="post" action="/analyze-log">
+      <label for="log_dir">summary.json이 있는 로그 폴더</label>
+      <input id="log_dir" name="log_dir" value="{{ default_log_dir }}" placeholder="logs/agent/20260621-...">
+      <button class="secondary-button" type="submit">로그 분석</button>
+    </form>
+  </details>
+</main>
+{% endblock %}

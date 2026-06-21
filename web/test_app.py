@@ -54,6 +54,54 @@ class FakeJobs:
         return job
 
 
+class FakeCompletedJobs(FakeJobs):
+    def result(self, job_id):
+        if job_id != "20260619-async0001":
+            return None
+        return {
+            "jobId": job_id,
+            "jobType": "requirement",
+            "state": "succeeded",
+            "phase": "completed",
+            "commandText": "python3 agent/langchain_agent.py",
+            "metadata": {
+                "requirementPath": "",
+                "profile": "",
+                "mode": "dry-run",
+                "runLevel": "fast",
+            },
+            "stdoutTail": "",
+            "stderrTail": "",
+            "agentLogDir": "logs/agent/example",
+            "startedAt": "2026-06-19T00:00:00+09:00",
+            "attempt": 1,
+            "maxAttempts": 2,
+            "rollbackPolicy": {"mode": "not-applicable"},
+            "summary": {
+                "agentMode": "dry-run",
+                "requirementSummary": {
+                    "kind": "WebService",
+                    "managedResources": ["Deployment", "Service"],
+                    "shortSummary": "웹 서비스를 배포합니다.",
+                },
+                "toolResults": [
+                    {"tool": "spec_generator", "exitCode": 0}
+                ],
+                "generatedFiles": {
+                    "operatorSpec": "generated/webservice.yaml"
+                },
+                "warnings": [],
+                "errors": [],
+                "nextRecommendedActions": ["계획을 검토합니다."],
+                "finalLLM": {"output": {}},
+            },
+            "agentReport": "",
+            "evidence": {},
+            "safety": {},
+            "recovery": {},
+        }
+
+
 class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
     async def request(self, method, path, **kwargs):
         async with AsyncClient(
@@ -106,6 +154,66 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["attempt"], 2)
+
+    async def test_home_hides_advanced_options_by_default(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            response = await self.request("GET", "/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("계획 확인하기", response.text)
+        self.assertIn("<summary>고급 설정</summary>", response.text)
+        self.assertNotIn("Safety Evaluation</summary>", response.text)
+
+    async def test_short_requirement_is_rejected_for_beginner(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            response = await self.request(
+                "POST",
+                "/run-requirement",
+                data={"requirement_text": "짧음"},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("조금 더 자세히", response.text)
+
+    async def test_execute_requires_explicit_confirmation(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            response = await self.request(
+                "POST",
+                "/run-requirement",
+                data={
+                    "requirement_text": "ConfigMap을 생성하는 Operator를 만들어 주세요.",
+                    "mode": "execute",
+                },
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("실행 승인", response.text)
+
+    async def test_kind_deploy_requires_profile(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            response = await self.request(
+                "POST",
+                "/run-requirement",
+                data={
+                    "requirement_text": "ConfigMap을 생성하는 Operator를 만들어 주세요.",
+                    "kind_deploy": "on",
+                },
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("Profile", response.text)
+
+    async def test_completed_plan_shows_beginner_execution_action(self) -> None:
+        with patch("web.app.jobs", FakeCompletedJobs()):
+            response = await self.request(
+                "GET",
+                "/runs/job/20260619-async0001",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("WebService 계획이 준비됐습니다", response.text)
+        self.assertIn("계획 승인하고 생성하기", response.text)
+        self.assertIn("개발자 상세 정보", response.text)
 
 
 if __name__ == "__main__":

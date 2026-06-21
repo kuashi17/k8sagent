@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Kubebuilder Agent{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">
+        <span class="brand-mark">K</span>
+        <span>
+          <strong>Kubebuilder Agent</strong>
+          <small>Operator 만들기 도우미</small>
+        </span>
+      </a>
+      <span class="safety-pill">먼저 계획하고, 승인 후 실행합니다</span>
+    </header>
+    {% block body %}{% endblock %}
+    <script src="{{ url_for('static', path='app.js') }}" defer></script>
+  </body>
+</html>

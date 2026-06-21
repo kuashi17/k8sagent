@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
-"""Small Web UI for the Kubebuilder Agent MVP.
-
-The web layer is intentionally thin. It does not reimplement Agent logic; it
-calls the existing CLI orchestrator so CLI, CI, and Web UI all share the same
-core behavior.
-"""
+"""Beginner-facing FastAPI UI for the Kubebuilder Agent."""
 
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,28 +20,44 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.llm.client import LLMUnavailable, warm_up_model  # noqa: E402
-from web.job_manager import JobManager  # noqa: E402
+from web.job_manager import JobManager, TERMINAL_STATES  # noqa: E402
+from web.result_presenter import (  # noqa: E402
+    developer_details,
+    present_run_result,
+)
+from web.schemas import LogAnalysisRequest, RequirementRunRequest  # noqa: E402
+from web.workflow_service import WorkflowService  # noqa: E402
 
 
 LOG_ROOT = REPO_ROOT / "logs" / "web"
 PROFILE_DIR = REPO_ROOT / "profiles"
 JOB_ROOT = LOG_ROOT / "jobs"
 
-app = FastAPI(title="Kubebuilder Agent MVP")
-app.mount("/static", StaticFiles(directory=REPO_ROOT / "web" / "static"), name="static")
+app = FastAPI(title="Kubebuilder Agent")
+app.mount(
+    "/static",
+    StaticFiles(directory=REPO_ROOT / "web" / "static"),
+    name="static",
+)
 templates = Jinja2Templates(directory=REPO_ROOT / "web" / "templates")
 jobs = JobManager(REPO_ROOT, JOB_ROOT)
+workflows = WorkflowService(REPO_ROOT, LOG_ROOT, PROFILE_DIR)
 
 
 @app.on_event("startup")
 def warm_local_llm() -> None:
-    if os.environ.get("LOCAL_LLM_WARMUP", "true").lower() in {"0", "false", "no"}:
+    if os.environ.get("LOCAL_LLM_WARMUP", "true").lower() in {
+        "0",
+        "false",
+        "no",
+    }:
         return
     try:
         warm_up_model()
@@ -59,151 +68,100 @@ def warm_local_llm() -> None:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "request": request,
-            "profiles": list_profiles(),
-            "default_requirement": read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
-            "default_log_dir": "logs/e2e/20260607-213346",
-            "selected_profile": "",
-            "selected_mode": "dry-run",
-            "selected_run_level": "fast",
-            "result": None,
-            "job": None,
-            "recent_jobs": jobs.list(10),
-        },
-    )
+    return render_home(request)
 
 
 @app.post("/run-requirement", response_class=HTMLResponse)
 async def run_requirement(request: Request) -> HTMLResponse:
     form = await request.form()
-    requirement_text = str(form.get("requirement_text") or "").strip()
-    profile = str(form.get("profile") or "")
-    mode = str(form.get("mode") or "dry-run")
-    run_level = str(form.get("run_level") or "fast")
-    kind_deploy = str(form.get("kind_deploy") or "") == "on"
-    resume_existing = str(form.get("resume_existing") or "") == "on"
-    confirm_execute = str(form.get("confirm_execute") or "") == "on"
-    planner = "llm"
-    if mode == "execute" and not confirm_execute:
-        result = {
-            "title": "Execution blocked",
-            "command": "",
-            "stdout": "",
-            "stderr": "Execute mode requires the explicit confirmation checkbox.",
-            "exit_code": 2,
-            "agent_log_dir": "",
-            "agent_report": "",
-            "summary_json": "",
-            "evidence_json": "",
-            "safety_json": "",
-            "recovery_json": "",
-        }
-        return render_result(request, result, requirement_text=requirement_text, selected_profile=profile, selected_planner=planner, selected_mode=mode, selected_run_level=run_level)
-
-    run_dir = make_run_dir("requirement")
-    requirement_path = run_dir / "requirement.txt"
-    requirement_path.write_text(requirement_text, encoding="utf-8")
-
-    command = [
-        "python3",
-        "agent/langchain_agent.py",
-        "--requirement",
-        str(requirement_path.relative_to(REPO_ROOT)),
-        "--mode",
-        mode,
-        "--run-level",
-        run_level,
-    ]
-    if profile:
-        command.extend(["--profile", profile])
-    if mode == "execute":
-        command.append("--execute")
-    if kind_deploy:
-        command.append("--kind-deploy")
-    if resume_existing:
-        command.append("--resume-existing")
-    job = jobs.submit(
-        "requirement",
-        command,
-        metadata={
-            "requirementPath": str(requirement_path.relative_to(REPO_ROOT)),
-            "profile": profile,
-            "mode": mode,
-            "runLevel": run_level,
-            "kindDeploy": kind_deploy,
-            "resumeExisting": resume_existing,
-        },
+    try:
+        run_request = RequirementRunRequest.from_form(form)
+        job = workflows.submit_requirement(run_request, jobs)
+    except (ValidationError, ValueError) as exc:
+        return render_home(
+            request,
+            requirement_text=str(form.get("requirement_text") or ""),
+            selected_profile=str(form.get("profile") or ""),
+            selected_mode=str(form.get("mode") or "dry-run"),
+            selected_run_level=str(form.get("run_level") or "fast"),
+            form_error=friendly_error(exc),
+            status_code=422,
+        )
+    return RedirectResponse(
+        f"/runs/job/{job['jobId']}",
+        status_code=303,
     )
-    return RedirectResponse(f"/runs/job/{job['jobId']}", status_code=303)
 
 
 @app.post("/analyze-log", response_class=HTMLResponse)
 async def analyze_log(request: Request) -> HTMLResponse:
     form = await request.form()
-    log_dir = str(form.get("log_dir") or "").strip()
-    planner = "llm"
+    try:
+        analysis = LogAnalysisRequest.from_form(form)
+        job = workflows.submit_log_analysis(analysis, jobs)
+    except (ValidationError, ValueError) as exc:
+        return render_home(
+            request,
+            form_error=friendly_error(exc),
+            show_log_analysis=True,
+            status_code=422,
+        )
+    return RedirectResponse(
+        f"/runs/job/{job['jobId']}",
+        status_code=303,
+    )
 
-    command = [
-        "python3",
-        "agent/langchain_agent.py",
-        "--analyze-log",
-        log_dir,
-    ]
-    job = jobs.submit("log-analysis", command, metadata={"sourceLogDir": log_dir, "planner": planner})
-    return RedirectResponse(f"/runs/job/{job['jobId']}", status_code=303)
+
+@app.get("/runs/job/{job_id}", response_class=HTMLResponse)
+async def view_job(request: Request, job_id: str) -> HTMLResponse:
+    try:
+        job = jobs.result(job_id)
+    except ValueError:
+        job = None
+    if not job:
+        return RedirectResponse("/")
+    metadata = job.get("metadata") or {}
+    requirement_path = str(metadata.get("requirementPath") or "")
+    requirement_text = (
+        read_text(REPO_ROOT / requirement_path)
+        if requirement_path
+        else ""
+    )
+    terminal = job.get("state") in TERMINAL_STATES
+    result_view = present_run_result(job) if terminal else None
+    return templates.TemplateResponse(
+        request=request,
+        name="run.html",
+        context={
+            "request": request,
+            "job": job,
+            "terminal": terminal,
+            "result_view": result_view,
+            "developer": developer_details(job) if terminal else {},
+            "requirement_text": requirement_text,
+            "profiles": list_profiles(),
+            "selected_profile": str(metadata.get("profile") or ""),
+            "selected_run_level": str(
+                metadata.get("runLevel") or "fast"
+            ),
+            "selected_kind_deploy": bool(
+                metadata.get("kindDeploy")
+            ),
+            "selected_resume_existing": bool(
+                metadata.get("resumeExisting")
+            ),
+        },
+    )
 
 
 @app.get("/runs/{run_type}/{run_id}", response_class=HTMLResponse)
-async def view_web_run(request: Request, run_type: str, run_id: str) -> HTMLResponse:
+async def legacy_web_run(
+    run_type: str,
+    run_id: str,
+) -> RedirectResponse:
     if run_type == "job":
-        job = jobs.result(run_id)
-        if not job:
-            return RedirectResponse("/")
-        metadata = job.get("metadata") or {}
-        requirement_path = metadata.get("requirementPath") or ""
-        requirement_text = read_text(REPO_ROOT / requirement_path) if requirement_path else None
-        return templates.TemplateResponse(
-            request=request,
-            name="index.html",
-            context=page_context(
-                request,
-                result=result_from_job(job) if job.get("state") in {"succeeded", "failed"} else None,
-                job=job,
-                requirement_text=requirement_text,
-                selected_profile=str(metadata.get("profile") or ""),
-                selected_mode=str(metadata.get("mode") or "dry-run"),
-                selected_run_level=str(metadata.get("runLevel") or "fast"),
-            ),
-        )
-    run_dir = LOG_ROOT / run_type / run_id
-    if not run_dir.is_dir():
-        return RedirectResponse("/")
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "request": request,
-            "profiles": list_profiles(),
-            "default_requirement": read_text(run_dir / "requirement.txt"),
-            "default_log_dir": "logs/e2e/20260607-213346",
-            "result": {
-                "title": f"Web Run {run_id}",
-                "command": "",
-                "stdout": "",
-                "stderr": "",
-                "exit_code": "",
-                "agent_log_dir": "",
-                "agent_report": "",
-                "web_run_dir": str(run_dir.relative_to(REPO_ROOT)),
-            },
-            "job": None,
-            "recent_jobs": jobs.list(10),
-        },
-    )
+        return RedirectResponse(f"/runs/job/{run_id}")
+    return RedirectResponse("/")
 
 
 @app.get("/api/jobs/{job_id}")
@@ -214,25 +172,7 @@ async def job_status(job_id: str) -> JSONResponse:
         job = None
     if not job:
         return JSONResponse({"error": "job not found"}, status_code=404)
-    return JSONResponse(
-        {
-            "jobId": job.get("jobId"),
-            "state": job.get("state"),
-            "phase": job.get("phase"),
-            "exitCode": job.get("exitCode"),
-            "createdAt": job.get("createdAt"),
-            "startedAt": job.get("startedAt"),
-            "finishedAt": job.get("finishedAt"),
-            "agentLogDir": job.get("agentLogDir"),
-            "stdoutTail": job.get("stdoutTail"),
-            "stderrTail": job.get("stderrTail"),
-            "terminal": job.get("state")
-            in {"succeeded", "failed", "canceled", "interrupted"},
-            "attempt": job.get("attempt"),
-            "maxAttempts": job.get("maxAttempts"),
-            "rollbackPolicy": job.get("rollbackPolicy") or {},
-        }
-    )
+    return JSONResponse(job_status_payload(job))
 
 
 @app.get("/api/jobs")
@@ -288,110 +228,75 @@ async def job_events(job_id: str) -> StreamingResponse:
                 yield 'event: error\ndata: {"error":"job not found"}\n\n'
                 return
             payload = json.dumps(
-                {
-                    "jobId": job.get("jobId"),
-                    "state": job.get("state"),
-                    "phase": job.get("phase"),
-                    "exitCode": job.get("exitCode"),
-                    "agentLogDir": job.get("agentLogDir"),
-                    "stdoutTail": job.get("stdoutTail"),
-                    "stderrTail": job.get("stderrTail"),
-                    "terminal": job.get("state") in {
-                        "succeeded",
-                        "failed",
-                        "canceled",
-                        "interrupted",
-                    },
-                },
+                job_status_payload(job),
                 ensure_ascii=False,
             )
             if payload != previous:
                 yield f"data: {payload}\n\n"
                 previous = payload
-            if job.get("state") in {
-                "succeeded",
-                "failed",
-                "canceled",
-                "interrupted",
-            }:
+            if job.get("state") in TERMINAL_STATES:
                 return
             await asyncio.sleep(0.75)
 
     return StreamingResponse(
         stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
-def render_result(
+def render_home(
     request: Request,
-    result: dict[str, Any],
+    *,
     requirement_text: str | None = None,
     selected_profile: str = "",
-    selected_planner: str = "llm",
     selected_mode: str = "dry-run",
     selected_run_level: str = "fast",
+    form_error: str = "",
+    show_log_analysis: bool = False,
+    status_code: int = 200,
 ) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context=page_context(
-            request=request,
-            result=result,
-            requirement_text=requirement_text,
-            selected_profile=selected_profile,
-            selected_planner=selected_planner,
-            selected_mode=selected_mode,
-            selected_run_level=selected_run_level,
-        ),
+        context={
+            "request": request,
+            "profiles": list_profiles(),
+            "default_requirement": requirement_text
+            if requirement_text is not None
+            else read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
+            "default_log_dir": "",
+            "selected_profile": selected_profile,
+            "selected_mode": selected_mode,
+            "selected_run_level": selected_run_level,
+            "form_error": form_error,
+            "show_log_analysis": show_log_analysis,
+            "recent_jobs": jobs.list(3),
+        },
+        status_code=status_code,
     )
 
 
-def page_context(
-    request: Request | None = None,
-    *,
-    result: dict[str, Any] | None = None,
-    job: dict[str, Any] | None = None,
-    requirement_text: str | None = None,
-    selected_profile: str = "",
-    selected_planner: str = "llm",
-    selected_mode: str = "dry-run",
-    selected_run_level: str = "fast",
-) -> dict[str, Any]:
+def job_status_payload(job: dict[str, Any]) -> dict[str, Any]:
     return {
-        "request": request,
-        "profiles": list_profiles(),
-        "default_requirement": requirement_text or read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
-        "default_log_dir": "logs/e2e/20260607-213346",
-        "selected_profile": selected_profile,
-        "selected_planner": selected_planner,
-        "selected_mode": selected_mode,
-        "selected_run_level": selected_run_level,
-        "result": result,
-        "job": job,
-        "recent_jobs": jobs.list(10),
+        "jobId": job.get("jobId"),
+        "state": job.get("state"),
+        "phase": job.get("phase"),
+        "exitCode": job.get("exitCode"),
+        "createdAt": job.get("createdAt"),
+        "startedAt": job.get("startedAt"),
+        "finishedAt": job.get("finishedAt"),
+        "agentLogDir": job.get("agentLogDir"),
+        "stdoutTail": job.get("stdoutTail"),
+        "stderrTail": job.get("stderrTail"),
+        "terminal": job.get("state") in TERMINAL_STATES,
+        "attempt": job.get("attempt"),
+        "maxAttempts": job.get("maxAttempts"),
+        "rollbackPolicy": job.get("rollbackPolicy") or {},
     }
-
-
-def result_from_job(job: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "title": "Agent Result",
-        "command": job.get("commandText") or "",
-        "stdout": job.get("stdoutTail") or "",
-        "stderr": job.get("stderrTail") or "",
-        "exit_code": job.get("exitCode"),
-        "agent_log_dir": job.get("agentLogDir") or "",
-        "agent_report": job.get("agentReport") or "",
-        "summary_json": pretty_json(job.get("summary") or {}),
-        "evidence_json": pretty_json(job.get("evidence") or {}),
-        "safety_json": pretty_json(job.get("safety") or {}),
-        "recovery_json": pretty_json(job.get("recovery") or {}),
-    }
-
-
-def pretty_json(value: dict[str, Any]) -> str:
-    return json.dumps(value, indent=2, ensure_ascii=False) if value else ""
 
 
 def list_profiles() -> list[dict[str, str]]:
@@ -402,26 +307,31 @@ def list_profiles() -> list[dict[str, str]]:
             {
                 "path": str(path.relative_to(REPO_ROOT)),
                 "name": str(data.get("profileName") or path.stem),
-                "description": compact(str(data.get("description") or "")),
+                "description": compact(
+                    str(data.get("description") or "")
+                ),
             }
         )
     return profiles
 
 
-def make_run_dir(kind: str) -> Path:
-    run_dir = LOG_ROOT / kind / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
+def friendly_error(exc: Exception) -> str:
+    if isinstance(exc, ValidationError):
+        first = exc.errors()[0]
+        if first.get("type") == "string_too_short":
+            return "어떤 Operator를 만들고 싶은지 조금 더 자세히 적어 주세요."
+        return str(first.get("msg") or "입력값을 확인해 주세요.")
+    return str(exc)
 
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
-def compact(value: str, limit: int = 120) -> str:
+def compact(value: str, limit: int = 100) -> str:
     cleaned = " ".join(value.split())
-    return cleaned if len(cleaned) <= limit else f"{cleaned[: limit - 3]}..."
-
-
-def escape(value: Any) -> str:
-    return html.escape(str(value))
+    return (
+        cleaned
+        if len(cleaned) <= limit
+        else f"{cleaned[: limit - 3]}..."
+    )

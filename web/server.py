@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Dependency-free Web UI for the Kubebuilder Agent MVP.
+"""Legacy dependency-free Web UI for the Kubebuilder Agent MVP.
 
-Use this when FastAPI dependencies are not installed. It serves the same basic
-flows using only Python's standard library:
+The beginner-facing UI is implemented in web.app. Use this fallback only when
+FastAPI dependencies cannot be installed. It serves limited flows using only
+Python's standard library:
 - requirement dry-run
 - log analysis
 """
@@ -349,7 +350,11 @@ def main() -> int:
         except LLMUnavailable as exc:
             print(f"Local LLM warm-up skipped: {exc}")
     server = ThreadingHTTPServer((host, port), AgentHandler)
-    print(f"Kubebuilder Agent Web UI: http://localhost:{port}")
+    print(
+        "Legacy fallback UI. For the beginner-facing UI run: "
+        "uvicorn web.app:app --host 0.0.0.0 --port 8000"
+    )
+    print(f"Kubebuilder Agent fallback UI: http://localhost:{port}")
     server.serve_forever()
     return 0
 
