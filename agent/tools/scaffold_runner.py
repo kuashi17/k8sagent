@@ -348,9 +348,7 @@ def execute_steps(input_path: Path, target_dir: Path, steps: list[dict[str, Any]
     log_dir = Path("logs") / "scaffold" / datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
-    env["PATH"] = f"{Path.cwd() / '.tools/bin'}:{env.get('PATH', '')}"
-    env["GOCACHE"] = env.get("GOCACHE", "/tmp/k8sagent-go-build")
+    env = build_execution_env()
 
     summary: dict[str, Any] = {
         "input": str(input_path),
@@ -424,6 +422,17 @@ def run_step(index: int, step: dict[str, Any], log_dir: Path, env: dict[str, str
 
 def write_summary(log_dir: Path, summary: dict[str, Any]) -> None:
     (log_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def build_execution_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PATH"] = f"{Path.cwd() / '.tools/bin'}:{env.get('PATH', '')}"
+    env["GOCACHE"] = env.get("GOCACHE", "/tmp/k8sagent-go-build")
+    flags = env.get("GOFLAGS", "").split()
+    if "-buildvcs=false" not in flags:
+        flags.append("-buildvcs=false")
+    env["GOFLAGS"] = " ".join(flags)
+    return env
 
 
 def patch_makefile(makefile: Path) -> None:

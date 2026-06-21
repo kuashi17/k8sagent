@@ -42,6 +42,11 @@ RESOURCE_DEFAULTS = {
     ),
     "CronJob": ResourceDefaults("batch/v1", "CronJob", "cronjob"),
     "Deployment": ResourceDefaults("apps/v1", "Deployment", "deployment"),
+    "StatefulSet": ResourceDefaults(
+        "apps/v1",
+        "StatefulSet",
+        "statefulset",
+    ),
     "Service": ResourceDefaults("v1", "Service", "service"),
     "Namespace": ResourceDefaults(
         "v1",
@@ -76,6 +81,7 @@ NAME_FIELDS = {
     "PersistentVolumeClaim": ("claimName", "pvcName"),
     "CronJob": ("cronJobName",),
     "Deployment": ("deploymentName", "appName"),
+    "StatefulSet": ("statefulSetName", "appName", "cacheName"),
     "Service": ("serviceName", "appName"),
     "Namespace": ("namespaceName",),
 }
@@ -102,6 +108,19 @@ DEFAULT_FIELD_MAPPINGS = {
         ("port", "spec.template.spec.containers[0].ports[0].containerPort"),
         ("containerPort", "spec.template.spec.containers[0].ports[0].containerPort"),
     ),
+    "StatefulSet": (
+        ("image", "spec.template.spec.containers[0].image"),
+        ("replicas", "spec.replicas"),
+        ("size", "spec.replicas"),
+        (
+            "port",
+            "spec.template.spec.containers[0].ports[0].containerPort",
+        ),
+        (
+            "storageSize",
+            "spec.volumeClaimTemplates[0].spec.resources.requests.storage",
+        ),
+    ),
     "Service": (
         ("port", "spec.ports[0].port"),
     ),
@@ -127,6 +146,13 @@ STATUS_RESOURCE_FIELDS = {
         "CronJob",
         "status.lastScheduleTime",
         "direct",
+    ),
+}
+
+STATUS_RESOURCE_FIELD_ALTERNATIVES = {
+    "readyReplicas": (
+        ("Deployment", "status.readyReplicas", "direct"),
+        ("StatefulSet", "status.readyReplicas", "direct"),
     ),
 }
 
@@ -285,7 +311,14 @@ def status_mappings_for(
 ) -> list[StatusMapping]:
     result = []
     for field in sorted(status_fields):
-        mapping = STATUS_RESOURCE_FIELDS.get(field)
+        alternatives = STATUS_RESOURCE_FIELD_ALTERNATIVES.get(field)
+        if alternatives:
+            mapping = next(
+                (item for item in alternatives if item[0] == kind),
+                None,
+            )
+        else:
+            mapping = STATUS_RESOURCE_FIELDS.get(field)
         if not mapping or mapping[0] != kind:
             continue
         result.append(

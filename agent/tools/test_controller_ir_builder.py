@@ -140,15 +140,46 @@ class ControllerIRBuilderTest(unittest.TestCase):
     def test_unsupported_managed_resource_is_rejected(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
-            "unsupported managed resources: StatefulSet",
+            "unsupported managed resources: DaemonSet",
         ):
             build_controller_ir(
                 model(
-                    ["StatefulSet"],
+                    ["DaemonSet"],
                     ["image"],
                     ["phase"],
                 )
             )
+
+    def test_statefulset_behavior_is_derived_from_common_fields(self) -> None:
+        statefulset = build_controller_ir(
+            model(
+                ["StatefulSet", "Service"],
+                ["size", "image", "storageSize"],
+                ["phase", "readyReplicas", "message"],
+            )
+        ).resource("StatefulSet")
+
+        self.assertEqual(
+            statefulset.strategy,
+            ReconcileStrategy.CREATE_OR_UPDATE,
+        )
+        self.assertEqual(
+            statefulset.ownership,
+            OwnershipPolicy.OWNER_REFERENCE,
+        )
+        self.assertTrue(
+            any(
+                item.target_path == "spec.volumeClaimTemplates[0].spec.resources.requests.storage"
+                for item in statefulset.field_mappings
+            )
+        )
+        self.assertTrue(
+            any(
+                item.target_path == "status.readyReplicas"
+                and item.target_type == "int32"
+                for item in statefulset.status_mappings
+            )
+        )
 
 
 if __name__ == "__main__":

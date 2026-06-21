@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from agent.tools.artifact_patcher import normalize_spec, patch_controller
+from agent.tools.scaffold_runner import build_execution_env
 
 
 class ArtifactPatcherTest(unittest.TestCase):
+    @patch.dict("os.environ", {"GOFLAGS": "-mod=readonly"}, clear=False)
+    def test_scaffold_execution_disables_vcs_stamping(self) -> None:
+        env = build_execution_env()
+
+        self.assertIn("-mod=readonly", env["GOFLAGS"])
+        self.assertIn("-buildvcs=false", env["GOFLAGS"])
+
     def test_status_fields_add_status_subresource_rbac(self) -> None:
         model = normalize_spec(
             {

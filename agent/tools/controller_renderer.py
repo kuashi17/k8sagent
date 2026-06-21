@@ -133,7 +133,8 @@ def render_resource_function(
         if resource.scope == ResourceScope.CLUSTER
         else "instance.Namespace"
     )
-    mutations = render_mutations(resource)
+    mutations = render_mutations(resource, ir)
+    dependencies = render_resource_dependencies(resource, ir)
     disable_guard = render_disable_guard(
         resource,
         namespace,
@@ -166,6 +167,7 @@ def render_resource_function(
 \tif name == "" {{
 \t\tname = instance.Name + "-{suffix}"
 \t}}
+{dependencies}
 \tobject := managedObject("{group}", "{version}", "{resource.kind}", {namespace}, name)
 {disable_guard}
 \t_, err := controllerutil.CreateOrUpdate(ctx, r.Client, object, func() error {{
@@ -233,7 +235,10 @@ def dedent_mutations(value: str) -> str:
     return dedented.replace("{ return err }", "{ return name, err }")
 
 
-def render_mutations(resource: ManagedResourceSpec) -> str:
+def render_mutations(
+    resource: ManagedResourceSpec,
+    ir: ControllerGenerationIR,
+) -> str:
     fields = mapping_source_fields(resource)
     lines: list[str] = []
     if resource.kind == "ConfigMap":
@@ -329,6 +334,50 @@ def render_mutations(resource: ManagedResourceSpec) -> str:
         lines.append(
             '\t\tif err := unstructured.SetNestedMap(object.Object, deploymentSpec, "spec"); err != nil { return err }'
         )
+    elif resource.kind == "StatefulSet":
+        image = first_field(fields, "image")
+        replicas = first_field(fields, "replicas", "size")
+        port = first_field(fields, "port", "containerPort")
+        storage = first_field(fields, "storageSize")
+        lines.append(
+            f'\t\tcontainer := map[string]interface{{}}{{"name": "application", "image": instance.Spec.{go_name(image or "image")}}}'
+        )
+        if port:
+            lines.append(
+                f'\t\tcontainer["ports"] = []interface{{}}{{map[string]interface{{}}{{"containerPort": int64(instance.Spec.{go_name(port)})}}}}'
+            )
+        if storage:
+            lines.append(
+                '\t\tcontainer["volumeMounts"] = []interface{}{'
+                'map[string]interface{}{"name": "data", "mountPath": "/data"}}'
+            )
+        lines.append(
+            '\t\ttemplate := map[string]interface{}{"metadata": map[string]interface{}{"labels": labels}, '
+            '"spec": map[string]interface{}{"containers": []interface{}{container}}}'
+        )
+        lines.append(
+            '\t\tstatefulSetSpec := map[string]interface{}{"serviceName": serviceName, '
+            '"selector": map[string]interface{}{"matchLabels": labels}, '
+            '"template": template}'
+        )
+        if replicas:
+            lines.append(
+                f'\t\tstatefulSetSpec["replicas"] = int64(instance.Spec.{go_name(replicas)})'
+            )
+        if storage:
+            storage_value = f"instance.Spec.{go_name(storage)}"
+            lines.append(
+                '\t\tstatefulSetSpec["volumeClaimTemplates"] = []interface{}{'
+                'map[string]interface{}{"metadata": map[string]interface{}{"name": "data"}, '
+                '"spec": map[string]interface{}{"accessModes": []interface{}{"ReadWriteOnce"}, '
+                '"resources": map[string]interface{}{"requests": map[string]interface{}'
+                '{"storage": '
+                + storage_value
+                + "}}}}}"
+            )
+        lines.append(
+            '\t\tif err := unstructured.SetNestedMap(object.Object, statefulSetSpec, "spec"); err != nil { return err }'
+        )
     elif resource.kind == "Service":
         port = first_field(fields, "port")
         lines.append(
@@ -349,6 +398,26 @@ def render_mutations(resource: ManagedResourceSpec) -> str:
                 "\t\tobject.SetLabels(labels)"
             )
     return "\n".join(lines)
+
+
+def render_resource_dependencies(
+    resource: ManagedResourceSpec,
+    ir: ControllerGenerationIR,
+) -> str:
+    if resource.kind != "StatefulSet":
+        return ""
+    service = ir.resource("Service")
+    if not service:
+        return "\tserviceName := name"
+    expression = source_expression(service.name.source_path)
+    suffix = service.name.fallback_template.replace(
+        "{metadata.name}-",
+        "",
+    )
+    return f'''\tserviceName := {expression}
+\tif serviceName == "" {{
+\t\tserviceName = instance.Name + "-{suffix}"
+\t}}'''
 
 
 def render_disable_guard(

@@ -21,6 +21,7 @@ from agent.evaluation.controller_quality import evaluate_controller_quality
 
 
 DEFAULT_REQUIREMENTS = [
+    "requirements/redis-cache.txt",
     "requirements/secret-sync.txt",
     "requirements/scheduled-task.txt",
     "requirements/web-service.txt",

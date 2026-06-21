@@ -129,6 +129,32 @@ class ControllerRendererTest(unittest.TestCase):
         )
         self.assertIn("metav1.NewTime(parsed)", rendered)
 
+    def test_statefulset_storage_and_status_behavior_is_rendered(self) -> None:
+        rendered = render_controller(
+            model(
+                ["StatefulSet", "Service"],
+                ["size", "image", "storageSize", "port"],
+                ["phase", "readyReplicas", "message"],
+            )
+        )
+
+        self.assertIn("reconcileStatefulSet", rendered)
+        self.assertIn('serviceName = instance.Name + "-service"', rendered)
+        self.assertIn('"serviceName": serviceName', rendered)
+        self.assertIn('statefulSetSpec["replicas"] = int64(instance.Spec.Size)', rendered)
+        self.assertIn('"volumeClaimTemplates"', rendered)
+        self.assertIn('"storage": instance.Spec.StorageSize', rendered)
+        self.assertIn('"mountPath": "/data"', rendered)
+        self.assertIn('"containerPort": int64(instance.Spec.Port)', rendered)
+        self.assertIn(
+            'unstructured.NestedInt64(statefulSetReadyReplicasObject.Object, "status", "readyReplicas")',
+            rendered,
+        )
+        self.assertIn(
+            'Owns(managedObject("apps", "v1", "StatefulSet", "", ""))',
+            rendered,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
