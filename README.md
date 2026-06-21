@@ -1101,13 +1101,13 @@ python3 scripts/run-regression-tests.py --suite quick
 # quick + 실제 Agent dry-run 1회
 python3 scripts/run-regression-tests.py --suite standard
 
-# standard + Agent 반복 일관성 + kind 멱등성 + profileless 요구사항
+# standard + Agent 반복 일관성 + kind lifecycle + profileless 실제 compile
 python3 scripts/run-regression-tests.py --suite full
 ```
 
 각 실행은 `evaluation/results/regression/<timestamp>/regression-summary.json`과 하위 검증 결과를 남깁니다. CI와 로컬 개발의 기본 검증은 `quick`, 로컬 LLM까지 포함한 변경은 `standard`, Docker/kind가 준비된 릴리스 전 검증은 `full`을 사용합니다.
 
-각 결과 디렉터리의 `performance-trend.json`에는 검사별 실행 시간, 전체 시간, 직전 실행 비교값이 저장됩니다. `quick`에는 requirement RAG fixture의 Hit@3 품질 gate도 포함됩니다.
+각 결과 디렉터리의 `performance-trend.json`에는 검사별 실행 시간, 전체 시간, 직전 실행 비교값이 저장됩니다. `quick`에는 requirement RAG fixture의 Hit@3, Recall@3, MRR 품질 gate도 포함됩니다. `final-evaluation.json`은 요구사항 이해, RAG, artifact, validation, safety, E2E, latency를 하나의 점수로 통합합니다.
 
 GitHub Actions 분리:
 
@@ -1115,7 +1115,7 @@ GitHub Actions 분리:
 - `.github/workflows/standard.yml`: `local-llm` self-hosted runner에서 수동 실행
 - `.github/workflows/full.yml`: `local-llm`, `docker`, `kind` self-hosted runner에서 수동 실행
 
-`full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다.
+`full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
 
 빠른 정책/캐시 검증:
 
@@ -1169,7 +1169,16 @@ python3 agent/evaluation/profileless_requirement_runner.py \
   --run-level fast
 ```
 
-현재 검증 fixture는 Secret, CronJob, Deployment/Service 요구사항을 profile 없이 실행합니다. e2e는 모든 Operator에 대해 범용으로 강제하지 않고, profile/fixture가 준비된 경우에만 수행합니다.
+현재 검증 fixture는 Redis StatefulSet/Service, Secret, CronJob, Deployment/Service, PVC, Namespace label 정책 요구사항을 profile 없이 실행합니다.
+
+실제 Kubebuilder 프로젝트 생성과 Go compile까지 격리된 임시 workspace에서 확인:
+
+```bash
+python3 agent/evaluation/profileless_compile_runner.py \
+  --output-dir evaluation/results/profileless-compile/local
+```
+
+이 검증은 각 요구사항마다 `spec 생성 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
 
 ## 스펙 기반 Kubebuilder Scaffold
 
