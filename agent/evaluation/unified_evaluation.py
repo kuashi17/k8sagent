@@ -52,6 +52,11 @@ def write_unified_evaluation(
 
 def build_unified_evaluation(root: Path) -> dict[str, Any]:
     profileless = read_json(root / "profileless" / "profileless-results.json")
+    profileless_compile = read_json(
+        root
+        / "profileless-compile"
+        / "profileless-compile-results.json"
+    )
     rag = read_json(root / "rag-quality.json")
     reliability = read_json(
         root / "reliability" / "reliability-test-results.json"
@@ -68,8 +73,13 @@ def build_unified_evaluation(root: Path) -> dict[str, Any]:
     sections = {
         "requirementUnderstanding": requirement_section(profileless),
         "ragQuality": rag_section(rag),
-        "artifactQuality": artifact_section(profileless),
-        "validationSuccess": validation_section(regression, profileless),
+        "artifactQuality": artifact_section(
+            profileless_compile or profileless
+        ),
+        "validationSuccess": validation_section(
+            regression,
+            profileless_compile or profileless,
+        ),
         "safetyReliability": reliability_section(reliability),
         "e2eSuccess": e2e_section(profile_kind, kind_idempotency),
         "latency": latency_section(performance),
@@ -191,6 +201,42 @@ def e2e_section(
         if item.get("status") != "skipped"
     ]
     evidence.extend(item.get("status") == "passed" for item in profile_results)
+    lifecycle_checks = []
+    for item in profile_results:
+        checks = (
+            (item.get("deploymentSummary") or {}).get("checks") or {}
+        )
+        lifecycle = [
+            bool((checks.get("lifecycleIdempotency") or {}).get(
+                "reapplyStable"
+            )),
+            all(
+                assertion.get("passed")
+                for assertion in (
+                    (checks.get("lifecycleUpdate") or {}).get(
+                        "assertions"
+                    )
+                    or []
+                )
+            )
+            if checks.get("lifecycleUpdate")
+            else True,
+            all(
+                result.get("passed")
+                for result in (
+                    (checks.get("lifecycleDelete") or {}).get(
+                        "managedResources"
+                    )
+                    or {}
+                ).values()
+            )
+            if checks.get("lifecycleDelete")
+            else False,
+            bool((checks.get("lifecycleRestore") or {}).get("restored")),
+        ]
+        if checks:
+            lifecycle_checks.extend(lifecycle)
+    evidence.extend(lifecycle_checks)
     if idempotency and not idempotency.get("skipped"):
         evidence.extend(
             [
@@ -204,6 +250,7 @@ def e2e_section(
         sum(1 for item in evidence if item),
         len(evidence),
         profileRuns=len(profile_results),
+        lifecycleChecks=len(lifecycle_checks),
     )
 
 

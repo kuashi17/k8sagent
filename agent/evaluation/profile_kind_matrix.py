@@ -49,6 +49,7 @@ def main() -> int:
             text=True,
             capture_output=True,
         )
+        deployment_summary = parse_summary(completed.stdout)
         result = {
             "profile": relative(path),
             "status": "passed" if completed.returncode == 0 else "failed",
@@ -56,6 +57,7 @@ def main() -> int:
             "command": command,
             "stdoutTail": completed.stdout[-4000:],
             "stderrTail": completed.stderr[-4000:],
+            "deploymentSummary": deployment_summary,
         }
         results.append(result)
         print(
@@ -126,6 +128,28 @@ def relative(path: Path) -> str:
         return str(path.relative_to(REPO_ROOT))
     except ValueError:
         return str(path)
+
+
+def parse_summary(stdout: str) -> dict[str, Any]:
+    decoder = json.JSONDecoder()
+    objects = []
+    for index, character in enumerate(stdout):
+        if character != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(stdout[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            objects.append(value)
+    summaries = [
+        item
+        for item in objects
+        if "status" in item and "checks" in item
+    ]
+    if summaries:
+        return summaries[-1]
+    return objects[0] if objects else {}
 
 
 if __name__ == "__main__":

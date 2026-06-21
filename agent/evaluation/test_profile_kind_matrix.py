@@ -5,10 +5,18 @@ from __future__ import annotations
 import json
 import unittest
 
-from agent.evaluation.profile_kind_matrix import build_command
+from agent.evaluation.profile_kind_matrix import build_command, parse_summary
 
 
 class ProfileKindMatrixTest(unittest.TestCase):
+    def test_last_json_object_is_used_as_deployment_summary(self) -> None:
+        summary = parse_summary(
+            'progress\n{"status":"succeeded","checks":{"ok":true}}\n'
+        )
+
+        self.assertEqual(summary["status"], "succeeded")
+        self.assertTrue(summary["checks"]["ok"])
+
     def test_profile_capability_becomes_runner_command(self) -> None:
         command = build_command(
             {

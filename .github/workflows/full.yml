@@ -11,6 +11,8 @@ jobs:
       - run: docker info
       - run: python3 -m py_compile $(git ls-files '*.py')
       - run: python3 scripts/run-regression-tests.py --suite full --output-dir evaluation/results/regression/ci-full
+      - run: test -f evaluation/results/regression/ci-full/profileless-compile/profileless-compile-results.json
+      - run: test -f evaluation/results/regression/ci-full/final-evaluation.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -215,11 +215,11 @@ def collect_behavior_evidence(
         item
         for item in managed
         if re.search(
-            rf"\.Owns\([^)]*{re.escape(item)}",
+            rf"(?:\.|\b)Owns\([^)]*{re.escape(item)}",
             controller,
         )
         or re.search(
-            rf"\.Owns\(&[A-Za-z0-9_.]*{re.escape(item)}\{{",
+            rf"(?:\.|\b)Owns\(&[A-Za-z0-9_.]*{re.escape(item)}\{{",
             controller,
         )
     ]

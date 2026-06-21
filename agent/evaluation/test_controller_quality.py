@@ -75,6 +75,27 @@ class ControllerQualityTest(unittest.TestCase):
             ["readyReplicas"],
         )
 
+    def test_behavior_evidence_accepts_multiline_method_chain(self) -> None:
+        evidence = collect_behavior_evidence(
+            """
+            ctrl.NewControllerManagedBy(mgr).
+                For(&appsv1.Example{}).
+                Owns(managedObject("apps", "v1", "Deployment", "", "")).
+                Complete(r)
+            """,
+            {
+                "controller": {
+                    "managedResources": ["Deployment"]
+                },
+                "statusFields": [],
+            },
+        )
+
+        self.assertEqual(
+            evidence["watchRegistrations"],
+            ["Deployment"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

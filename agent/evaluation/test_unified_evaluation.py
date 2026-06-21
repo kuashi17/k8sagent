@@ -15,6 +15,8 @@ class UnifiedEvaluationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "reliability").mkdir()
+            (root / "profileless-compile").mkdir()
+            (root / "profile-kind").mkdir()
             (root / "rag-quality.json").write_text(
                 json.dumps(
                     {
@@ -29,6 +31,63 @@ class UnifiedEvaluationTest(unittest.TestCase):
                     {
                         "tests": [
                             {"name": "allowlist", "passed": True}
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (
+                root
+                / "profileless-compile"
+                / "profileless-compile-results.json"
+            ).write_text(
+                json.dumps(
+                    {
+                        "requirements": [
+                            {
+                                "passed": True,
+                                "kind": "WebService",
+                                "controllerQuality": {
+                                    "status": "passed",
+                                    "score": 100,
+                                    "criteria": {
+                                        "testsPassed": {"passed": True}
+                                    },
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (
+                root
+                / "profile-kind"
+                / "profile-kind-matrix.json"
+            ).write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "status": "passed",
+                                "deploymentSummary": {
+                                    "checks": {
+                                        "lifecycleIdempotency": {
+                                            "reapplyStable": True
+                                        },
+                                        "lifecycleDelete": {
+                                            "managedResources": {
+                                                "job/sample": {
+                                                    "passed": True
+                                                }
+                                            }
+                                        },
+                                        "lifecycleRestore": {
+                                            "restored": True
+                                        },
+                                    }
+                                },
+                            }
                         ]
                     }
                 ),
@@ -50,6 +109,8 @@ class UnifiedEvaluationTest(unittest.TestCase):
             },
         )
         self.assertEqual(payload["ragQuality"]["score"], 100.0)
+        self.assertEqual(payload["artifactQuality"]["score"], 100.0)
+        self.assertEqual(payload["e2eSuccess"]["score"], 100.0)
         self.assertEqual(payload["safetyReliability"]["score"], 100.0)
 
 

@@ -152,6 +152,17 @@ def run_suite(suite: str, output_dir: Path) -> int:
                 ],
             )
         )
+        checks.append(
+            run_check(
+                "profileless-compile",
+                [
+                    sys.executable,
+                    "agent/evaluation/profileless_compile_runner.py",
+                    "--output-dir",
+                    str(output_dir / "profileless-compile"),
+                ],
+            )
+        )
 
     summary = {
         "suite": suite,
