@@ -12,6 +12,7 @@ from agent.execution_engine import (
     build_supported_calls,
     execute_planned_tools,
     order_validated_tool_calls,
+    execution_result,
 )
 
 
@@ -31,6 +32,17 @@ def context(target: str = "workspace/generated-operators/example") -> dict:
 
 
 class ExecutionEngineTest(unittest.TestCase):
+    def test_execution_result_is_validated_at_boundary(self) -> None:
+        result = execution_result([], [], [], [], 0.1, 0.2)
+
+        self.assertEqual(
+            result["timings"],
+            {
+                "toolValidationSeconds": 0.1,
+                "toolExecutionSeconds": 0.2,
+            },
+        )
+
     def test_tool_order_is_deterministic(self) -> None:
         calls = [
             {"tool": "validation"},

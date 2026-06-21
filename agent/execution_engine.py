@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from agent.contracts import ToolResult
+from agent.contracts import ExecutionResult, ToolResult
 from agent.tool_validator import validate_planned_tool_calls
 from agent.tools import langchain_wrappers as tools
 
@@ -247,16 +247,18 @@ def execution_result(
     validation_seconds: float,
     execution_seconds: float,
 ) -> dict[str, Any]:
-    return {
-        "validatedToolCalls": validated,
-        "rejectedToolCalls": rejected,
-        "deferredToolCalls": deferred,
-        "toolResults": results,
-        "timings": {
-            "toolValidationSeconds": validation_seconds,
-            "toolExecutionSeconds": execution_seconds,
-        },
-    }
+    return ExecutionResult.model_validate(
+        {
+            "validatedToolCalls": validated,
+            "rejectedToolCalls": rejected,
+            "deferredToolCalls": deferred,
+            "toolResults": results,
+            "timings": {
+                "toolValidationSeconds": validation_seconds,
+                "toolExecutionSeconds": execution_seconds,
+            },
+        }
+    ).to_dict()
 
 
 def elapsed(started: float) -> float:

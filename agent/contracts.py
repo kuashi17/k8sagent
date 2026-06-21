@@ -62,6 +62,19 @@ class ToolResult(AgentContract):
     deploymentSummary: dict[str, Any] = Field(default_factory=dict)
 
 
+class ExecutionTimings(AgentContract):
+    toolValidationSeconds: float = Field(ge=0)
+    toolExecutionSeconds: float = Field(ge=0)
+
+
+class ExecutionResult(AgentContract):
+    validatedToolCalls: list[ToolCall]
+    rejectedToolCalls: list[dict[str, Any]]
+    deferredToolCalls: list[dict[str, Any]]
+    toolResults: list[ToolResult]
+    timings: ExecutionTimings
+
+
 class FinalEvaluation(AgentContract):
     executionDecision: str
     completedSteps: list[Any]

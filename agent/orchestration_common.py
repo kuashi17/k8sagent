@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from agent.contracts import FinalEvaluation
 from agent.llm.client import config_from_env
 
 
@@ -81,7 +82,7 @@ def rule_based_final_result(
     else:
         decision = "succeeded"
 
-    output = {
+    output = FinalEvaluation.model_validate({
         "executionDecision": decision,
         "completedSteps": [
             str(item.get("tool"))
@@ -115,7 +116,7 @@ def rule_based_final_result(
         "beginnerSummary": (
             "A deterministic summary was built from validated Tool exit codes."
         ),
-    }
+    }).to_dict()
     cfg = config_from_env(purpose="final")
     return {
         "requestedPlanner": "llm",

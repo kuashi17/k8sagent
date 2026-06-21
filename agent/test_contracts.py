@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from agent.contracts import (
     AgentSummary,
+    ExecutionResult,
     FailureContext,
     FinalEvaluation,
     RecoveryPlan,
@@ -61,6 +62,7 @@ class ContractTest(unittest.TestCase):
         for contract in (
             RequirementPlan,
             ToolResult,
+            ExecutionResult,
             FinalEvaluation,
             FailureContext,
             RecoveryPlan,
@@ -68,6 +70,21 @@ class ContractTest(unittest.TestCase):
         ):
             schema = contract.model_json_schema()
             self.assertEqual(schema["type"], "object")
+
+    def test_execution_result_rejects_negative_timings(self) -> None:
+        with self.assertRaises(ValidationError):
+            ExecutionResult.model_validate(
+                {
+                    "validatedToolCalls": [],
+                    "rejectedToolCalls": [],
+                    "deferredToolCalls": [],
+                    "toolResults": [],
+                    "timings": {
+                        "toolValidationSeconds": -1.0,
+                        "toolExecutionSeconds": 0.0,
+                    },
+                }
+            )
 
 
 if __name__ == "__main__":
