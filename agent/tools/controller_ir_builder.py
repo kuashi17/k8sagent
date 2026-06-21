@@ -120,7 +120,7 @@ STATUS_RESOURCE_FIELDS = {
     "observedNamespace": ("Namespace", "metadata.name", "resource-name"),
     "readyReplicas": (
         "Deployment",
-        "status.availableReplicas",
+        "status.readyReplicas",
         "direct",
     ),
     "lastScheduleTime": (
@@ -135,16 +135,21 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
     api = model["api"]
     fields = field_names(model.get("specFields") or [])
     status_fields = field_names(model.get("statusFields") or [])
+    status_field_types = field_types(model.get("statusFields") or [])
     explicit_mappings = parse_explicit_mappings(
         (model.get("controller") or {}).get("fieldMappings") or []
     )
     resources = []
     seen = set()
+    unsupported = []
     for raw_kind in (
         (model.get("controller") or {}).get("managedResources") or []
     ):
         defaults = RESOURCE_DEFAULTS.get(str(raw_kind))
-        if not defaults or defaults.canonical_kind in seen:
+        if not defaults:
+            unsupported.append(str(raw_kind))
+            continue
+        if defaults.canonical_kind in seen:
             continue
         seen.add(defaults.canonical_kind)
         resources.append(
@@ -152,8 +157,16 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
                 defaults,
                 fields,
                 status_fields,
+                status_field_types,
                 explicit_mappings,
             )
+        )
+    if unsupported:
+        supported = ", ".join(sorted(RESOURCE_DEFAULTS))
+        raise ValueError(
+            "unsupported managed resources: "
+            + ", ".join(unsupported)
+            + f"; supported resources: {supported}"
         )
     return ControllerGenerationIR(
         project_module=str((model.get("project") or {}).get("module") or ""),
@@ -162,6 +175,7 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
         kind=str(api.get("kind") or ""),
         spec_fields=sorted(fields),
         status_fields=sorted(status_fields),
+        status_field_types=status_field_types,
         managed_resources=resources,
         rbac_rules=[
             RBACRule(
@@ -179,6 +193,7 @@ def build_managed_resource(
     defaults: ResourceDefaults,
     fields: set[str],
     status_fields: set[str],
+    status_field_types: dict[str, str],
     explicit_mappings: list[FieldMapping],
 ) -> ManagedResourceSpec:
     kind = defaults.canonical_kind
@@ -200,7 +215,11 @@ def build_managed_resource(
         deletion_policy=defaults.deletion_policy,
         watch=ResourceCapability.WATCH in capabilities,
         field_mappings=mappings,
-        status_mappings=status_mappings_for(kind, status_fields),
+        status_mappings=status_mappings_for(
+            kind,
+            status_fields,
+            status_field_types,
+        ),
         disable_when=(
             "spec.enabled == false"
             if kind in {"ConfigMap", "Secret"} and "enabled" in fields
@@ -262,9 +281,10 @@ def mappings_for(
 def status_mappings_for(
     kind: str,
     status_fields: set[str],
+    status_field_types: dict[str, str],
 ) -> list[StatusMapping]:
     result = []
-    for field in status_fields:
+    for field in sorted(status_fields):
         mapping = STATUS_RESOURCE_FIELDS.get(field)
         if not mapping or mapping[0] != kind:
             continue
@@ -273,6 +293,7 @@ def status_mappings_for(
                 source_path=mapping[1],
                 target_path=f"status.{field}",
                 transform=mapping[2],
+                target_type=status_field_types.get(field, "string"),
             )
         )
     return result
@@ -309,6 +330,14 @@ def target_resource(path: str) -> str:
 def field_names(values: list[Any]) -> set[str]:
     return {
         str(item.get("name"))
+        for item in values
+        if isinstance(item, dict) and item.get("name")
+    }
+
+
+def field_types(values: list[Any]) -> dict[str, str]:
+    return {
+        str(item.get("name")): str(item.get("type") or "string")
         for item in values
         if isinstance(item, dict) and item.get("name")
     }

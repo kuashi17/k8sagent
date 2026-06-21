@@ -59,6 +59,7 @@ class StatusMapping(IRModel):
     source_path: str
     target_path: str
     transform: str = "direct"
+    target_type: str = "string"
 
 
 class RBACRule(IRModel):
@@ -90,6 +91,7 @@ class ControllerGenerationIR(IRModel):
     kind: str
     spec_fields: list[str]
     status_fields: list[str]
+    status_field_types: dict[str, str] = Field(default_factory=dict)
     managed_resources: list[ManagedResourceSpec]
     rbac_rules: list[RBACRule]
 

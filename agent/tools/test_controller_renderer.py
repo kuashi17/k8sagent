@@ -17,7 +17,19 @@ def model(resources, spec_fields, status_fields):
         },
         "controller": {"managedResources": resources},
         "specFields": [{"name": name} for name in spec_fields],
-        "statusFields": [{"name": name} for name in status_fields],
+        "statusFields": [
+            {
+                "name": name,
+                "type": (
+                    "int32"
+                    if name == "readyReplicas"
+                    else "metav1.Time"
+                    if name == "lastScheduleTime"
+                    else "string"
+                ),
+            }
+            for name in status_fields
+        ],
         "rbacResources": [
             {
                 "apiGroup": "apps.sample.io",
@@ -38,6 +50,7 @@ class ControllerRendererTest(unittest.TestCase):
                     "phase",
                     "deploymentName",
                     "serviceName",
+                    "readyReplicas",
                     "message",
                 ],
             )
@@ -47,6 +60,22 @@ class ControllerRendererTest(unittest.TestCase):
         self.assertIn("CreateOrUpdate", rendered)
         self.assertIn("Status().Update", rendered)
         self.assertIn("SetControllerReference", rendered)
+        self.assertIn(
+            'unstructured.NestedInt64(deploymentReadyReplicasObject.Object, "status", "readyReplicas")',
+            rendered,
+        )
+        self.assertIn(
+            'if names["Deployment"] != ""',
+            rendered,
+        )
+        self.assertIn(
+            'Owns(managedObject("apps", "v1", "Deployment", "", ""))',
+            rendered,
+        )
+        self.assertIn(
+            'Owns(managedObject("", "v1", "Service", "", ""))',
+            rendered,
+        )
 
     def test_namespace_policy_updates_labels_without_owner_reference(self) -> None:
         rendered = render_controller(
@@ -65,6 +94,10 @@ class ControllerRendererTest(unittest.TestCase):
         self.assertIn("r.Update(", namespace_function)
         self.assertNotIn("CreateOrUpdate", namespace_function)
         self.assertNotIn("setOwner(", namespace_function)
+        self.assertNotIn(
+            'Owns(managedObject("", "v1", "Namespace", "", ""))',
+            rendered,
+        )
 
     def test_enabled_false_deletes_managed_secret(self) -> None:
         rendered = render_controller(
@@ -76,6 +109,25 @@ class ControllerRendererTest(unittest.TestCase):
         )
         self.assertIn("if !instance.Spec.Enabled", rendered)
         self.assertIn("r.Delete(ctx, object)", rendered)
+
+    def test_metav1_time_status_mapping_adds_time_conversion(self) -> None:
+        rendered = render_controller(
+            model(
+                ["CronJob"],
+                ["schedule", "image"],
+                ["phase", "cronJobName", "lastScheduleTime", "message"],
+            )
+        )
+        self.assertIn('"time"', rendered)
+        self.assertIn(
+            'metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"',
+            rendered,
+        )
+        self.assertIn(
+            'unstructured.NestedString(cronJobLastScheduleTimeObject.Object, "status", "lastScheduleTime")',
+            rendered,
+        )
+        self.assertIn("metav1.NewTime(parsed)", rendered)
 
 
 if __name__ == "__main__":

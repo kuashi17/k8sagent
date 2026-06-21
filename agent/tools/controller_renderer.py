@@ -46,7 +46,7 @@ def render_controller(model: dict[str, Any]) -> str:
 import (
 \t"context"
 \t"fmt"
-\t"reflect"
+\t"reflect"{render_status_imports(ir)}
 
 \tapierrors "k8s.io/apimachinery/pkg/api/errors"
 \t"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -109,7 +109,7 @@ func copyStringMap(input map[string]string) map[string]string {{
 
 func (r *{kind}Reconciler) SetupWithManager(mgr ctrl.Manager) error {{
 \treturn ctrl.NewControllerManagedBy(mgr).
-\t\tFor(&{alias}.{kind}{{}}).
+\t\tFor(&{alias}.{kind}{{}}){render_owned_watches(ir)}.
 \t\tComplete(r)
 }}
 '''
@@ -382,13 +382,16 @@ def render_status_function(
         assignments.append("\tinstance.Status.Message = message")
     for resource in ir.managed_resources:
         for mapping in resource.status_mappings:
-            if mapping.transform != "resource-name":
-                continue
             field = mapping.target_path.removeprefix("status.")
-            assignments.append(
-                f'\tinstance.Status.{go_name(field)} = '
-                f'names["{resource.kind}"]'
-            )
+            if mapping.transform == "resource-name":
+                assignments.append(
+                    f'\tinstance.Status.{go_name(field)} = '
+                    f'names["{resource.kind}"]'
+                )
+            else:
+                assignments.extend(
+                    render_direct_status_mapping(resource, mapping, field)
+                )
     return f'''func (r *{kind}Reconciler) updateStatus(ctx context.Context, instance *{alias}.{kind}, phase, message string, names map[string]string) error {{
 \tbefore := instance.DeepCopy()
 {chr(10).join(assignments)}
@@ -398,6 +401,137 @@ def render_status_function(
 \treturn r.Status().Update(ctx, instance)
 }}
 '''
+
+
+def render_direct_status_mapping(
+    resource: ManagedResourceSpec,
+    mapping: Any,
+    field: str,
+) -> list[str]:
+    group, version = split_api_version(resource.api_version)
+    variable = f"{resource.resource_id}{go_name(field)}"
+    namespace = (
+        '""'
+        if resource.scope == ResourceScope.CLUSTER
+        else "instance.Namespace"
+    )
+    path = ", ".join(
+        f'"{part}"'
+        for part in mapping.source_path.split(".")
+        if part
+    )
+    lines = [
+        f'\tif names["{resource.kind}"] != "" {{',
+        (
+            f'\t\t{variable}Object := managedObject("{group}", "{version}", '
+            f'"{resource.kind}", {namespace}, names["{resource.kind}"])'
+        ),
+        (
+            f"\t\tif err := r.Get(ctx, client.ObjectKey{{Namespace: {namespace}, "
+            f'Name: names["{resource.kind}"]}}, {variable}Object); err == nil {{'
+        ),
+    ]
+    lines.extend(
+        render_status_value_assignment(
+            variable,
+            path,
+            f"instance.Status.{go_name(field)}",
+            mapping.target_type,
+        )
+    )
+    lines.extend(
+        [
+            "\t\t} else if !apierrors.IsNotFound(err) {",
+            "\t\t\treturn err",
+            "\t\t}",
+            "\t}",
+        ]
+    )
+    return lines
+
+
+def render_status_value_assignment(
+    variable: str,
+    path: str,
+    target: str,
+    target_type: str,
+) -> list[str]:
+    normalized = target_type.strip()
+    if normalized in {"int", "int32", "int64"}:
+        assignment = (
+            f"int32({variable}Value)"
+            if normalized in {"int", "int32"}
+            else f"{variable}Value"
+        )
+        return [
+            (
+                f"\t\t\t{variable}Value, found, nestedErr := "
+                f"unstructured.NestedInt64({variable}Object.Object, {path})"
+            ),
+            "\t\t\tif nestedErr != nil { return nestedErr }",
+            f"\t\t\tif found {{ {target} = {assignment} }}",
+        ]
+    if normalized in {"bool", "boolean"}:
+        return [
+            (
+                f"\t\t\t{variable}Value, found, nestedErr := "
+                f"unstructured.NestedBool({variable}Object.Object, {path})"
+            ),
+            "\t\t\tif nestedErr != nil { return nestedErr }",
+            f"\t\t\tif found {{ {target} = {variable}Value }}",
+        ]
+    if normalized == "metav1.Time":
+        return [
+            (
+                f"\t\t\t{variable}Value, found, nestedErr := "
+                f"unstructured.NestedString({variable}Object.Object, {path})"
+            ),
+            "\t\t\tif nestedErr != nil { return nestedErr }",
+            "\t\t\tif found {",
+            (
+                f"\t\t\t\tparsed, parseErr := time.Parse(time.RFC3339, "
+                f"{variable}Value)"
+            ),
+            "\t\t\t\tif parseErr != nil { return parseErr }",
+            f"\t\t\t\t{target} = metav1.NewTime(parsed)",
+            "\t\t\t}",
+        ]
+    return [
+        (
+            f"\t\t\t{variable}Value, found, nestedErr := "
+            f"unstructured.NestedString({variable}Object.Object, {path})"
+        ),
+        "\t\t\tif nestedErr != nil { return nestedErr }",
+        f"\t\t\tif found {{ {target} = {variable}Value }}",
+    ]
+
+
+def render_owned_watches(ir: ControllerGenerationIR) -> str:
+    lines = []
+    for resource in ir.managed_resources:
+        if not resource.watch:
+            continue
+        if resource.ownership != OwnershipPolicy.OWNER_REFERENCE:
+            continue
+        group, version = split_api_version(resource.api_version)
+        lines.append(
+            '.\n\t\tOwns(managedObject('
+            f'"{group}", "{version}", "{resource.kind}", "", ""))'
+        )
+    return "".join(lines)
+
+
+def render_status_imports(ir: ControllerGenerationIR) -> str:
+    if not any(
+        mapping.target_type == "metav1.Time"
+        for resource in ir.managed_resources
+        for mapping in resource.status_mappings
+    ):
+        return ""
+    return (
+        '\n\t"time"\n'
+        '\n\tmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"'
+    )
 
 
 def render_marker_block(ir: ControllerGenerationIR) -> str:

@@ -27,7 +27,19 @@ def model(resources, spec_fields, status_fields, field_mappings=None):
             "fieldMappings": field_mappings or [],
         },
         "specFields": [{"name": name} for name in spec_fields],
-        "statusFields": [{"name": name} for name in status_fields],
+        "statusFields": [
+            {
+                "name": name,
+                "type": (
+                    "int32"
+                    if name == "readyReplicas"
+                    else "metav1.Time"
+                    if name == "lastScheduleTime"
+                    else "string"
+                ),
+            }
+            for name in status_fields
+        ],
         "rbacResources": [
             {
                 "apiGroup": "apps",
@@ -79,6 +91,8 @@ class ControllerIRBuilderTest(unittest.TestCase):
         self.assertTrue(
             any(
                 item.target_path == "status.readyReplicas"
+                and item.source_path == "status.readyReplicas"
+                and item.target_type == "int32"
                 for item in deployment.status_mappings
             )
         )
@@ -122,6 +136,19 @@ class ControllerIRBuilderTest(unittest.TestCase):
             secret.name.fallback_template,
             "{metadata.name}-secret",
         )
+
+    def test_unsupported_managed_resource_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "unsupported managed resources: StatefulSet",
+        ):
+            build_controller_ir(
+                model(
+                    ["StatefulSet"],
+                    ["image"],
+                    ["phase"],
+                )
+            )
 
 
 if __name__ == "__main__":
