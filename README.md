@@ -1169,7 +1169,18 @@ python3 agent/evaluation/profileless_requirement_runner.py \
   --run-level fast
 ```
 
-현재 검증 fixture는 Redis StatefulSet/Service, Secret, CronJob, Deployment/Service, PVC, Namespace label 정책 요구사항을 profile 없이 실행합니다.
+이 runner는 Agent에 `--disable-profile-hints`를 전달합니다. 이 모드에서는 profile 선택뿐 아니라 profile 후보 탐색도 수행하지 않으므로 LLM planning과 Tool 인자가 요구사항 및 RAG 문서만 사용합니다.
+
+개별 요구사항도 같은 정책으로 실행할 수 있습니다.
+
+```bash
+python3 agent/langchain_agent.py \
+  --requirement requirements/web-service.txt \
+  --disable-profile-hints \
+  --run-level fast
+```
+
+`--profile`과 `--disable-profile-hints`는 동시에 사용할 수 없습니다. 현재 검증 fixture는 Redis StatefulSet/Service, Secret, CronJob, Deployment/Service, PVC, Namespace label 정책 요구사항을 진짜 profileless 조건으로 실행합니다.
 
 실제 Kubebuilder 프로젝트 생성과 Go compile까지 격리된 임시 workspace에서 확인:
 

@@ -74,10 +74,21 @@ def build_requirement_summary(
         "selectedProfile": context["selectedProfile"],
         "profileCandidates": context["profileCandidates"],
         "profilePolicy": {
-            "role": "hint-only",
+            "role": (
+                "disabled"
+                if context["selectedProfile"].get("selectionMode")
+                == "disabled"
+                else "hint-only"
+            ),
             "message": (
-                "Profiles are optional hints for defaults, examples, and validation rules. "
-                "The Agent plans from the current requirement text first."
+                "Automatic profile hints are disabled for this run."
+                if context["selectedProfile"].get("selectionMode")
+                == "disabled"
+                else (
+                    "Profiles are optional hints for defaults, examples, "
+                    "and validation rules. The Agent plans from the current "
+                    "requirement text first."
+                )
             ),
         },
         "llmPlan": planner_result.get("llmOutput") or {},

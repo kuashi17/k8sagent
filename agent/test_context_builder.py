@@ -101,6 +101,31 @@ class ContextBuilderTest(unittest.TestCase):
             "workspace/generated-operators/trainingjob-operator",
         )
 
+    def test_profileless_context_disables_automatic_profile_selection(
+        self,
+    ) -> None:
+        context = build_requirement_context(
+            Path("requirements/web-service.txt"),
+            REQUIREMENT,
+            None,
+            {},
+            "workspace/generated-operators",
+            lambda query, limit, purpose: {"selectedContext": []},
+            2,
+            allow_profile_hints=False,
+        )
+
+        self.assertEqual(
+            context["selectedProfile"]["selectionMode"],
+            "disabled",
+        )
+        self.assertEqual(context["selectedProfile"]["path"], "")
+        self.assertTrue(
+            context["targetProjectDir"].endswith(
+                "web-service-operator"
+            )
+        )
+
     def test_extracts_only_well_formed_planner_collections(self) -> None:
         data = {"reasoning": ["one"], "toolCalls": [{"tool": "validation"}, "bad"]}
         self.assertEqual(extract_list(data, "reasoning"), ["one"])

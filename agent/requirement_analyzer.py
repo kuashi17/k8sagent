@@ -82,13 +82,35 @@ def select_profile_hint(
     explicit_profile_path: str | None,
     explicit_profile: dict[str, Any] | None,
     profiles_dir: Path | str = "profiles",
+    allow_auto_hint: bool = True,
 ) -> dict[str, Any]:
-    candidates = rank_profile_candidates(requirement_text, profiles_dir)
     if explicit_profile_path and explicit_profile:
+        candidates = rank_profile_candidates(
+            requirement_text,
+            profiles_dir,
+        )
         selected = summarize_profile(explicit_profile_path, explicit_profile)
         selected["selectionMode"] = "explicit-hint"
         selected["reason"] = "User provided this profile path; the Agent still plans from the requirement text."
         return {"selectedProfile": selected, "profileCandidates": candidates}
+    if not allow_auto_hint:
+        return {
+            "selectedProfile": {
+                "path": "",
+                "name": "",
+                "description": "",
+                "managedResources": [],
+                "referencedResources": [],
+                "kindDeployment": {},
+                "selectionMode": "disabled",
+                "reason": (
+                    "Automatic profile hints were disabled; the generic "
+                    "Agent core must plan only from the current requirement."
+                ),
+            },
+            "profileCandidates": [],
+        }
+    candidates = rank_profile_candidates(requirement_text, profiles_dir)
     if candidates and is_strong_profile_match(candidates[0], requirement_text):
         selected = dict(candidates[0])
         selected["selectionMode"] = "auto-hint"

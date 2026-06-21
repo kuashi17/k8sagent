@@ -53,6 +53,7 @@ def main() -> int:
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "runLevel": args.run_level,
         "mode": args.mode,
+        "profileHintsDisabled": True,
         "status": "passed" if all(item["passed"] for item in results) else "failed",
         "requirements": results,
     }
@@ -77,6 +78,7 @@ def run_requirement(
         mode,
         "--run-level",
         run_level,
+        "--disable-profile-hints",
     ]
     if mode == "execute":
         command.append("--execute")
@@ -102,7 +104,8 @@ def run_requirement(
     passed = (
         result.returncode == 0
         and not errors
-        and selected_profile.get("selectionMode") in {"none", "auto-hint", "explicit-hint"}
+        and selected_profile.get("selectionMode") == "disabled"
+        and not selected_profile.get("path")
         and summary.get("requirementSummary", {}).get("kind")
         and summary.get("validatedToolCalls")
         and not summary.get("rejectedToolCalls")
@@ -171,7 +174,16 @@ def render_report(summary: dict[str, Any]) -> str:
             )
             + " |"
         )
-    lines.extend(["", "Profile mode `none` means the generic Agent core planned from the requirement without a profile hint."])
+    lines.extend(
+        [
+            "",
+            (
+                "Profile mode `disabled` means profile discovery and "
+                "selection were both disabled; planning used only the "
+                "requirement and retrieved knowledge."
+            ),
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 

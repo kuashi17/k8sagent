@@ -39,6 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--analyze-log", help="Alias of --log-dir.")
     parser.add_argument("--profile", help="Profile YAML path.")
     parser.add_argument(
+        "--disable-profile-hints",
+        action="store_true",
+        help=(
+            "Disable automatic profile selection and force generic "
+            "requirement-only planning."
+        ),
+    )
+    parser.add_argument(
         "--planner",
         default="llm",
         choices=["llm"],
@@ -105,6 +113,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.profile and args.disable_profile_hints:
+        raise SystemExit(
+            "--profile and --disable-profile-hints cannot be used together."
+        )
     if args.analyze_log and not args.log_dir:
         args.log_dir = args.analyze_log
     if args.log_dir:

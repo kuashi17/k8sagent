@@ -27,11 +27,17 @@ def build_requirement_context(
     workspace: str,
     retrieve: RetrievalFunction,
     rag_limit: int,
+    allow_profile_hints: bool = True,
 ) -> dict[str, Any]:
     retrieval_started = time.perf_counter()
     summary = summarize_requirement(requirement_text)
     intent = analyze_requirement_intent(requirement_text)
-    profile_hint = select_profile_hint(requirement_text, profile_path, profile)
+    profile_hint = select_profile_hint(
+        requirement_text,
+        profile_path,
+        profile,
+        allow_auto_hint=allow_profile_hints,
+    )
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
     selected_profile = profile_hint["selectedProfile"]

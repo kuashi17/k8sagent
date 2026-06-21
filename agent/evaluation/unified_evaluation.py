@@ -102,6 +102,12 @@ def requirement_section(data: dict[str, Any]) -> dict[str, Any]:
         len(items),
         requirements=len(items),
         kinds=[item.get("kind") for item in items],
+        profileModes=[
+            item.get("profileSelectionMode") for item in items
+        ],
+        profileHintsDisabled=bool(
+            data.get("profileHintsDisabled")
+        ),
     )
 
 

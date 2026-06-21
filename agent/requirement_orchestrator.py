@@ -66,6 +66,9 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
         args.workspace,
         perform_retrieval,
         requirement_rag_limit(),
+        allow_profile_hints=not bool(
+            getattr(args, "disable_profile_hints", False)
+        ),
     )
     context["kindDeploymentRequested"] = bool(args.kind_deploy)
     context["resumeExisting"] = bool(args.resume_existing)
