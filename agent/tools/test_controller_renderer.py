@@ -76,6 +76,18 @@ class ControllerRendererTest(unittest.TestCase):
             'Owns(managedObject("", "v1", "Service", "", ""))',
             rendered,
         )
+        self.assertIn(
+            '"matchLabels": nestedLabels',
+            rendered,
+        )
+        self.assertIn(
+            '"selector": stringMapToInterface(labels)',
+            rendered,
+        )
+        self.assertIn(
+            "func stringMapToInterface",
+            rendered,
+        )
 
     def test_namespace_policy_updates_labels_without_owner_reference(self) -> None:
         rendered = render_controller(

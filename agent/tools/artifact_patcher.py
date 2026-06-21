@@ -567,7 +567,12 @@ def sample_value(field_type: str, name: str) -> Any:
         return [f"sample-{name}"]
     if normalized.startswith("map[") or normalized in ("object", "map"):
         return {"sample": "value"}
-    return f"sample-{name}"
+    return f"sample-{kebab_case(name)}"
+
+
+def kebab_case(value: str) -> str:
+    separated = re.sub(r"(?<!^)(?=[A-Z])", "-", value)
+    return re.sub(r"[^a-z0-9-]+", "-", separated.lower()).strip("-")
 
 
 def infer_domain(api_group: str, group: str) -> str:

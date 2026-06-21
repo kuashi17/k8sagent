@@ -1191,6 +1191,15 @@ python3 agent/evaluation/profileless_compile_runner.py \
 
 이 검증은 각 요구사항마다 `spec 생성 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
 
+생성된 profileless WebService Operator를 실제 kind에서 lifecycle까지 확인:
+
+```bash
+python3 agent/evaluation/profileless_kind_runner.py \
+  --output-dir evaluation/results/profileless-kind/local
+```
+
+이 검증은 임시 workspace에서 WebService Operator를 새로 생성·컴파일한 뒤 Deployment와 Service 생성, 재적용 멱등성, replica update, Custom Resource 삭제 시 하위 리소스 정리, sample 복구를 확인합니다. profile fixture나 전용 Controller 준비 코드는 사용하지 않으며 결과는 `profileless-kind-results.json`에 저장됩니다.
+
 ## 스펙 기반 Kubebuilder Scaffold
 
 구조화 스펙 YAML을 기반으로 Kubebuilder 프로젝트를 생성할 수 있습니다.

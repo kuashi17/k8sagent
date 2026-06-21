@@ -17,6 +17,7 @@ class UnifiedEvaluationTest(unittest.TestCase):
             (root / "reliability").mkdir()
             (root / "profileless-compile").mkdir()
             (root / "profile-kind").mkdir()
+            (root / "profileless-kind").mkdir()
             (root / "rag-quality.json").write_text(
                 json.dumps(
                     {
@@ -93,6 +94,44 @@ class UnifiedEvaluationTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (
+                root
+                / "profileless-kind"
+                / "profileless-kind-results.json"
+            ).write_text(
+                json.dumps(
+                    {
+                        "status": "passed",
+                        "profileUsed": False,
+                        "deploymentSummary": {
+                            "checks": {
+                                "lifecycleIdempotency": {
+                                    "reapplyStable": True
+                                },
+                                "lifecycleUpdate": {
+                                    "assertions": [
+                                        {"passed": True}
+                                    ]
+                                },
+                                "lifecycleDelete": {
+                                    "managedResources": {
+                                        "deployment/sample": {
+                                            "passed": True
+                                        },
+                                        "service/sample": {
+                                            "passed": True
+                                        },
+                                    }
+                                },
+                                "lifecycleRestore": {
+                                    "restored": True
+                                },
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
             payload = build_unified_evaluation(root)
 
         self.assertEqual(
@@ -111,6 +150,10 @@ class UnifiedEvaluationTest(unittest.TestCase):
         self.assertEqual(payload["ragQuality"]["score"], 100.0)
         self.assertEqual(payload["artifactQuality"]["score"], 100.0)
         self.assertEqual(payload["e2eSuccess"]["score"], 100.0)
+        self.assertEqual(
+            payload["e2eSuccess"]["profilelessKindRuns"],
+            1,
+        )
         self.assertEqual(payload["safetyReliability"]["score"], 100.0)
 
 

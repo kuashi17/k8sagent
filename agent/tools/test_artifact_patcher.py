@@ -5,11 +5,21 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from agent.tools.artifact_patcher import normalize_spec, patch_controller
+from agent.tools.artifact_patcher import (
+    normalize_spec,
+    patch_controller,
+    sample_value,
+)
 from agent.tools.scaffold_runner import build_execution_env
 
 
 class ArtifactPatcherTest(unittest.TestCase):
+    def test_camel_case_string_sample_is_dns_safe(self) -> None:
+        self.assertEqual(
+            sample_value("string", "appName"),
+            "sample-app-name",
+        )
+
     @patch.dict("os.environ", {"GOFLAGS": "-mod=readonly"}, clear=False)
     def test_scaffold_execution_disables_vcs_stamping(self) -> None:
         env = build_execution_env()

@@ -67,6 +67,11 @@ def build_unified_evaluation(root: Path) -> dict[str, Any]:
     profile_kind = read_json(
         root / "profile-kind" / "profile-kind-matrix.json"
     )
+    profileless_kind = read_json(
+        root
+        / "profileless-kind"
+        / "profileless-kind-results.json"
+    )
     regression = read_json(root / "regression-summary.json")
     performance = read_json(root / "performance-trend.json")
 
@@ -81,7 +86,11 @@ def build_unified_evaluation(root: Path) -> dict[str, Any]:
             profileless_compile or profileless,
         ),
         "safetyReliability": reliability_section(reliability),
-        "e2eSuccess": e2e_section(profile_kind, kind_idempotency),
+        "e2eSuccess": e2e_section(
+            profile_kind,
+            kind_idempotency,
+            profileless_kind,
+        ),
         "latency": latency_section(performance),
     }
     section_scores = [
@@ -199,6 +208,7 @@ def reliability_section(data: dict[str, Any]) -> dict[str, Any]:
 def e2e_section(
     profile_kind: dict[str, Any],
     idempotency: dict[str, Any],
+    profileless_kind: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     evidence: list[bool] = []
     profile_results = [
@@ -250,14 +260,54 @@ def e2e_section(
                 bool(idempotency.get("specChangeIdempotent")),
             ]
         )
+    profileless_runs = 0
+    if profileless_kind:
+        profileless_runs = 1
+        evidence.append(
+            profileless_kind.get("status") == "passed"
+            and profileless_kind.get("profileUsed") is False
+        )
+        checks = (
+            (profileless_kind.get("deploymentSummary") or {}).get(
+                "checks"
+            )
+            or {}
+        )
+        profileless_lifecycle = lifecycle_evidence(checks)
+        evidence.extend(profileless_lifecycle)
+        lifecycle_checks.extend(profileless_lifecycle)
     if not evidence:
         return not_run("kind E2E results are unavailable")
     return scored(
         sum(1 for item in evidence if item),
         len(evidence),
         profileRuns=len(profile_results),
+        profilelessKindRuns=profileless_runs,
         lifecycleChecks=len(lifecycle_checks),
     )
+
+
+def lifecycle_evidence(checks: dict[str, Any]) -> list[bool]:
+    if not checks:
+        return [False, False, False, False]
+    update = checks.get("lifecycleUpdate") or {}
+    assertions = update.get("assertions") or []
+    deleted = (
+        (checks.get("lifecycleDelete") or {}).get("managedResources")
+        or {}
+    )
+    return [
+        bool(
+            (checks.get("lifecycleIdempotency") or {}).get(
+                "reapplyStable"
+            )
+        ),
+        bool(assertions)
+        and all(item.get("passed") for item in assertions),
+        bool(deleted)
+        and all(item.get("passed") for item in deleted.values()),
+        bool((checks.get("lifecycleRestore") or {}).get("restored")),
+    ]
 
 
 def latency_section(data: dict[str, Any]) -> dict[str, Any]:

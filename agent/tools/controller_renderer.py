@@ -107,6 +107,14 @@ func copyStringMap(input map[string]string) map[string]string {{
 \treturn output
 }}
 
+func stringMapToInterface(input map[string]string) map[string]interface{{}} {{
+\toutput := make(map[string]interface{{}}, len(input))
+\tfor key, value := range input {{
+\t\toutput[key] = value
+\t}}
+\treturn output
+}}
+
 func (r *{kind}Reconciler) SetupWithManager(mgr ctrl.Manager) error {{
 \treturn ctrl.NewControllerManagedBy(mgr).
 \t\tFor(&{alias}.{kind}{{}}){render_owned_watches(ir)}.
@@ -321,11 +329,12 @@ def render_mutations(
                 f'\t\tcontainer["ports"] = []interface{{}}{{map[string]interface{{}}{{"containerPort": int64(instance.Spec.{go_name(port)})}}}}'
             )
         lines.append(
-            '\t\ttemplate := map[string]interface{}{"metadata": map[string]interface{}{"labels": labels}, '
+            '\t\tnestedLabels := stringMapToInterface(labels)\n'
+            '\t\ttemplate := map[string]interface{}{"metadata": map[string]interface{}{"labels": nestedLabels}, '
             '"spec": map[string]interface{}{"containers": []interface{}{container}}}'
         )
         lines.append(
-            '\t\tdeploymentSpec := map[string]interface{}{"selector": map[string]interface{}{"matchLabels": labels}, "template": template}'
+            '\t\tdeploymentSpec := map[string]interface{}{"selector": map[string]interface{}{"matchLabels": nestedLabels}, "template": template}'
         )
         if replicas:
             lines.append(
@@ -352,12 +361,13 @@ def render_mutations(
                 'map[string]interface{}{"name": "data", "mountPath": "/data"}}'
             )
         lines.append(
-            '\t\ttemplate := map[string]interface{}{"metadata": map[string]interface{}{"labels": labels}, '
+            '\t\tnestedLabels := stringMapToInterface(labels)\n'
+            '\t\ttemplate := map[string]interface{}{"metadata": map[string]interface{}{"labels": nestedLabels}, '
             '"spec": map[string]interface{}{"containers": []interface{}{container}}}'
         )
         lines.append(
             '\t\tstatefulSetSpec := map[string]interface{}{"serviceName": serviceName, '
-            '"selector": map[string]interface{}{"matchLabels": labels}, '
+            '"selector": map[string]interface{}{"matchLabels": nestedLabels}, '
             '"template": template}'
         )
         if replicas:
@@ -381,7 +391,8 @@ def render_mutations(
     elif resource.kind == "Service":
         port = first_field(fields, "port")
         lines.append(
-            '\t\tserviceSpec := map[string]interface{}{"selector": labels}'
+            '\t\tserviceSpec := map[string]interface{}'
+            '{"selector": stringMapToInterface(labels)}'
         )
         if port:
             lines.append(

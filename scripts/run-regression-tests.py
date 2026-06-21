@@ -163,6 +163,17 @@ def run_suite(suite: str, output_dir: Path) -> int:
                 ],
             )
         )
+        checks.append(
+            run_check(
+                "profileless-kind",
+                [
+                    sys.executable,
+                    "agent/evaluation/profileless_kind_runner.py",
+                    "--output-dir",
+                    str(output_dir / "profileless-kind"),
+                ],
+            )
+        )
 
     summary = {
         "suite": suite,
