@@ -208,6 +208,7 @@ flowchart TD
 | Scaffold Runner | `agent/tools/scaffold_runner.py` | `operator-spec.yaml` | Kubebuilder 프로젝트 | `--execute`일 때만 생성 |
 | Artifact Patcher | `agent/tools/artifact_patcher.py` | spec, project, profile | API 타입, sample, RBAC 보정 | `--execute`일 때만 수정 |
 | Controller Renderer | `agent/tools/controller_renderer.py` | profile 없는 generalized spec | ConfigMap, Secret, PVC, CronJob, Deployment/Service, Namespace reconcile 코드 | `artifact_patcher --execute` 경유 |
+| Controller IR | `agent/tools/controller_ir.py`, `controller_ir_builder.py` | generalized spec | scope, strategy, capability, ownership, deletion, mapping이 명시된 IR | profileless patch 로그에 `controller-ir.json` 기록 |
 | Validation Tool | `agent/tools/langchain_wrappers.py` 내부 | project, targets | `make generate/manifests/test` 결과 | 빌드 산출물 생성 가능 |
 | E2E Runner | `agent/tools/e2e_runner.py` | project, sample, profile | kind e2e 결과 | `--execute`일 때만 클러스터 조작 |
 | Kind Deployment | `agent/tools/kind_deployment_runner.py` | profile capability, project | Controller Deployment와 lifecycle 검증 | `--kind-deploy --execute`일 때만 실제 배포 |

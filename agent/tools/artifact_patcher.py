@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.tools.controller_renderer import render_controller
+from agent.tools.controller_ir_builder import build_controller_ir
 
 
 GO_TYPES = {
@@ -271,6 +272,20 @@ def print_patch_context(model: dict[str, Any]) -> None:
         print(f"- profile sample defaults: {', '.join(sample_defaults.keys())}")
     else:
         print("- profile sample defaults: none")
+    if not profile.get("path") and (
+        model.get("controller") or {}
+    ).get("managedResources"):
+        ir = build_controller_ir(model)
+        print(
+            "- controller IR: "
+            + ", ".join(
+                (
+                    f"{item.kind}[{item.strategy.value},"
+                    f"{item.scope.value},{item.ownership.value}]"
+                )
+                for item in ir.managed_resources
+            )
+        )
     print()
 
 
@@ -432,6 +447,17 @@ def execute_patch(spec_path: Path, project_dir: Path, model: dict[str, Any], cha
     log_dir = Path("logs") / "patch" / datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "diff.patch").write_text(diff_text, encoding="utf-8")
+    if not (model.get("profile") or {}).get("path") and (
+        model.get("controller") or {}
+    ).get("managedResources"):
+        (log_dir / "controller-ir.json").write_text(
+            json.dumps(
+                build_controller_ir(model).to_dict(),
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
     summary: dict[str, Any] = {
         "input": str(spec_path),

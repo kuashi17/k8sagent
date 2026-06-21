@@ -4,32 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-
-RESOURCE_META = {
-    "ConfigMap": ("", "v1", "ConfigMap", "config"),
-    "Secret": ("", "v1", "Secret", "secret"),
-    "PVC": ("", "v1", "PersistentVolumeClaim", "pvc"),
-    "PersistentVolumeClaim": (
-        "",
-        "v1",
-        "PersistentVolumeClaim",
-        "pvc",
-    ),
-    "CronJob": ("batch", "v1", "CronJob", "cronjob"),
-    "Deployment": ("apps", "v1", "Deployment", "deployment"),
-    "Service": ("", "v1", "Service", "service"),
-    "Namespace": ("", "v1", "Namespace", "namespace"),
-}
+from agent.tools.controller_ir import (
+    ControllerGenerationIR,
+    ManagedResourceSpec,
+    OwnershipPolicy,
+    ReconcileStrategy,
+    ResourceScope,
+)
+from agent.tools.controller_ir_builder import build_controller_ir
 
 
 def render_controller(model: dict[str, Any]) -> str:
-    api = model["api"]
-    project = model["project"]
-    kind = api["kind"]
-    alias = api_alias(api["group"], api["version"])
-    resources = supported_resources(
-        (model.get("controller") or {}).get("managedResources") or []
-    )
+    ir = build_controller_ir(model)
+    kind = ir.kind
+    alias = api_alias(ir.api_group, ir.api_version)
+    resources = ir.renderable_resources()
     if not resources:
         raise SystemExit(
             "profile-less controller generation requires at least one "
@@ -39,17 +28,18 @@ def render_controller(model: dict[str, Any]) -> str:
     reconcile_calls = []
     functions = []
     for resource in resources:
-        key = RESOURCE_META[resource][3]
+        variable = resource.resource_id
         reconcile_calls.append(
-            f'\t{key}Name, err := r.reconcile{resource_function(resource)}'
+            f"\t{variable}Name, err := "
+            f"r.reconcile{resource_function(resource.kind)}"
             f"(ctx, &instance)\n"
             "\tif err != nil {\n"
             f'\t\t_ = r.updateStatus(ctx, &instance, "Error", err.Error(), names)\n'
             "\t\treturn ctrl.Result{}, err\n"
             "\t}\n"
-            f'\tnames["{resource}"] = {key}Name'
+            f'\tnames["{resource.kind}"] = {variable}Name'
         )
-        functions.append(render_resource_function(resource, model, alias))
+        functions.append(render_resource_function(resource, ir, alias))
 
     return f'''package controller
 
@@ -66,7 +56,7 @@ import (
 \t"sigs.k8s.io/controller-runtime/pkg/client"
 \t"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-\t{alias} "{project["module"]}/api/{api["version"]}"
+\t{alias} "{ir.project_module}/api/{ir.api_version}"
 )
 
 type {kind}Reconciler struct {{
@@ -74,7 +64,7 @@ type {kind}Reconciler struct {{
 \tScheme *runtime.Scheme
 }}
 
-{render_marker_block(model)}
+{render_marker_block(ir)}
 
 func (r *{kind}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {{
 \tvar instance {alias}.{kind}
@@ -91,7 +81,7 @@ func (r *{kind}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }}
 
 {chr(10).join(functions)}
-{render_status_function(model, alias)}
+{render_status_function(ir, alias)}
 
 func managedObject(group, version, kind, namespace, name string) *unstructured.Unstructured {{
 \tobject := &unstructured.Unstructured{{}}
@@ -126,71 +116,141 @@ func (r *{kind}Reconciler) SetupWithManager(mgr ctrl.Manager) error {{
 
 
 def render_resource_function(
-    resource: str,
-    model: dict[str, Any],
+    resource: ManagedResourceSpec,
+    ir: ControllerGenerationIR,
     alias: str,
 ) -> str:
-    api = model["api"]
-    kind = api["kind"]
-    group, version, object_kind, suffix = RESOURCE_META[resource]
-    function_name = resource_function(resource)
-    name_expression = resource_name_expression(resource, model)
-    namespace = '""' if resource == "Namespace" else "instance.Namespace"
-    mutations = render_mutations(resource, model)
+    kind = ir.kind
+    group, version = split_api_version(resource.api_version)
+    function_name = resource_function(resource.kind)
+    name_expression = source_expression(resource.name.source_path)
+    suffix = resource.name.fallback_template.replace(
+        "{metadata.name}-",
+        "",
+    )
+    namespace = (
+        '""'
+        if resource.scope == ResourceScope.CLUSTER
+        else "instance.Namespace"
+    )
+    mutations = render_mutations(resource)
     disable_guard = render_disable_guard(
         resource,
-        model,
         namespace,
     )
     owner = (
         ""
-        if resource == "Namespace"
+        if resource.ownership == OwnershipPolicy.NONE
         else "\t\treturn setOwner(instance, object, r.Scheme)\n"
     )
-    final_return = "\t\treturn nil\n" if resource == "Namespace" else owner
+    final_return = (
+        "\t\treturn nil\n"
+        if resource.ownership == OwnershipPolicy.NONE
+        else owner
+    )
+    if resource.strategy == ReconcileStrategy.PATCH_EXISTING:
+        return render_patch_existing_function(
+            resource,
+            ir,
+            alias,
+            group,
+            version,
+            function_name,
+            name_expression,
+            suffix,
+            namespace,
+            mutations,
+        )
     return f'''func (r *{kind}Reconciler) reconcile{function_name}(ctx context.Context, instance *{alias}.{kind}) (string, error) {{
 \tname := {name_expression}
 \tif name == "" {{
 \t\tname = instance.Name + "-{suffix}"
 \t}}
-\tobject := managedObject("{group}", "{version}", "{object_kind}", {namespace}, name)
+\tobject := managedObject("{group}", "{version}", "{resource.kind}", {namespace}, name)
 {disable_guard}
 \t_, err := controllerutil.CreateOrUpdate(ctx, r.Client, object, func() error {{
 \t\tlabels := object.GetLabels()
 \t\tif labels == nil {{
 \t\t\tlabels = map[string]string{{}}
 \t\t}}
-\t\tlabels["app.kubernetes.io/managed-by"] = "{api["kind"].lower()}-operator"
+\t\tlabels["app.kubernetes.io/managed-by"] = "{ir.kind.lower()}-operator"
 \t\tlabels["operator.sample.io/owner"] = instance.Name
 \t\tobject.SetLabels(labels)
 {mutations}
 {final_return}\t}})
 \tif err != nil {{
-\t\treturn name, fmt.Errorf("reconcile {object_kind}: %w", err)
+\t\treturn name, fmt.Errorf("reconcile {resource.kind}: %w", err)
 \t}}
 \treturn name, nil
 }}
 '''
 
 
-def render_mutations(resource: str, model: dict[str, Any]) -> str:
-    fields = field_names(model)
+def render_patch_existing_function(
+    resource: ManagedResourceSpec,
+    ir: ControllerGenerationIR,
+    alias: str,
+    group: str,
+    version: str,
+    function_name: str,
+    name_expression: str,
+    suffix: str,
+    namespace: str,
+    mutations: str,
+) -> str:
+    return f'''func (r *{ir.kind}Reconciler) reconcile{function_name}(ctx context.Context, instance *{alias}.{ir.kind}) (string, error) {{
+\tname := {name_expression}
+\tif name == "" {{
+\t\tname = instance.Name + "-{suffix}"
+\t}}
+\tobject := managedObject("{group}", "{version}", "{resource.kind}", {namespace}, name)
+\tif err := r.Get(ctx, client.ObjectKey{{Namespace: {namespace}, Name: name}}, object); err != nil {{
+\t\treturn name, fmt.Errorf("get {resource.kind}: %w", err)
+\t}}
+\tlabels := object.GetLabels()
+\tif labels == nil {{
+\t\tlabels = map[string]string{{}}
+\t}}
+\tlabels["app.kubernetes.io/managed-by"] = "{ir.kind.lower()}-operator"
+\tlabels["operator.sample.io/owner"] = instance.Name
+\tobject.SetLabels(labels)
+{dedent_mutations(mutations)}
+\tif err := r.Update(ctx, object); err != nil {{
+\t\treturn name, fmt.Errorf("update {resource.kind}: %w", err)
+\t}}
+\treturn name, nil
+}}
+'''
+
+
+def dedent_mutations(value: str) -> str:
+    dedented = "\n".join(
+        line.removeprefix("\t")
+        if line.startswith("\t")
+        else line
+        for line in value.splitlines()
+    )
+    return dedented.replace("{ return err }", "{ return name, err }")
+
+
+def render_mutations(resource: ManagedResourceSpec) -> str:
+    fields = mapping_source_fields(resource)
     lines: list[str] = []
-    if resource == "ConfigMap":
+    if resource.kind == "ConfigMap":
         source = first_field(fields, "configData", "data")
         if source:
             lines.append(
                 f'\t\tif err := unstructured.SetNestedStringMap(object.Object, '
                 f"copyStringMap(instance.Spec.{go_name(source)}), \"data\"); err != nil {{ return err }}"
             )
-    elif resource == "Secret":
+    elif resource.kind == "Secret":
         source = first_field(fields, "data", "secretData")
         if source:
             lines.append(
                 f'\t\tif err := unstructured.SetNestedStringMap(object.Object, '
                 f"copyStringMap(instance.Spec.{go_name(source)}), \"stringData\"); err != nil {{ return err }}"
             )
-    elif resource in {"PVC", "PersistentVolumeClaim"}:
+    elif resource.kind == "PersistentVolumeClaim":
         storage = first_field(fields, "storageSize", "size")
         storage_class = first_field(fields, "storageClassName")
         access_modes = first_field(fields, "accessModes")
@@ -211,7 +271,7 @@ def render_mutations(resource: str, model: dict[str, Any]) -> str:
                 f'\t\tfor index, value := range instance.Spec.{go_name(access_modes)} {{ modes[index] = value }}\n'
                 '\t\tif err := unstructured.SetNestedSlice(object.Object, modes, "spec", "accessModes"); err != nil { return err }'
             )
-    elif resource == "CronJob":
+    elif resource.kind == "CronJob":
         schedule = first_field(fields, "schedule")
         image = first_field(fields, "image")
         command = first_field(fields, "command")
@@ -244,7 +304,7 @@ def render_mutations(resource: str, model: dict[str, Any]) -> str:
         lines.append(
             '\t\tif err := unstructured.SetNestedMap(object.Object, cronSpec, "spec"); err != nil { return err }'
         )
-    elif resource == "Deployment":
+    elif resource.kind == "Deployment":
         image = first_field(fields, "image")
         replicas = first_field(fields, "replicas", "size")
         port = first_field(fields, "port", "containerPort")
@@ -269,7 +329,7 @@ def render_mutations(resource: str, model: dict[str, Any]) -> str:
         lines.append(
             '\t\tif err := unstructured.SetNestedMap(object.Object, deploymentSpec, "spec"); err != nil { return err }'
         )
-    elif resource == "Service":
+    elif resource.kind == "Service":
         port = first_field(fields, "port")
         lines.append(
             '\t\tserviceSpec := map[string]interface{}{"selector": labels}'
@@ -281,7 +341,7 @@ def render_mutations(resource: str, model: dict[str, Any]) -> str:
         lines.append(
             '\t\tif err := unstructured.SetNestedMap(object.Object, serviceSpec, "spec"); err != nil { return err }'
         )
-    elif resource == "Namespace":
+    elif resource.kind == "Namespace":
         labels = first_field(fields, "labels")
         if labels:
             lines.append(
@@ -292,12 +352,10 @@ def render_mutations(resource: str, model: dict[str, Any]) -> str:
 
 
 def render_disable_guard(
-    resource: str,
-    model: dict[str, Any],
+    resource: ManagedResourceSpec,
     namespace: str,
 ) -> str:
-    fields = field_names(model)
-    if resource not in {"ConfigMap", "Secret"} or "enabled" not in fields:
+    if not resource.disable_when:
         return ""
     return f'''\tif !instance.Spec.Enabled {{
 \t\terr := r.Get(ctx, client.ObjectKey{{Namespace: {namespace}, Name: name}}, object)
@@ -311,31 +369,25 @@ def render_disable_guard(
 \t}}'''
 
 
-def render_status_function(model: dict[str, Any], alias: str) -> str:
-    kind = model["api"]["kind"]
-    status_fields = {
-        str(item.get("name"))
-        for item in model.get("statusFields") or []
-        if isinstance(item, dict)
-    }
+def render_status_function(
+    ir: ControllerGenerationIR,
+    alias: str,
+) -> str:
+    kind = ir.kind
+    status_fields = set(ir.status_fields)
     assignments = []
     if "phase" in status_fields:
         assignments.append("\tinstance.Status.Phase = phase")
     if "message" in status_fields:
         assignments.append("\tinstance.Status.Message = message")
-    mappings = {
-        "configMapName": "ConfigMap",
-        "secretName": "Secret",
-        "claimName": "PVC",
-        "cronJobName": "CronJob",
-        "deploymentName": "Deployment",
-        "serviceName": "Service",
-        "observedNamespace": "Namespace",
-    }
-    for field, resource in mappings.items():
-        if field in status_fields:
+    for resource in ir.managed_resources:
+        for mapping in resource.status_mappings:
+            if mapping.transform != "resource-name":
+                continue
+            field = mapping.target_path.removeprefix("status.")
             assignments.append(
-                f'\tinstance.Status.{go_name(field)} = names["{resource}"]'
+                f'\tinstance.Status.{go_name(field)} = '
+                f'names["{resource.kind}"]'
             )
     return f'''func (r *{kind}Reconciler) updateStatus(ctx context.Context, instance *{alias}.{kind}, phase, message string, names map[string]string) error {{
 \tbefore := instance.DeepCopy()
@@ -348,49 +400,24 @@ def render_status_function(model: dict[str, Any], alias: str) -> str:
 '''
 
 
-def render_marker_block(model: dict[str, Any]) -> str:
+def render_marker_block(ir: ControllerGenerationIR) -> str:
     lines = []
-    for item in model.get("rbacResources") or []:
-        group = item.get("apiGroup", "")
+    for item in ir.rbac_rules:
+        group = item.api_group
         group_value = '""' if group == "" else group
-        verbs = ";".join(item.get("verbs") or [])
+        verbs = ";".join(item.verbs)
         lines.append(
             f"// +kubebuilder:rbac:groups={group_value},"
-            f"resources={item.get('resource')},verbs={verbs}"
+            f"resources={item.resource},verbs={verbs}"
         )
     return "\n".join(lines)
 
 
-def resource_name_expression(resource: str, model: dict[str, Any]) -> str:
-    fields = field_names(model)
-    candidates = {
-        "ConfigMap": ("configMapName", "name"),
-        "Secret": ("secretName", "targetName", "name"),
-        "PVC": ("claimName", "pvcName"),
-        "PersistentVolumeClaim": ("claimName", "pvcName"),
-        "CronJob": ("cronJobName",),
-        "Deployment": ("deploymentName", "appName"),
-        "Service": ("serviceName", "appName"),
-        "Namespace": ("namespaceName",),
-    }[resource]
-    field = first_field(fields, *candidates)
-    return f"instance.Spec.{go_name(field)}" if field else '""'
-
-
-def supported_resources(resources: list[Any]) -> list[str]:
-    result = []
-    for value in resources:
-        name = str(value)
-        if name in RESOURCE_META and name not in result:
-            result.append(name)
-    return result
-
-
-def field_names(model: dict[str, Any]) -> set[str]:
+def mapping_source_fields(resource: ManagedResourceSpec) -> set[str]:
     return {
-        str(item.get("name"))
-        for item in model.get("specFields") or []
-        if isinstance(item, dict) and item.get("name")
+        item.source_path.removeprefix("spec.")
+        for item in resource.field_mappings
+        if item.source_path.startswith("spec.")
     }
 
 
@@ -400,6 +427,21 @@ def first_field(fields: set[str], *candidates: str) -> str:
 
 def resource_function(resource: str) -> str:
     return "PVC" if resource == "PersistentVolumeClaim" else resource
+
+
+def source_expression(path: str) -> str:
+    if not path:
+        return '""'
+    if path.startswith("spec."):
+        return f"instance.Spec.{go_name(path.removeprefix('spec.'))}"
+    return '""'
+
+
+def split_api_version(api_version: str) -> tuple[str, str]:
+    if "/" not in api_version:
+        return "", api_version
+    group, version = api_version.split("/", 1)
+    return group, version
 
 
 def api_alias(group: str, version: str) -> str:

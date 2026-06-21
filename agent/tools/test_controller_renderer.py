@@ -61,6 +61,9 @@ class ControllerRendererTest(unittest.TestCase):
             1,
         )[1].split("func ", 1)[0]
         self.assertIn("object.SetLabels(labels)", namespace_function)
+        self.assertIn("r.Get(", namespace_function)
+        self.assertIn("r.Update(", namespace_function)
+        self.assertNotIn("CreateOrUpdate", namespace_function)
         self.assertNotIn("setOwner(", namespace_function)
 
     def test_enabled_false_deletes_managed_secret(self) -> None:
