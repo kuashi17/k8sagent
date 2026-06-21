@@ -5,7 +5,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from agent.evaluation.controller_quality import evaluate_controller_quality
+from agent.evaluation.controller_quality import (
+    collect_behavior_evidence,
+    evaluate_controller_quality,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -45,6 +48,32 @@ class ControllerQualityTest(unittest.TestCase):
         )
         self.assertEqual(result["status"], "not-run")
         self.assertEqual(result["score"], 0)
+
+    def test_behavior_evidence_tracks_watch_and_status_assignments(self) -> None:
+        evidence = collect_behavior_evidence(
+            """
+            builder.Owns(managedObject("apps", "v1", "Deployment", "", ""))
+            instance.Status.ReadyReplicas = value
+            """,
+            {
+                "controller": {
+                    "managedResources": ["Deployment", "Service"]
+                },
+                "statusFields": [
+                    {"name": "readyReplicas"},
+                    {"name": "message"},
+                ],
+            },
+        )
+
+        self.assertEqual(
+            evidence["watchRegistrations"],
+            ["Deployment"],
+        )
+        self.assertEqual(
+            evidence["assignedStatusFields"],
+            ["readyReplicas"],
+        )
 
 
 if __name__ == "__main__":

@@ -100,6 +100,7 @@ def evaluate_controller_quality(
         "apiVersion": version,
         "kind": kind,
         "criteria": criteria,
+        "behaviorEvidence": collect_behavior_evidence(controller, spec),
         "score": round(passed / len(criteria) * 100, 1),
     }
 
@@ -196,6 +197,55 @@ def evaluate_tests(tool_results: list[dict[str, Any]]) -> dict[str, Any]:
                     "make test completed successfully.",
                 )
     return criterion(False, "No successful make test evidence was recorded.")
+
+
+def collect_behavior_evidence(
+    controller: str,
+    spec: dict[str, Any],
+) -> dict[str, Any]:
+    managed = [
+        str(item)
+        for item in (spec.get("controller") or {}).get(
+            "managedResources",
+            [],
+        )
+        if item
+    ]
+    watched = [
+        item
+        for item in managed
+        if re.search(
+            rf"\.Owns\([^)]*{re.escape(item)}",
+            controller,
+        )
+        or re.search(
+            rf"\.Owns\(&[A-Za-z0-9_.]*{re.escape(item)}\{{",
+            controller,
+        )
+    ]
+    status_fields = [
+        str(item.get("name"))
+        for item in spec.get("statusFields") or []
+        if isinstance(item, dict) and item.get("name")
+    ]
+    assigned_status = [
+        field
+        for field in status_fields
+        if re.search(
+            rf"\.Status\.{re.escape(go_name(field))}\s*=",
+            controller,
+        )
+    ]
+    return {
+        "managedResources": managed,
+        "watchRegistrations": watched,
+        "statusFields": status_fields,
+        "assignedStatusFields": assigned_status,
+    }
+
+
+def go_name(value: str) -> str:
+    return value[:1].upper() + value[1:]
 
 
 def criterion(passed: bool, evidence: str, **details: Any) -> dict[str, Any]:

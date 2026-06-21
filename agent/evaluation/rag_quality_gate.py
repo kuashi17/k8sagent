@@ -27,6 +27,8 @@ def main() -> int:
     )
     parser.add_argument("--output", default="")
     parser.add_argument("--min-hit-at-3", type=float, default=0.8)
+    parser.add_argument("--min-recall-at-3", type=float, default=0.45)
+    parser.add_argument("--min-mrr", type=float, default=0.5)
     args = parser.parse_args()
 
     dataset_path = resolve(args.dataset)
@@ -47,13 +49,18 @@ def main() -> int:
         results.append(summarize_query_result(item, response, 0.0))
 
     metrics = compute_mode_metrics(results)
+    thresholds = {
+        "minHitAt3": args.min_hit_at_3,
+        "minRecallAt3": args.min_recall_at_3,
+        "minMrr": args.min_mrr,
+    }
     payload = {
         "status": (
             "passed"
-            if metrics["hitAt3"] >= args.min_hit_at_3
+            if passes_thresholds(metrics, thresholds)
             else "failed"
         ),
-        "thresholds": {"minHitAt3": args.min_hit_at_3},
+        "thresholds": thresholds,
         "metrics": metrics,
         "results": results,
     }
@@ -71,6 +78,18 @@ def main() -> int:
 def resolve(value: str) -> Path:
     path = Path(value)
     return path if path.is_absolute() else REPO_ROOT / path
+
+
+def passes_thresholds(
+    metrics: dict[str, float],
+    thresholds: dict[str, float],
+) -> bool:
+    return bool(
+        metrics.get("hitAt3", 0.0) >= thresholds["minHitAt3"]
+        and metrics.get("recallAt3", 0.0)
+        >= thresholds["minRecallAt3"]
+        and metrics.get("mrr", 0.0) >= thresholds["minMrr"]
+    )
 
 
 if __name__ == "__main__":
