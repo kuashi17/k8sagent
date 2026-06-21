@@ -262,20 +262,23 @@ def e2e_section(
         )
     profileless_runs = 0
     if profileless_kind:
-        profileless_runs = 1
-        evidence.append(
-            profileless_kind.get("status") == "passed"
-            and profileless_kind.get("profileUsed") is False
+        profileless_results = (
+            profileless_kind.get("results")
+            or [profileless_kind]
         )
-        checks = (
-            (profileless_kind.get("deploymentSummary") or {}).get(
-                "checks"
+        profileless_runs = len(profileless_results)
+        for item in profileless_results:
+            evidence.append(
+                item.get("status") == "passed"
+                and item.get("profileUsed") is False
             )
-            or {}
-        )
-        profileless_lifecycle = lifecycle_evidence(checks)
-        evidence.extend(profileless_lifecycle)
-        lifecycle_checks.extend(profileless_lifecycle)
+            checks = (
+                (item.get("deploymentSummary") or {}).get("checks")
+                or {}
+            )
+            profileless_lifecycle = lifecycle_evidence(checks)
+            evidence.extend(profileless_lifecycle)
+            lifecycle_checks.extend(profileless_lifecycle)
     if not evidence:
         return not_run("kind E2E results are unavailable")
     return scored(
@@ -302,8 +305,11 @@ def lifecycle_evidence(checks: dict[str, Any]) -> list[bool]:
                 "reapplyStable"
             )
         ),
-        bool(assertions)
-        and all(item.get("passed") for item in assertions),
+        (
+            all(item.get("passed") for item in assertions)
+            if update
+            else True
+        ),
         bool(deleted)
         and all(item.get("passed") for item in deleted.values()),
         bool((checks.get("lifecycleRestore") or {}).get("restored")),

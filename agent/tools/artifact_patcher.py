@@ -558,6 +558,9 @@ def exported_go_name(name: str) -> str:
 
 
 def sample_value(field_type: str, name: str) -> Any:
+    semantic = semantic_sample_value(name)
+    if semantic is not None:
+        return semantic
     normalized = field_type.lower()
     if normalized in ("int", "int32", "int64"):
         return 1
@@ -568,6 +571,19 @@ def sample_value(field_type: str, name: str) -> Any:
     if normalized.startswith("map[") or normalized in ("object", "map"):
         return {"sample": "value"}
     return f"sample-{kebab_case(name)}"
+
+
+def semantic_sample_value(name: str) -> Any:
+    values = {
+        "accessModes": ["ReadWriteOnce"],
+        "command": ["echo", "hello"],
+        "image": "nginx:latest",
+        "namespaceName": "default",
+        "schedule": "*/5 * * * *",
+        "storageClassName": "standard",
+        "storageSize": "1Gi",
+    }
+    return values.get(name)
 
 
 def kebab_case(value: str) -> str:

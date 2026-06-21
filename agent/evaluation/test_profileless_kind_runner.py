@@ -85,6 +85,86 @@ spec:
             self.assertIn("--skip-prepare-controller", command)
             self.assertIn("--skip-prevalidation", command)
 
+    def test_namespace_contract_creates_setup_and_retain_rules(
+        self,
+    ) -> None:
+        spec = {
+            "project": {
+                "name": "namespace-policy-operator",
+                "domain": "sample.io",
+                "module": "sample.io/namespace-policy-operator",
+            },
+            "api": {
+                "kind": "NamespaceLabelPolicy",
+                "plural": "namespacelabelpolicies",
+                "version": "v1alpha1",
+                "group": "policy",
+                "domain": "sample.io",
+            },
+            "specFields": [
+                {"name": "namespaceName", "type": "string"},
+                {"name": "labels", "type": "map[string]string"},
+            ],
+            "statusFields": [
+                {"name": "phase", "type": "string"},
+            ],
+            "controller": {"managedResources": ["Namespace"]},
+            "rbac": {"resources": []},
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "namespace-policy-operator"
+            sample = (
+                project
+                / "config"
+                / "samples"
+                / "policy_v1alpha1_namespacelabelpolicy.yaml"
+            )
+            sample.parent.mkdir(parents=True, exist_ok=True)
+            sample.write_text(
+                """
+apiVersion: policy.sample.io/v1alpha1
+kind: NamespaceLabelPolicy
+metadata:
+  name: namespace-policy-sample
+spec:
+  namespaceName: target-namespace
+  labels:
+    environment: development
+""",
+                encoding="utf-8",
+            )
+
+            config = build_kind_contract(
+                spec,
+                project,
+                "profileless-test",
+            )["validatorConfig"]
+
+        self.assertEqual(
+            config["setupResources"][0]["metadata"]["name"],
+            "target-namespace",
+        )
+        self.assertEqual(
+            config["managedResources"][0]["deletionPolicy"],
+            "retain",
+        )
+        self.assertEqual(
+            config["updateSpec"]["labels"]["profileless-e2e"],
+            "updated",
+        )
+        self.assertEqual(
+            config["updateAssertions"][0]["path"],
+            "metadata.labels.profileless-e2e",
+        )
+        self.assertIn(
+            {
+                "verb": "update",
+                "resource": "namespaces",
+                "apiGroup": "",
+            },
+            config["rbacChecks"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,24 @@ class ArtifactPatcherTest(unittest.TestCase):
             "sample-app-name",
         )
 
+    def test_kubernetes_semantic_samples_are_executable(self) -> None:
+        self.assertEqual(
+            sample_value("string", "schedule"),
+            "*/5 * * * *",
+        )
+        self.assertEqual(
+            sample_value("string", "storageSize"),
+            "1Gi",
+        )
+        self.assertEqual(
+            sample_value("[]string", "accessModes"),
+            ["ReadWriteOnce"],
+        )
+        self.assertEqual(
+            sample_value("string", "namespaceName"),
+            "default",
+        )
+
     @patch.dict("os.environ", {"GOFLAGS": "-mod=readonly"}, clear=False)
     def test_scaffold_execution_disables_vcs_stamping(self) -> None:
         env = build_execution_env()

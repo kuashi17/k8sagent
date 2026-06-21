@@ -24,9 +24,19 @@ from agent.evaluation.profileless_compile_runner import (
     compile_requirement,
 )
 from agent.tools.artifact_patcher import normalize_spec
-from agent.tools.controller_ir import DeletionPolicy
+from agent.tools.controller_ir import (
+    DeletionPolicy,
+    ReconcileStrategy,
+)
 from agent.tools.controller_ir_builder import build_controller_ir
 
+
+DEFAULT_REQUIREMENTS = [
+    "requirements/web-service.txt",
+    "requirements/secret-sync.txt",
+    "requirements/scheduled-task.txt",
+    "requirements/namespace-label-policy.txt",
+]
 
 RESOURCE_NAMES = {
     "ConfigMap": "configmap",
@@ -44,70 +54,57 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--requirement",
-        default="requirements/web-service.txt",
+        action="append",
+        default=[],
+        help="Run one requirement. Repeat to build a custom matrix.",
+    )
+    parser.add_argument(
+        "--requirements",
+        nargs="*",
+        default=DEFAULT_REQUIREMENTS,
+        help="Requirement matrix used when --requirement is omitted.",
     )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument(
         "--cluster-name",
-        default="profileless-webservice",
+        default="profileless-matrix",
     )
     args = parser.parse_args()
 
-    requirement = resolve(args.requirement)
+    requirements = [
+        resolve(value)
+        for value in (args.requirement or args.requirements)
+    ]
     output_dir = resolve(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     work_root = Path(
         tempfile.mkdtemp(prefix="k8sagent-profileless-kind-")
     )
     try:
-        compile_dir = output_dir / "compile"
-        compile_result = compile_requirement(
-            requirement,
-            compile_dir,
-            work_root,
-        )
-        if not compile_result.get("passed"):
-            payload = result_payload(
-                "failed",
+        results = [
+            run_requirement(
                 requirement,
-                compile_result,
-                {},
-                [],
-                "profile-less compile failed",
+                output_dir / "cases" / requirement.stem,
+                work_root,
+                args.cluster_name,
             )
-            write_result(output_dir, payload)
-            return 1
-
-        spec_path = Path(compile_result["specPath"])
-        project_dir = Path(compile_result["projectDir"])
-        spec = read_yaml(spec_path)
-        contract = build_kind_contract(
-            spec,
-            project_dir,
-            args.cluster_name,
-        )
-        command = build_kind_command(contract)
-        completed = subprocess.run(
-            command,
-            cwd=REPO_ROOT,
-            text=True,
-            capture_output=True,
-        )
-        deployment = parse_summary(completed.stdout)
+            for requirement in requirements
+        ]
         status = (
             "passed"
-            if completed.returncode == 0
-            and deployment.get("status") == "succeeded"
+            if results and all(
+                item.get("status") == "passed" for item in results
+            )
             else "failed"
         )
-        payload = result_payload(
-            status,
-            requirement,
-            compile_result,
-            deployment,
-            command,
-            completed.stderr[-4000:],
-        )
+        payload = {
+            "createdAt": datetime.now().astimezone().isoformat(
+                timespec="seconds"
+            ),
+            "status": status,
+            "profileUsed": False,
+            "results": results,
+        }
         write_result(output_dir, payload)
         print(
             json.dumps(
@@ -122,6 +119,61 @@ def main() -> int:
         return 0 if status == "passed" else 1
     finally:
         shutil.rmtree(work_root, ignore_errors=True)
+
+
+def run_requirement(
+    requirement: Path,
+    output_dir: Path,
+    work_root: Path,
+    cluster_name: str,
+) -> dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    compile_result = compile_requirement(
+        requirement,
+        output_dir / "compile",
+        work_root,
+    )
+    if not compile_result.get("passed"):
+        return result_payload(
+            "failed",
+            requirement,
+            compile_result,
+            {},
+            [],
+            "profile-less compile failed",
+        )
+
+    spec_path = Path(compile_result["specPath"])
+    project_dir = Path(compile_result["projectDir"])
+    contract = build_kind_contract(
+        read_yaml(spec_path),
+        project_dir,
+        cluster_name,
+    )
+    command = build_kind_command(contract)
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+    deployment = parse_summary(completed.stdout)
+    status = (
+        "passed"
+        if completed.returncode == 0
+        and deployment.get("status") == "succeeded"
+        else "failed"
+    )
+    payload = result_payload(
+        status,
+        requirement,
+        compile_result,
+        deployment,
+        command,
+        completed.stderr[-4000:],
+    )
+    write_result(output_dir, payload)
+    return payload
 
 
 def build_kind_contract(
@@ -145,11 +197,23 @@ def build_kind_contract(
     managed_resources = []
     update_spec: dict[str, Any] = {}
     update_assertions = []
+    setup_resources = []
+    rbac_checks = [
+        {
+            "verb": "update",
+            "resource": (
+                f"{str(api.get('plural') or pluralize(api['kind'].lower()))}"
+                "/status"
+            ),
+            "apiGroup": api["apiGroup"],
+        }
+    ]
     for resource in ir.renderable_resources():
         name = managed_name(resource, sample_name, sample_spec)
+        resource_name = RESOURCE_NAMES[resource.kind]
         managed_resources.append(
             {
-                "resource": RESOURCE_NAMES[resource.kind],
+                "resource": resource_name,
                 "name": name,
                 "deletionPolicy": (
                     "retain"
@@ -158,46 +222,38 @@ def build_kind_contract(
                 ),
             }
         )
-        for mapping in resource.field_mappings:
-            field = mapping.source_path.removeprefix("spec.")
-            if (
-                mapping.target_path == "spec.replicas"
-                and field in sample_spec
-                and not update_spec
-            ):
-                updated = int(sample_spec[field]) + 1
-                update_spec[field] = updated
-                update_assertions.append(
-                    {
-                        "resource": RESOURCE_NAMES[resource.kind],
-                        "name": name,
-                        "path": "spec.replicas",
-                        "equals": updated,
-                    }
-                )
-    plural = str(api.get("plural") or pluralize(api["kind"].lower()))
+        if resource.strategy == ReconcileStrategy.PATCH_EXISTING:
+            setup_resources.append(
+                {
+                    "apiVersion": resource.api_version,
+                    "kind": resource.kind,
+                    "metadata": {"name": name},
+                }
+            )
+        update = lifecycle_update(resource, sample_spec, name)
+        if update and not update_spec:
+            update_spec.update(update["spec"])
+            update_assertions.extend(update["assertions"])
+        rbac_checks.append(
+            {
+                "verb": (
+                    "update"
+                    if resource.strategy
+                    == ReconcileStrategy.PATCH_EXISTING
+                    else "create"
+                ),
+                "resource": pluralize(resource_name),
+                "apiGroup": resource_api_group(resource_name),
+            }
+        )
     validator_config = {
         "resource": api["kind"].lower(),
         "sampleName": sample_name,
         "managedResources": managed_resources,
         "updateSpec": update_spec,
         "updateAssertions": update_assertions,
-        "rbacChecks": [
-            {
-                "verb": "update",
-                "resource": f"{plural}/status",
-                "apiGroup": api["apiGroup"],
-            },
-            *[
-                {
-                    "verb": "create",
-                    "resource": pluralize(item["resource"]),
-                    "apiGroup": resource_api_group(item["resource"]),
-                }
-                for item in managed_resources
-                if item["deletionPolicy"] != "retain"
-            ],
-        ],
+        "setupResources": setup_resources,
+        "rbacChecks": rbac_checks,
     }
     return {
         "project": str(project_dir),
@@ -207,6 +263,74 @@ def build_kind_contract(
         "namespace": f"{project_name}-system",
         "deployment": f"{project_name}-controller-manager",
         "validatorConfig": validator_config,
+    }
+
+
+def lifecycle_update(
+    resource: Any,
+    sample_spec: dict[str, Any],
+    name: str,
+) -> dict[str, Any]:
+    for mapping in resource.field_mappings:
+        field = mapping.source_path.removeprefix("spec.")
+        current = sample_spec.get(field)
+        if mapping.target_path == "spec.replicas" and isinstance(
+            current,
+            int,
+        ):
+            updated = current + 1
+            return update_contract(
+                field,
+                updated,
+                resource,
+                name,
+                "spec.replicas",
+            )
+        if mapping.target_path == "spec.suspend" and isinstance(
+            current,
+            bool,
+        ):
+            return update_contract(
+                field,
+                not current,
+                resource,
+                name,
+                "spec.suspend",
+            )
+        if (
+            mapping.target_path == "metadata.labels"
+            and isinstance(current, dict)
+        ):
+            updated = {**current, "profileless-e2e": "updated"}
+            return update_contract(
+                field,
+                updated,
+                resource,
+                name,
+                "metadata.labels.profileless-e2e",
+                "updated",
+            )
+    return {}
+
+
+def update_contract(
+    field: str,
+    updated: Any,
+    resource: Any,
+    name: str,
+    path: str,
+    expected: Any | None = None,
+) -> dict[str, Any]:
+    return {
+        "spec": {field: updated},
+        "assertions": [
+            {
+                "resource": RESOURCE_NAMES[resource.kind],
+                "name": name,
+                "path": path,
+                "equals": updated if expected is None else expected,
+            }
+        ],
     }
 
 
@@ -294,6 +418,7 @@ def result_payload(
 
 
 def write_result(output_dir: Path, payload: dict[str, Any]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "profileless-kind-results.json").write_text(
         json.dumps(payload, indent=2, ensure_ascii=False),
         encoding="utf-8",

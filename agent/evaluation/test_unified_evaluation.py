@@ -103,31 +103,37 @@ class UnifiedEvaluationTest(unittest.TestCase):
                     {
                         "status": "passed",
                         "profileUsed": False,
-                        "deploymentSummary": {
-                            "checks": {
-                                "lifecycleIdempotency": {
-                                    "reapplyStable": True
-                                },
-                                "lifecycleUpdate": {
-                                    "assertions": [
-                                        {"passed": True}
-                                    ]
-                                },
-                                "lifecycleDelete": {
-                                    "managedResources": {
-                                        "deployment/sample": {
-                                            "passed": True
+                        "results": [
+                            {
+                                "status": "passed",
+                                "profileUsed": False,
+                                "deploymentSummary": {
+                                    "checks": {
+                                        "lifecycleIdempotency": {
+                                            "reapplyStable": True
                                         },
-                                        "service/sample": {
-                                            "passed": True
+                                        "lifecycleUpdate": {
+                                            "assertions": [
+                                                {"passed": True}
+                                            ]
+                                        },
+                                        "lifecycleDelete": {
+                                            "managedResources": {
+                                                "deployment/sample": {
+                                                    "passed": True
+                                                },
+                                                "service/sample": {
+                                                    "passed": True
+                                                },
+                                            }
+                                        },
+                                        "lifecycleRestore": {
+                                            "restored": True
                                         },
                                     }
                                 },
-                                "lifecycleRestore": {
-                                    "restored": True
-                                },
                             }
-                        },
+                        ],
                     }
                 ),
                 encoding="utf-8",

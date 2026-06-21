@@ -8,6 +8,7 @@ separate so an LLM/RAG parser can replace individual functions later.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ import yaml
 
 
 GENERATOR_VERSION = "0.1.0"
+MAX_PROJECT_NAME_LENGTH = 28
 DEFAULT_VERBS = ["get", "list", "watch", "create", "update", "patch", "delete"]
 CUSTOM_RESOURCE_VERBS = ["get", "list", "watch", "update", "patch"]
 
@@ -131,17 +133,33 @@ def parse_metadata(source_file: Path) -> dict[str, str]:
 def parse_project(text: str, api: dict[str, str], warnings: list[str]) -> dict[str, str]:
     domain = api.get("domain", "")
     kind = api.get("kind", "")
-    name = f"{to_kebab(kind)}-operator" if kind else ""
+    name = bounded_project_name(kind) if kind else ""
     module = f"{domain}/{name}" if domain and name else ""
     if not name:
         warnings.append("project.name could not be inferred because api.kind was not found.")
     if not module:
         warnings.append("project.module could not be inferred because domain or kind was not found.")
+    if kind and name != f"{to_kebab(kind)}-operator":
+        warnings.append(
+            "project.name was shortened to keep generated Kubernetes "
+            "resource names within the 63-character DNS limit."
+        )
     return {
         "name": name,
         "domain": domain,
         "module": module,
     }
+
+
+def bounded_project_name(kind: str) -> str:
+    base = to_kebab(kind)
+    candidate = f"{base}-operator"
+    if len(candidate) <= MAX_PROJECT_NAME_LENGTH:
+        return candidate
+    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:8]
+    prefix_length = MAX_PROJECT_NAME_LENGTH - len("-op-") - len(digest)
+    prefix = base[:prefix_length].rstrip("-")
+    return f"{prefix}-op-{digest}"
 
 
 def parse_api(text: str, warnings: list[str]) -> dict[str, str]:
