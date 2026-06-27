@@ -5,10 +5,25 @@ from __future__ import annotations
 import json
 import unittest
 
-from agent.evaluation.profile_kind_matrix import build_command, parse_summary
+from agent.evaluation.profile_kind_matrix import (
+    build_command,
+    missing_fixture_reason,
+    parse_summary,
+)
 
 
 class ProfileKindMatrixTest(unittest.TestCase):
+    def test_missing_untracked_profile_fixture_is_skipped(self) -> None:
+        reason = missing_fixture_reason(
+            {
+                "project": "workspace/not-tracked-project",
+                "sample": "workspace/not-tracked-project/sample.yaml",
+            }
+        )
+
+        self.assertIn("not available in this checkout", reason)
+        self.assertIn("profileless kind matrix", reason)
+
     def test_last_json_object_is_used_as_deployment_summary(self) -> None:
         summary = parse_summary(
             'progress\n{"status":"succeeded","checks":{"ok":true}}\n'

@@ -42,6 +42,16 @@ def main() -> int:
                 }
             )
             continue
+        missing = missing_fixture_reason(capability)
+        if missing:
+            results.append(
+                {
+                    "profile": relative(path),
+                    "status": "skipped",
+                    "reason": missing,
+                }
+            )
+            continue
         command = build_command(capability)
         completed = subprocess.run(
             command,
@@ -116,6 +126,23 @@ def build_command(capability: dict[str, Any]) -> list[str]:
     if capability.get("skipPrevalidation"):
         command.append("--skip-prevalidation")
     return command
+
+
+def missing_fixture_reason(capability: dict[str, Any]) -> str:
+    project = resolve(str(capability.get("project") or ""))
+    sample = resolve(str(capability.get("sample") or ""))
+    missing = []
+    if not project.is_dir():
+        missing.append(f"project={relative(project)}")
+    if not sample.is_file():
+        missing.append(f"sample={relative(sample)}")
+    if not missing:
+        return ""
+    return (
+        "profile fixture is not available in this checkout; "
+        "profileless kind matrix remains the portable full E2E gate: "
+        + ", ".join(missing)
+    )
 
 
 def resolve(value: str) -> Path:

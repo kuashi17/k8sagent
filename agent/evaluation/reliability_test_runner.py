@@ -392,7 +392,11 @@ def run_kind_idempotency(sample: Path) -> dict[str, Any]:
         return {"status": "skipped", "reason": "kubectl not found"}
     current_context = run_command(["kubectl", "config", "current-context"], timeout=30)
     if current_context["exitCode"] != 0:
-        return {"status": "failed", "reason": "kubectl context unavailable", "result": current_context}
+        return {
+            "status": "skipped",
+            "reason": "kubectl current context is not configured",
+            "result": current_context,
+        }
     if DEFAULT_CLUSTER_CONTEXT not in current_context["stdout"]:
         switch = run_command(["kubectl", "config", "use-context", DEFAULT_CLUSTER_CONTEXT], timeout=30)
         if switch["exitCode"] != 0:
@@ -555,7 +559,12 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def overall_status(*sections: dict[str, Any]) -> str:
-    statuses = [section.get("status") for section in sections if not section.get("skipped")]
+    statuses = [
+        section.get("status")
+        for section in sections
+        if not section.get("skipped")
+        and section.get("status") != "skipped"
+    ]
     return "passed" if statuses and all(status == "passed" for status in statuses) else "failed"
 
 
