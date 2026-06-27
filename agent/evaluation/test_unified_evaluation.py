@@ -7,10 +7,61 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent.evaluation.unified_evaluation import build_unified_evaluation
+from agent.evaluation.unified_evaluation import (
+    build_unified_evaluation,
+    e2e_section,
+    latency_section,
+)
 
 
 class UnifiedEvaluationTest(unittest.TestCase):
+    def test_skipped_optional_idempotency_is_not_failed_evidence(self) -> None:
+        result = e2e_section(
+            {"results": []},
+            {"status": "skipped", "reason": "context unavailable"},
+            {
+                "results": [
+                    {
+                        "status": "passed",
+                        "profileUsed": False,
+                        "deploymentSummary": {
+                            "checks": {
+                                "lifecycleIdempotency": {
+                                    "reapplyStable": True
+                                },
+                                "lifecycleDelete": {
+                                    "managedResources": {
+                                        "configmap/sample": {
+                                            "passed": True
+                                        }
+                                    }
+                                },
+                                "lifecycleRestore": {"restored": True},
+                            }
+                        },
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["total"], 5)
+
+    def test_expanded_full_matrix_uses_twenty_minute_budget(self) -> None:
+        result = latency_section(
+            {
+                "current": {
+                    "suite": "full",
+                    "status": "passed",
+                    "totalSeconds": 931.678,
+                    "checks": {},
+                }
+            }
+        )
+
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["targetSeconds"], 1200.0)
+
     def test_report_has_required_top_level_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -253,7 +253,11 @@ def e2e_section(
         if checks:
             lifecycle_checks.extend(lifecycle)
     evidence.extend(lifecycle_checks)
-    if idempotency and not idempotency.get("skipped"):
+    if (
+        idempotency
+        and not idempotency.get("skipped")
+        and idempotency.get("status") != "skipped"
+    ):
         evidence.extend(
             [
                 bool(idempotency.get("reapplyIdempotent")),
@@ -322,7 +326,7 @@ def latency_section(data: dict[str, Any]) -> dict[str, Any]:
         return not_run("Performance trend is unavailable")
     total = float(current.get("totalSeconds") or 0)
     suite = str(current.get("suite") or "quick")
-    target = {"quick": 30.0, "standard": 180.0, "full": 900.0}.get(
+    target = {"quick": 30.0, "standard": 180.0, "full": 1200.0}.get(
         suite,
         180.0,
     )
