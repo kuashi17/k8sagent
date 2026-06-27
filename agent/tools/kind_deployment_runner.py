@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -248,7 +247,6 @@ class KindDeploymentEngine:
             text=True,
             capture_output=True,
             timeout=timeout,
-            env=self.command_env(name),
         )
         elapsed = round(time.time() - started, 3)
         result = {
@@ -308,19 +306,6 @@ class KindDeploymentEngine:
             )
             time.sleep(min(5 * attempt, 15))
         raise RuntimeError(f"retry loop exhausted: {name}")
-
-    def command_env(self, name: str) -> dict[str, str]:
-        env = os.environ.copy()
-        if not name.startswith("docker-build"):
-            return env
-        docker_config = self.log_dir / "docker-config"
-        docker_config.mkdir(parents=True, exist_ok=True)
-        (docker_config / "config.json").write_text(
-            '{"auths": {}}\n',
-            encoding="utf-8",
-        )
-        env["DOCKER_CONFIG"] = str(docker_config)
-        return env
 
     def write_summary(self, status: str) -> dict[str, Any]:
         summary = {
