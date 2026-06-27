@@ -1050,6 +1050,11 @@ Web UI의 기본 흐름:
 3. 계획 결과에서 `이 계획대로 만들기`를 눌러 실제 생성을 승인합니다.
 4. 생성과 검증 결과, 다음 행동을 확인합니다.
 
+이 전체 흐름은 `web/test_beginner_journey.py`에서 HTTP form 제출, 영속 job
+생성, 외부 worker claim, 계획 결과 표시, 실행 재승인, 최종 결과 표시까지
+하나의 사용자 여정으로 검증합니다. 테스트에서는 fixture Agent를 사용하므로
+Local LLM이나 Docker 없이도 Web과 Agent 사이의 계약 회귀를 빠르게 찾습니다.
+
 추가로 할 수 있는 작업:
 
 - 자연어 requirement 기반 Agent dry-run/execute
@@ -1072,6 +1077,9 @@ python3 web/server.py 8000
 ```
 
 긴 LLM planning이나 kind 배포 중에도 최초 HTTP 요청은 즉시 작업 페이지로 이동합니다. 최근 작업은 `GET /api/jobs`, 개별 상태는 `GET /api/jobs/<job-id>`, 취소는 `POST /api/jobs/<job-id>/cancel`로 처리합니다. 실행 정보는 `logs/web/jobs/<job-id>/status.json`, `stdout.log`, `stderr.log`에 저장됩니다. 서버 재시작 시 실행 중이던 작업은 `interrupted`로 표시되고 완료된 작업 결과는 계속 열 수 있습니다.
+
+운영 상태는 `GET /api/health`에서 확인합니다. 응답에는 Web 서비스 상태,
+embedded/external 실행 모드와 queued/running/terminal 작업 수가 포함됩니다.
 
 다중 Web worker 운영에서는 Web 프로세스와 실행 worker를 분리합니다.
 

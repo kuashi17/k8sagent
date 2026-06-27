@@ -208,6 +208,23 @@ async def job_list(limit: int = 20) -> JSONResponse:
     return JSONResponse({"jobs": jobs.list(limit)})
 
 
+@app.get("/api/health")
+async def health() -> JSONResponse:
+    recent = jobs.list(100)
+    counts = {
+        state: sum(1 for item in recent if item.get("state") == state)
+        for state in ["queued", "running", *sorted(TERMINAL_STATES)]
+    }
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "kubebuilder-agent-web",
+            "executionMode": getattr(jobs, "execution_mode", "embedded"),
+            "jobs": counts,
+        }
+    )
+
+
 @app.post("/api/jobs/{job_id}/cancel")
 async def cancel_job(job_id: str) -> JSONResponse:
     try:

@@ -137,6 +137,15 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["phase"], "LLM planning")
         self.assertFalse(response.json()["terminal"])
 
+    async def test_health_endpoint_exposes_queue_status(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            response = await self.request("GET", "/api/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+        self.assertEqual(response.json()["service"], "kubebuilder-agent-web")
+        self.assertEqual(response.json()["jobs"]["queued"], 0)
+
     async def test_job_can_be_canceled(self) -> None:
         with patch("web.app.jobs", FakeJobs()):
             response = await self.request(
