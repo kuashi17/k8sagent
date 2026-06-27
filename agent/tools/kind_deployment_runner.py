@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -66,7 +67,13 @@ class KindDeploymentEngine:
                 self.run_cmd("make-manifests", ["make", "manifests"], cwd=self.project)
                 self.run_cmd("make-test", ["make", "test"], cwd=self.project)
             self.ensure_cluster()
-            self.run_cmd("docker-build", ["make", "docker-build", f"IMG={self.args.image}"], cwd=self.project, timeout=600)
+            self.run_cmd_with_retry(
+                "docker-build",
+                ["make", "docker-build", f"IMG={self.args.image}"],
+                cwd=self.project,
+                timeout=600,
+                attempts=3,
+            )
             self.run_cmd("kind-load-image", ["kind", "load", "docker-image", self.args.image, "--name", self.args.cluster_name], timeout=300)
             self.run_cmd("make-install", ["make", "install"], cwd=self.project, timeout=300)
             self.run_cmd("make-deploy", ["make", "deploy", f"IMG={self.args.image}"], cwd=self.project, timeout=300)
@@ -235,7 +242,14 @@ class KindDeploymentEngine:
             self.steps.append(result)
             return result
         started = time.time()
-        completed = subprocess.run(command, cwd=cwd or REPO_ROOT, text=True, capture_output=True, timeout=timeout)
+        completed = subprocess.run(
+            command,
+            cwd=cwd or REPO_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            env=self.command_env(name),
+        )
         elapsed = round(time.time() - started, 3)
         result = {
             "name": name,
@@ -255,6 +269,58 @@ class KindDeploymentEngine:
             self.failed_step = name
             raise RuntimeError(f"command failed exitCode={completed.returncode}: {' '.join(command)}")
         return result
+
+    def run_cmd_with_retry(
+        self,
+        name: str,
+        command: list[str],
+        *,
+        cwd: Path | None = None,
+        timeout: int = 180,
+        attempts: int = 3,
+    ) -> dict[str, Any]:
+        for attempt in range(1, attempts + 1):
+            step_name = name if attempt == 1 else f"{name}-retry-{attempt}"
+            result = self.run_cmd(
+                step_name,
+                command,
+                cwd=cwd,
+                timeout=timeout,
+                check=False,
+            )
+            if result["exitCode"] == 0:
+                return result
+            if (
+                attempt >= attempts
+                or not is_transient_docker_failure(result)
+            ):
+                self.failed_step = name
+                raise RuntimeError(
+                    f"command failed exitCode={result['exitCode']}: "
+                    + " ".join(command)
+                )
+            self.checks.setdefault("commandRetries", []).append(
+                {
+                    "step": name,
+                    "attempt": attempt,
+                    "classification": "docker-wsl-connection",
+                }
+            )
+            time.sleep(min(5 * attempt, 15))
+        raise RuntimeError(f"retry loop exhausted: {name}")
+
+    def command_env(self, name: str) -> dict[str, str]:
+        env = os.environ.copy()
+        if not name.startswith("docker-build"):
+            return env
+        docker_config = self.log_dir / "docker-config"
+        docker_config.mkdir(parents=True, exist_ok=True)
+        (docker_config / "config.json").write_text(
+            '{"auths": {}}\n',
+            encoding="utf-8",
+        )
+        env["DOCKER_CONFIG"] = str(docker_config)
+        return env
 
     def write_summary(self, status: str) -> dict[str, Any]:
         summary = {
@@ -283,6 +349,22 @@ def parse_duration_seconds(value: str) -> int:
     if value.endswith("m"):
         return int(value[:-1]) * 60
     return int(value)
+
+
+def is_transient_docker_failure(result: dict[str, Any]) -> bool:
+    text = " ".join(
+        [str(result.get("stdout") or ""), str(result.get("stderr") or "")]
+    ).lower()
+    return any(
+        marker in text
+        for marker in (
+            "utilacceptvsock",
+            "error getting credentials",
+            "tls handshake timeout",
+            "connection reset by peer",
+            "unexpected eof",
+        )
+    )
 
 
 def resolve_path(path: str | Path) -> Path:

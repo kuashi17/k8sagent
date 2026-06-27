@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from agent.tools.kind_deployment_runner import KindDeploymentEngine
+from agent.tools.kind_deployment_runner import is_transient_docker_failure
 from agent.tools.kind_deployment_validators import (
     AppConfigConfigMapValidator,
     ManagedResourceValidator,
@@ -18,6 +19,18 @@ from agent.tools.langchain_wrappers import kind_deployment_runner
 
 
 class KindDeploymentValidatorTest(unittest.TestCase):
+    def test_only_known_transient_docker_errors_are_retryable(self) -> None:
+        self.assertTrue(
+            is_transient_docker_failure(
+                {"stderr": "UtilAcceptVsock failed: error getting credentials"}
+            )
+        )
+        self.assertFalse(
+            is_transient_docker_failure(
+                {"stderr": "Dockerfile syntax error on line 2"}
+            )
+        )
+
     def test_state_machine_status_requires_matching_ready_generation(
         self,
     ) -> None:
