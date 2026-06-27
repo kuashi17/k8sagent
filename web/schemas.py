@@ -107,6 +107,8 @@ class RunResultView(WebModel):
     capability_proposal: str = ""
     capability_approval: str = ""
     capability_resources: list[str] = Field(default_factory=list)
+    capability_discovery: list[str] = Field(default_factory=list)
+    capability_discovery_errors: list[str] = Field(default_factory=list)
 
 
 def checkbox(value: Any) -> bool:

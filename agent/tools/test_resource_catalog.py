@@ -61,6 +61,17 @@ resources:
 """
         )
 
+    def test_malicious_resource_plural_is_rejected(self) -> None:
+        self.assert_invalid(
+            """version: 1
+resources:
+  - kind: Broken
+    apiVersion: v1
+    plural: pods/status
+    suffix: broken
+"""
+        )
+
     def test_identity_and_status_mutation_paths_are_rejected(self) -> None:
         for target in (
             "metadata.ownerReferences",

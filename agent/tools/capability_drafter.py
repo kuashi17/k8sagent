@@ -18,6 +18,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.llm.client import chat_json, config_from_env
+from agent.tools.capability_discovery import (
+    CapabilityDiscoveryResult,
+    validate_proposal_discovery,
+)
 from agent.tools.resource_catalog import (
     DEFAULT_CATALOG_PATH,
     DEFAULT_OVERRIDE_PATH,
@@ -50,6 +54,10 @@ class ProposalModel(BaseModel):
     validationErrors: list[str] = Field(default_factory=list)
     approved: bool = False
     appliedTo: str = ""
+    discoveryValidation: list[CapabilityDiscoveryResult] = Field(
+        default_factory=list
+    )
+    discoveryErrors: list[str] = Field(default_factory=list)
 
 
 def main() -> int:
@@ -87,6 +95,7 @@ def main() -> int:
                 )
             approved_path = approved_proposal_path(args.approve_proposal)
             proposal = load_proposal(approved_path)
+            verify_discovery_approval(proposal)
             apply_proposal(
                 proposal,
                 Path(args.catalog),
@@ -100,6 +109,7 @@ def main() -> int:
                 candidate_path=Path(args.candidate) if args.candidate else None,
                 catalog_path=Path(args.catalog),
                 override_path=Path(args.overrides),
+                discover=True,
             )
     except (OSError, ValueError, ValidationError) as exc:
         print(f"capability proposal failed: {exc}", file=sys.stderr)
@@ -123,6 +133,11 @@ def main() -> int:
                 "capabilityCount": len(proposal.capabilities),
                 "approved": proposal.approved,
                 "appliedTo": proposal.appliedTo,
+                "discoveryPassed": bool(
+                    proposal.discoveryValidation
+                    and not proposal.discoveryErrors
+                ),
+                "discoveryErrors": proposal.discoveryErrors,
                 "output": str(output),
             },
             ensure_ascii=False,
@@ -137,6 +152,7 @@ def draft_capabilities(
     candidate_path: Path | None = None,
     catalog_path: Path = DEFAULT_CATALOG_PATH,
     override_path: Path = DEFAULT_OVERRIDE_PATH,
+    discover: bool = False,
 ) -> ProposalModel:
     spec = read_mapping(spec_path)
     catalog = load_combined_catalog(catalog_path, override_path)
@@ -177,6 +193,13 @@ def draft_capabilities(
         unsupportedResources=unsupported,
         capabilities=capabilities,
     )
+    if discover:
+        try:
+            proposal.discoveryValidation = validate_proposal_discovery(
+                proposal.capabilities
+            )
+        except ValueError as exc:
+            proposal.discoveryErrors = [str(exc)]
     proposal.proposalId = proposal_digest(proposal)
     return proposal
 
@@ -322,6 +345,28 @@ def apply_proposal(
     proposal.status = "approved"
     proposal.approved = True
     proposal.appliedTo = str(override_path)
+
+
+def verify_discovery_approval(proposal: ProposalModel) -> None:
+    if proposal.proposalId != proposal_digest(proposal):
+        raise ValueError(
+            "capability proposal changed before Kubernetes Discovery validation"
+        )
+    if proposal.discoveryErrors or not proposal.discoveryValidation:
+        raise ValueError(
+            "capability proposal requires a successful Kubernetes Discovery "
+            "validation before approval"
+        )
+    current = validate_proposal_discovery(proposal.capabilities)
+    expected = [
+        item.model_dump(mode="json")
+        for item in proposal.discoveryValidation
+    ]
+    actual = [item.model_dump(mode="json") for item in current]
+    if expected != actual:
+        raise ValueError(
+            "Kubernetes Discovery changed after capability review; rerun dry-run"
+        )
 
 
 def load_proposal(path: Path) -> ProposalModel:

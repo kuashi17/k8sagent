@@ -10,6 +10,7 @@ from unittest.mock import patch
 import yaml
 
 from agent.tools.capability_drafter import ProposalModel, proposal_digest
+from agent.tools.capability_discovery import CapabilityDiscoveryResult
 from agent.tools.resource_catalog import ResourceCapabilityDefinition
 from web.result_presenter import present_run_result
 
@@ -73,6 +74,20 @@ class ResultPresenterTest(unittest.TestCase):
                         suffix="queue",
                     )
                 ],
+                discoveryValidation=[
+                    CapabilityDiscoveryResult(
+                        kind="QuantumQueue",
+                        apiVersion="example.io/v1",
+                        endpoint="/apis/example.io/v1",
+                        resource="quantumqueues",
+                        scope="Namespaced",
+                        supportedVerbs=["create", "delete", "get", "list", "patch", "update", "watch"],
+                        requiredVerbs=["get", "list", "watch", "create", "update", "patch", "delete"],
+                        rbacApiGroup="example.io",
+                        rbacResource="quantumqueues",
+                        rbacVerbs=["get", "list", "watch", "create", "update", "patch", "delete"],
+                    )
+                ],
             )
             proposal.proposalId = proposal_digest(proposal)
             (generated / "queue-capability-proposal.yaml").write_text(
@@ -106,6 +121,7 @@ class ResultPresenterTest(unittest.TestCase):
             result.capability_resources,
             ["QuantumQueue · example.io/v1 · namespaced"],
         )
+        self.assertIn("example.io/quantumqueues", result.capability_discovery[0])
 
 
 if __name__ == "__main__":

@@ -1218,6 +1218,8 @@ Controller 생성의 일반화 경계는 다음과 같습니다.
 
 catalog에 없는 관리 리소스는 `capability_drafter`가 local LLM 초안을 생성하고 동일한 Pydantic catalog Schema와 안전 경로 정책으로 검증합니다. dry-run에서는 `generated/*-capability-proposal.yaml`에 `pending-approval` 상태와 내용 기반 `proposalId`만 기록합니다. 일반 실행 승인과 capability 승인은 분리되어 있으며, Web UI에서 API 버전과 scope를 별도로 확인하거나 CLI에서 검토한 proposal 경로와 정확한 `proposalId`를 함께 전달해야 `config/resource-capability-overrides.yaml` overlay에 반영됩니다. 제안 파일이 검토 후 변경되거나 현재 Operator spec과 관리 리소스가 다르면 실행을 중단하며, 미승인 상태에서는 나머지 변경 Tool을 dry-run으로 제한합니다. identity, ownerReference, finalizer, status 및 저장소 밖 경로를 덮어쓰는 mutation은 승인 전에 거부됩니다.
 
+Capability 초안은 현재 Kubernetes cluster의 Discovery API와도 대조합니다. 제안한 `apiVersion`과 kind가 실제 API에 존재하는지, plural과 namespaced/cluster scope가 정확한지, reconcile 전략에 필요한 verbs를 API가 지원하는지 확인합니다. 통과한 group/resource/verbs는 생성 RBAC marker에 사용되며, Discovery 연결 실패나 불일치가 있으면 capability overlay 승인이 거부됩니다. 승인 순간에도 Discovery 결과를 다시 계산하여 검토 이후 API가 바뀐 경우 실행을 중단합니다.
+
 ```bash
 python3 agent/langchain_agent.py \
   --requirement requirements/example.txt \

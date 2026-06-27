@@ -22,6 +22,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from agent.tools.controller_renderer import render_controller
 from agent.tools.controller_ir_builder import build_controller_ir
+from agent.tools.controller_ir import ReconcileStrategy
+from agent.tools.resource_catalog import load_resource_catalog
 
 
 GO_TYPES = {
@@ -150,6 +152,16 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
                     "verbs": ["get", "update", "patch"],
                 }
             )
+    normalized_rbac = normalize_rbac(
+        api_group,
+        plural,
+        rbac_resources,
+        spec_fields,
+    )
+    ensure_managed_resource_rbac(
+        normalized_rbac,
+        (spec.get("controller") or {}).get("managedResources") or [],
+    )
     return {
         "project": project,
         "api": {
@@ -163,7 +175,7 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
         "specFields": spec_fields,
         "statusFields": status_fields,
         "controller": spec.get("controller") or {},
-        "rbacResources": normalize_rbac(api_group, plural, rbac_resources, spec_fields),
+        "rbacResources": normalized_rbac,
         "profile": {
             "path": profile_path or "",
             "name": profile.get("profileName", ""),
@@ -266,6 +278,40 @@ def ensure_resource(resources: list[dict[str, Any]], api_group: str, resource: s
             item["verbs"] = unique([*(item.get("verbs") or []), *verbs])
             return
     resources.append({"apiGroup": api_group, "resource": resource, "verbs": verbs})
+
+
+def ensure_managed_resource_rbac(
+    resources: list[dict[str, Any]],
+    managed_resources: list[Any],
+) -> None:
+    catalog = load_resource_catalog().by_name()
+    for raw_kind in managed_resources:
+        capability = catalog.get(str(raw_kind))
+        if not capability:
+            continue
+        api_group = (
+            capability.apiVersion.split("/", 1)[0]
+            if "/" in capability.apiVersion
+            else ""
+        )
+        resource = capability.plural or pluralize(
+            capability.kind.lower()
+        )
+        if capability.strategy == ReconcileStrategy.READ_ONLY:
+            verbs = ["get", "list", "watch"]
+        elif capability.strategy == ReconcileStrategy.PATCH_EXISTING:
+            verbs = ["get", "list", "watch", "update", "patch"]
+        else:
+            verbs = [
+                "get",
+                "list",
+                "watch",
+                "create",
+                "update",
+                "patch",
+                "delete",
+            ]
+        ensure_resource(resources, api_group, resource, verbs)
 
 
 def build_changes(project_dir: Path, model: dict[str, Any]) -> list[dict[str, Any]]:

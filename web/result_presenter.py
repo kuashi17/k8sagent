@@ -42,9 +42,13 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
     state = str(job.get("state") or "unknown")
     succeeded = state == "succeeded" and not errors
     kind = str(requirement.get("kind") or "")
-    proposal_path, proposal_id, proposal_resources = capability_review(
-        summary
-    )
+    (
+        proposal_path,
+        proposal_id,
+        proposal_resources,
+        discovery,
+        discovery_errors,
+    ) = capability_review(summary)
     title = (
         f"{kind or 'Operator'} 계획이 준비됐습니다."
         if succeeded and (summary.get("agentMode") == "dry-run")
@@ -84,12 +88,14 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         capability_proposal=proposal_path,
         capability_approval=proposal_id,
         capability_resources=proposal_resources,
+        capability_discovery=discovery,
+        capability_discovery_errors=discovery_errors,
     )
 
 
 def capability_review(
     summary: dict[str, Any],
-) -> tuple[str, str, list[str]]:
+) -> tuple[str, str, list[str], list[str], list[str]]:
     relative = str(
         (summary.get("generatedFiles") or {}).get(
             "capabilityProposal"
@@ -97,29 +103,44 @@ def capability_review(
         or ""
     )
     if not relative:
-        return "", "", []
+        return "", "", [], [], []
     path = (REPO_ROOT / relative).resolve()
     try:
         path.relative_to((REPO_ROOT / "generated").resolve())
     except ValueError:
-        return "", "", []
+        return "", "", [], [], []
     if not path.is_file():
-        return "", "", []
+        return "", "", [], [], []
     try:
         proposal = load_proposal(path)
     except (OSError, ValueError):
-        return "", "", []
+        return "", "", [], [], []
     if (
         proposal.status != "pending-approval"
         or proposal.approved
         or proposal.proposalId != proposal_digest(proposal)
     ):
-        return "", "", []
+        return "", "", [], [], []
     resources = [
         f"{item.kind} · {item.apiVersion} · {item.scope.value.lower()}"
         for item in proposal.capabilities
     ]
-    return relative, proposal.proposalId, resources
+    discovery = [
+        (
+            f"{item.kind} · resource={item.resource} · "
+            f"scope={item.scope} · RBAC="
+            f"{item.rbacApiGroup or 'core'}/{item.rbacResource} "
+            f"[{','.join(item.rbacVerbs)}]"
+        )
+        for item in proposal.discoveryValidation
+    ]
+    return (
+        relative,
+        proposal.proposalId,
+        resources,
+        discovery,
+        list(proposal.discoveryErrors),
+    )
 
 
 def developer_details(job: dict[str, Any]) -> dict[str, str]:

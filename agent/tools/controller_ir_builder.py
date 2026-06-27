@@ -145,6 +145,7 @@ def build_managed_resource(
         resource_id=kind[:1].lower() + kind[1:],
         api_version=defaults.apiVersion,
         kind=kind,
+        plural=defaults.plural,
         scope=defaults.scope,
         name=NameRule(
             source_path=f"spec.{name_field}" if name_field else "",

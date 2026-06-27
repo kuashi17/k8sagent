@@ -116,7 +116,7 @@ def build_validation_contract(
                     == ReconcileStrategy.PATCH_EXISTING
                     else "create"
                 ),
-                resource=pluralize(token),
+                resource=(resource.plural or pluralize(token)),
                 apiGroup=managed_api_group(resource),
             )
         )

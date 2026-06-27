@@ -140,6 +140,7 @@ class ResourceCapabilityDefinition(CatalogModel):
     kind: str
     aliases: list[str] = Field(default_factory=list)
     apiVersion: str
+    plural: str = ""
     suffix: str
     scope: ResourceScope = ResourceScope.NAMESPACED
     strategy: ReconcileStrategy = ReconcileStrategy.CREATE_OR_UPDATE
@@ -167,6 +168,14 @@ class ResourceCapabilityDefinition(CatalogModel):
 
     @model_validator(mode="after")
     def validate_behavior(self) -> "ResourceCapabilityDefinition":
+        if self.plural:
+            import re
+
+            if not re.fullmatch(r"[a-z][a-z0-9.-]*", self.plural):
+                raise ValueError(
+                    f"invalid Kubernetes resource plural for {self.kind}: "
+                    f"{self.plural}"
+                )
         names = [self.kind, *self.aliases]
         if len(names) != len(set(names)):
             raise ValueError(f"duplicate kind or alias in {self.kind}")

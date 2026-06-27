@@ -103,6 +103,7 @@ class ManagedResourceSpec(IRModel):
     resource_id: str
     api_version: str
     kind: str
+    plural: str = ""
     scope: ResourceScope
     name: NameRule
     strategy: ReconcileStrategy

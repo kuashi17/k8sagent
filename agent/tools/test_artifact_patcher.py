@@ -11,9 +11,40 @@ from agent.tools.artifact_patcher import (
     sample_value,
 )
 from agent.tools.scaffold_runner import build_execution_env
+from agent.tools.resource_catalog import (
+    ResourceCapabilityCatalog,
+    ResourceCapabilityDefinition,
+)
 
 
 class ArtifactPatcherTest(unittest.TestCase):
+    @patch("agent.tools.artifact_patcher.load_resource_catalog")
+    def test_discovered_plural_drives_managed_resource_rbac(
+        self,
+        load_catalog,
+    ) -> None:
+        load_catalog.return_value = ResourceCapabilityCatalog(
+            version=1,
+            resources=[
+                ResourceCapabilityDefinition(
+                    kind="Person",
+                    apiVersion="directory.example.io/v1",
+                    plural="people",
+                    suffix="person",
+                )
+            ],
+        )
+        resources = []
+
+        from agent.tools.artifact_patcher import ensure_managed_resource_rbac
+
+        ensure_managed_resource_rbac(resources, ["Person"])
+
+        self.assertEqual(resources[0]["resource"], "people")
+        self.assertEqual(
+            resources[0]["apiGroup"],
+            "directory.example.io",
+        )
     def test_requirement_sample_defaults_work_without_profile(self) -> None:
         model = normalize_spec(
             {

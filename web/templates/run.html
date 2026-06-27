@@ -111,6 +111,18 @@
     <ul class="clean-list">
       {% for resource in result_view.capability_resources %}<li>{{ resource }}</li>{% endfor %}
     </ul>
+    {% if result_view.capability_discovery %}
+    <h3>Kubernetes Discovery 검증 통과</h3>
+    <ul class="clean-list">
+      {% for item in result_view.capability_discovery %}<li>✓ {{ item }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if result_view.capability_discovery_errors %}
+    <div class="alert alert-error">
+      <strong>Kubernetes API 확인 필요</strong>
+      <ul>{% for item in result_view.capability_discovery_errors %}<li>{{ item }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
     <p class="muted"><code>{{ result_view.capability_proposal }}</code></p>
   </section>
   {% endif %}

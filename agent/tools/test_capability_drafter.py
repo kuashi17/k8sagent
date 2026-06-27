@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
@@ -14,10 +15,57 @@ from agent.tools.capability_drafter import (
     draft_capabilities,
     load_combined_catalog,
     proposal_digest,
+    verify_discovery_approval,
 )
+from agent.tools.capability_discovery import CapabilityDiscoveryResult
 
 
 class CapabilityDrafterTest(unittest.TestCase):
+    @patch("agent.tools.capability_drafter.validate_proposal_discovery")
+    def test_approval_rechecks_unchanged_discovery_contract(
+        self,
+        validate_discovery,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            proposal = draft_capabilities(
+                self.write_spec(root),
+                candidate_path=self.write_candidate(root),
+                catalog_path=self.write_catalog(root),
+                override_path=root / "overrides.yaml",
+            )
+            result = CapabilityDiscoveryResult(
+                kind="NetworkPolicy",
+                apiVersion="networking.k8s.io/v1",
+                endpoint="/apis/networking.k8s.io/v1",
+                resource="networkpolicies",
+                scope="Namespaced",
+                supportedVerbs=["create", "delete", "get", "list", "patch", "update", "watch"],
+                requiredVerbs=["get", "list", "watch", "create", "update", "patch", "delete"],
+                rbacApiGroup="networking.k8s.io",
+                rbacResource="networkpolicies",
+                rbacVerbs=["get", "list", "watch", "create", "update", "patch", "delete"],
+            )
+            proposal.discoveryValidation = [result]
+            validate_discovery.return_value = [result]
+
+            verify_discovery_approval(proposal)
+
+        validate_discovery.assert_called_once()
+
+    def test_approval_requires_successful_discovery_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            proposal = draft_capabilities(
+                self.write_spec(root),
+                candidate_path=self.write_candidate(root),
+                catalog_path=self.write_catalog(root),
+                override_path=root / "overrides.yaml",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Discovery"):
+                verify_discovery_approval(proposal)
+
     def test_approval_path_cannot_escape_generated_directory(self) -> None:
         with self.assertRaisesRegex(ValueError, "generated"):
             approved_proposal_path("../outside-proposal.yaml")
