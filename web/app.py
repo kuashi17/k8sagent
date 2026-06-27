@@ -40,6 +40,32 @@ LOG_ROOT = REPO_ROOT / "logs" / "web"
 PROFILE_DIR = REPO_ROOT / "profiles"
 JOB_ROOT = LOG_ROOT / "jobs"
 
+STATE_LABELS = {
+    "queued": "대기 중",
+    "running": "진행 중",
+    "succeeded": "완료",
+    "failed": "실패",
+    "canceled": "취소됨",
+    "interrupted": "중단됨",
+}
+
+PHASE_LABELS = {
+    "queued": "작업 준비",
+    "starting": "Agent 시작",
+    "LLM planning": "요구사항 분석과 계획 생성",
+    "LLM planning completed": "계획 생성 완료",
+    "spec generation": "Operator 구조 설계",
+    "command planning": "안전한 실행 순서 구성",
+    "scaffold": "프로젝트 생성",
+    "artifact patch": "Controller 코드 생성",
+    "validation": "코드와 테스트 검증",
+    "kind deployment": "로컬 클러스터 검증",
+    "completed": "결과 정리 완료",
+    "failed": "오류 확인",
+    "canceled": "작업 취소",
+    "interrupted": "작업 중단",
+}
+
 app = FastAPI(title="Kubebuilder Agent")
 app.mount(
     "/static",
@@ -150,6 +176,8 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
             "selected_resume_existing": bool(
                 metadata.get("resumeExisting")
             ),
+            "state_labels": STATE_LABELS,
+            "phase_labels": PHASE_LABELS,
         },
     )
 
@@ -267,7 +295,7 @@ def render_home(
             "profiles": list_profiles(),
             "default_requirement": requirement_text
             if requirement_text is not None
-            else read_text(REPO_ROOT / "requirements" / "appconfig.txt"),
+            else "",
             "default_log_dir": "",
             "selected_profile": selected_profile,
             "selected_mode": selected_mode,
@@ -275,6 +303,7 @@ def render_home(
             "form_error": form_error,
             "show_log_analysis": show_log_analysis,
             "recent_jobs": jobs.list(3),
+            "state_labels": STATE_LABELS,
         },
         status_code=status_code,
     )

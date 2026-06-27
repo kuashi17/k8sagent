@@ -2,7 +2,7 @@
 {% block title %}작업 {{ job.jobId }} · Kubebuilder Agent{% endblock %}
 {% block body %}
 <main class="page run-page">
-  <a href="/" class="back-link">← 새 요구사항 입력</a>
+  <a href="/" class="back-link">← 처음으로</a>
 
   {% if not terminal %}
   <section class="card progress-card" id="job-panel" data-job-id="{{ job.jobId }}">
@@ -11,7 +11,7 @@
         <p class="eyebrow">Agent가 작업 중입니다</p>
         <h1 id="job-title">요구사항을 확인하고 있습니다.</h1>
       </div>
-      <span class="status status-{{ job.state }}" id="job-state">{{ job.state }}</span>
+      <span class="status status-{{ job.state }}" id="job-state">{{ state_labels.get(job.state, job.state) }}</span>
     </div>
     <p class="lead" id="job-message">
       화면을 닫아도 작업은 계속됩니다. 완료되면 결과 화면으로 자동 전환됩니다.
@@ -25,9 +25,9 @@
       <li data-phase="validation"><span>3</span>검증</li>
       <li data-phase="completed"><span>4</span>결과 정리</li>
     </ol>
-    <div class="current-task">
+    <div class="current-task" aria-live="polite">
       <small>현재 단계</small>
-      <strong id="job-phase">{{ job.phase }}</strong>
+      <strong id="job-phase">{{ phase_labels.get(job.phase, job.phase) }}</strong>
     </div>
     <div class="run-actions">
       {% if job.state in ["queued", "running"] %}
@@ -35,12 +35,17 @@
       {% endif %}
     </div>
     <details class="developer-details live-details">
-      <summary>실시간 로그 보기</summary>
+      <summary>문제가 있을 때 실행 로그 보기</summary>
       <pre id="job-stdout">{{ job.stdoutTail }}</pre>
       <pre id="job-stderr">{{ job.stderrTail }}</pre>
     </details>
   </section>
   {% else %}
+  <nav class="result-steps" aria-label="작업 진행 단계">
+    <span>✓ 요구사항 입력</span>
+    <span>✓ 계획 생성</span>
+    <strong>{{ "3단계 · 실행 승인" if result_view.can_execute else "✓ 작업 완료" }}</strong>
+  </nav>
   <section class="result-hero {% if result_view.succeeded %}result-success{% else %}result-failure{% endif %}">
     <p class="eyebrow">{{ "완료" if result_view.succeeded else "확인 필요" }}</p>
     <h1>{{ result_view.title }}</h1>
@@ -51,6 +56,16 @@
   <section class="alert alert-error result-alert">
     <strong>문제가 발생한 이유</strong>
     <ul>{% for item in result_view.errors %}<li>{{ item }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  {% if result_view.can_execute %}
+  <section class="safety-explanation" aria-label="현재 안전 상태">
+    <span class="safety-icon">✓</span>
+    <div>
+      <strong>아직 실제 파일이나 클러스터를 변경하지 않았습니다.</strong>
+      <p>아래 계획을 읽어본 뒤, 괜찮을 때만 생성 버튼을 누르세요.</p>
+    </div>
   </section>
   {% endif %}
 
@@ -76,14 +91,20 @@
     </article>
   </section>
 
+  {% if result_view.failed_steps %}
+  <section class="alert alert-error result-alert">
+    <strong>완료하지 못한 단계</strong>
+    <ul>{% for step in result_view.failed_steps %}<li>{{ step }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
   {% if result_view.generated_artifacts %}
-  <section class="card">
-    <p class="eyebrow">생성 대상</p>
-    <h2>확인할 파일</h2>
+  <details class="card artifact-details">
+    <summary>생성하거나 확인할 파일 {{ result_view.generated_artifacts|length }}개</summary>
     <ul class="artifact-list">
       {% for path in result_view.generated_artifacts %}<li><code>{{ path }}</code></li>{% endfor %}
     </ul>
-  </section>
+  </details>
   {% endif %}
 
   {% if result_view.warnings %}
@@ -130,9 +151,9 @@
   <section class="decision-card">
     {% if result_view.can_execute %}
     <div>
-      <p class="eyebrow">계획을 검토했나요?</p>
-      <h2>승인하면 실제 Operator 프로젝트를 생성합니다.</h2>
-      <p>생성 후 make generate, manifests, test까지 자동으로 검증합니다.</p>
+      <p class="eyebrow">마지막 확인</p>
+      <h2>이 계획대로 실제 파일을 만들까요?</h2>
+      <p>생성 후 코드와 설정을 검사하고 자동 테스트까지 실행합니다.</p>
     </div>
     <form method="post" action="/run-requirement" class="execute-form">
       <textarea name="requirement_text" hidden>{{ requirement_text }}</textarea>
@@ -150,7 +171,7 @@
       {% endif %}
       {% if selected_kind_deploy %}<input type="hidden" name="kind_deploy" value="on">{% endif %}
       {% if selected_resume_existing %}<input type="hidden" name="resume_existing" value="on">{% endif %}
-      <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약과 계획 승인 후 생성하기{% else %}계획 승인하고 생성하기{% endif %}</button>
+      <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약 확인 후 만들기{% else %}이 계획대로 만들기{% endif %}</button>
     </form>
     {% elif not result_view.succeeded and job.attempt < job.maxAttempts %}
     <div>
@@ -175,7 +196,7 @@
   {% endif %}
 
   <details class="card developer-details">
-    <summary>개발자 상세 정보</summary>
+    <summary>개발자용 실행 근거와 원본 로그</summary>
     {% if developer.agent_report %}<h3>Agent Report</h3><pre>{{ developer.agent_report }}</pre>{% endif %}
     {% if developer.safety_json %}<h3>Safety Evaluation</h3><pre>{{ developer.safety_json }}</pre>{% endif %}
     {% if developer.evidence_json %}<h3>Evidence Trace</h3><pre>{{ developer.evidence_json }}</pre>{% endif %}

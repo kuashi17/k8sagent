@@ -160,8 +160,12 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
             response = await self.request("GET", "/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("계획 확인하기", response.text)
-        self.assertIn("<summary>선택 설정</summary>", response.text)
+        self.assertIn("안전한 계획 만들기", response.text)
+        self.assertIn("<summary>개발자 설정</summary>", response.text)
+        self.assertIn("막막하다면 예시로 시작하세요", response.text)
+        self.assertIn(">웹 서비스</button>", response.text)
+        self.assertNotIn("TrainingJob", response.text)
+        self.assertNotIn("requirements/appconfig.txt", response.text)
         self.assertNotIn("계획 확인 없이 바로 실행", response.text)
         self.assertNotIn("기존 프로젝트에서 계속", response.text)
         self.assertNotIn("Safety Evaluation</summary>", response.text)
@@ -214,8 +218,21 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("WebService 계획이 준비됐습니다", response.text)
-        self.assertIn("계획 승인하고 생성하기", response.text)
-        self.assertIn("개발자 상세 정보", response.text)
+        self.assertIn("이 계획대로 만들기", response.text)
+        self.assertIn("아직 실제 파일이나 클러스터를 변경하지 않았습니다", response.text)
+        self.assertIn("개발자용 실행 근거와 원본 로그", response.text)
+
+    async def test_running_job_uses_beginner_facing_status_labels(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            response = await self.request(
+                "GET",
+                "/runs/job/20260619-async0001",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(">진행 중</span>", response.text)
+        self.assertIn("요구사항 분석과 계획 생성", response.text)
+        self.assertNotIn(">LLM planning</strong>", response.text)
 
 
 if __name__ == "__main__":

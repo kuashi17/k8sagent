@@ -3,11 +3,11 @@
 {% block body %}
 <main class="page home-page">
   <section class="hero">
-    <p class="eyebrow">새 Operator 만들기</p>
-    <h1>원하는 동작을 평소 말하듯 적어주세요.</h1>
+    <p class="eyebrow">1단계 · 요구사항 입력</p>
+    <h1>어떤 자동화를 만들고 싶으세요?</h1>
     <p class="lead">
-      Agent가 필요한 Kubernetes 리소스와 작업 순서를 먼저 계획합니다.
-      계획을 확인하기 전에는 프로젝트나 클러스터를 변경하지 않습니다.
+      Kubernetes 용어를 완벽히 몰라도 괜찮습니다. 원하는 동작을 적으면
+      Agent가 안전한 계획부터 보여드립니다.
     </p>
   </section>
 
@@ -17,29 +17,42 @@
     {% endif %}
     <form method="post" action="/run-requirement" id="requirement-form">
       <label class="question-label" for="requirement_text">
-        어떤 Operator를 만들고 싶나요?
+        만들고 싶은 동작을 설명해 주세요
       </label>
       <p class="field-help">
-        관리할 리소스, 입력값, 생성할 Kubernetes 리소스를 포함하면 더 정확합니다.
+        아래 세 가지 중 아는 내용만 포함해도 시작할 수 있습니다.
       </p>
+      <ul class="writing-hints" aria-label="요구사항 작성 도움말">
+        <li><strong>무엇을 관리할지</strong><span>예: 웹 서비스, 예약 작업, 설정 파일</span></li>
+        <li><strong>어떤 값을 받을지</strong><span>예: 이미지, 포트, 실행 주기</span></li>
+        <li><strong>어떻게 동작할지</strong><span>예: 생성, 변경 반영, 상태 표시</span></li>
+      </ul>
       <textarea
         id="requirement_text"
         name="requirement_text"
         spellcheck="false"
-        placeholder="예: RedisCache 리소스를 만들면 StatefulSet과 Service를 생성하고, size와 image 변경을 자동으로 반영해 주세요."
+        aria-describedby="requirement-help"
+        placeholder="예: WebApp이라는 리소스를 만들면 Deployment와 Service를 생성해 주세요. image와 replicas를 입력받고, 값이 바뀌면 배포에도 반영해 주세요. 현재 준비 상태도 보여주세요."
       >{{ default_requirement }}</textarea>
+
+      <div class="example-row" id="requirement-help">
+        <span>막막하다면 예시로 시작하세요</span>
+        <button type="button" class="example-button" data-requirement-example="WebApp이라는 리소스를 관리하는 Operator를 만들어 주세요. image, replicas, port를 입력받아 Deployment와 Service를 생성하고 변경 사항을 반영해 주세요. 현재 준비된 replica 수와 상태 메시지도 표시해 주세요.">웹 서비스</button>
+        <button type="button" class="example-button" data-requirement-example="ScheduledTask라는 리소스를 관리하는 Operator를 만들어 주세요. schedule, image, command를 입력받아 CronJob을 생성하고 값이 바뀌면 반영해 주세요. 마지막 실행 상태도 표시해 주세요.">예약 작업</button>
+        <button type="button" class="example-button" data-requirement-example="ConfigBundle이라는 리소스를 관리하는 Operator를 만들어 주세요. data와 targetName을 입력받아 ConfigMap을 생성하고 변경 내용을 반영해 주세요. 삭제할 때 생성한 ConfigMap도 함께 정리해 주세요.">설정 관리</button>
+      </div>
 
       <input type="hidden" name="mode" value="dry-run">
       <div class="primary-actions">
         <button class="primary-button" type="submit" id="primary-submit">
-          계획 확인하기
+          안전한 계획 만들기
         </button>
-        <span class="action-note">파일이나 클러스터를 변경하지 않습니다.</span>
+        <span class="action-note"><strong>안전:</strong> 이 단계에서는 아무것도 변경하지 않습니다.</span>
       </div>
 
       <details class="advanced-settings">
-        <summary>선택 설정</summary>
-        <p>처음 사용한다면 열지 않아도 됩니다.</p>
+        <summary>개발자 설정</summary>
+        <p>Profile이나 상세 평가가 필요한 경우에만 사용합니다.</p>
         <div class="settings-grid">
           <label>
             참고 Profile
@@ -82,12 +95,13 @@
   </section>
 
   <section class="how-it-works">
-    <h2>진행 방식</h2>
+    <p class="eyebrow">전체 과정</p>
+    <h2>계획을 본 뒤 한 번 더 승인합니다</h2>
     <ol class="steps">
-      <li><span>1</span><div><strong>요구사항 분석</strong><small>필요한 정보와 관리 리소스를 찾습니다.</small></div></li>
-      <li><span>2</span><div><strong>계획 확인</strong><small>생성 대상과 위험 요소를 먼저 보여줍니다.</small></div></li>
-      <li><span>3</span><div><strong>실행 승인</strong><small>사용자가 승인한 경우에만 파일을 생성합니다.</small></div></li>
-      <li><span>4</span><div><strong>검증 결과</strong><small>테스트 결과와 다음 행동을 쉽게 설명합니다.</small></div></li>
+      <li><span>1</span><div><strong>설명하기</strong><small>원하는 동작을 자연어로 입력합니다.</small></div></li>
+      <li><span>2</span><div><strong>계획 보기</strong><small>생성할 리소스와 위험 요소를 확인합니다.</small></div></li>
+      <li><span>3</span><div><strong>승인하기</strong><small>동의한 경우에만 실제 파일을 만듭니다.</small></div></li>
+      <li><span>4</span><div><strong>결과 확인</strong><small>컴파일과 테스트 결과를 쉽게 확인합니다.</small></div></li>
     </ol>
   </section>
 
@@ -106,7 +120,7 @@
           <strong>{{ "Operator 작업" if item.jobType == "requirement" else "로그 분석" }}</strong>
           <small>{{ item.createdAt }}</small>
         </span>
-        <span class="status status-{{ item.state }}">{{ item.state }}</span>
+        <span class="status status-{{ item.state }}">{{ state_labels.get(item.state, item.state) }}</span>
       </a>
       {% endfor %}
     </div>

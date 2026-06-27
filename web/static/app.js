@@ -1,4 +1,23 @@
 (() => {
+  const requirementInput = document.getElementById("requirement_text");
+  document.querySelectorAll("[data-requirement-example]").forEach((button) => {
+    button.addEventListener("click", () => {
+      requirementInput.value = button.dataset.requirementExample;
+      requirementInput.focus();
+      requirementInput.setSelectionRange(
+        requirementInput.value.length,
+        requirementInput.value.length,
+      );
+    });
+  });
+
+  const requirementForm = document.getElementById("requirement-form");
+  requirementForm?.addEventListener("submit", () => {
+    const submit = document.getElementById("primary-submit");
+    submit.disabled = true;
+    submit.textContent = "계획을 시작하는 중…";
+  });
+
   const panel = document.getElementById("job-panel");
   if (panel) {
     const jobId = panel.dataset.jobId;
@@ -10,25 +29,34 @@
     const stderr = document.getElementById("job-stderr");
     const cancel = document.getElementById("cancel-job");
 
+    const stateLabels = {
+      queued: "대기 중",
+      running: "진행 중",
+      succeeded: "완료",
+      failed: "실패",
+      canceled: "취소됨",
+      interrupted: "중단됨",
+    };
+
     const phaseInfo = {
-      queued: [5, "작업을 시작할 준비를 하고 있습니다."],
-      starting: [10, "Agent를 시작하고 있습니다."],
-      "LLM planning": [20, "요구사항을 이해하고 계획을 만들고 있습니다."],
-      "LLM planning completed": [30, "계획을 확인했습니다."],
-      "spec generation": [42, "Operator 구조를 정리하고 있습니다."],
-      "command planning": [50, "안전한 실행 순서를 만들고 있습니다."],
-      scaffold: [62, "Kubebuilder 프로젝트를 생성하고 있습니다."],
-      "artifact patch": [72, "Controller 코드를 요구사항에 맞게 작성하고 있습니다."],
-      validation: [85, "생성 코드와 테스트를 검증하고 있습니다."],
-      "kind deployment": [92, "kind 클러스터에서 동작을 확인하고 있습니다."],
-      completed: [100, "결과를 정리했습니다."],
+      queued: [5, "작업을 시작할 준비를 하고 있습니다.", "작업 준비"],
+      starting: [10, "Agent를 시작하고 있습니다.", "Agent 시작"],
+      "LLM planning": [20, "요구사항을 이해하고 계획을 만들고 있습니다.", "요구사항 분석과 계획 생성"],
+      "LLM planning completed": [30, "계획을 확인했습니다.", "계획 생성 완료"],
+      "spec generation": [42, "Operator 구조를 정리하고 있습니다.", "Operator 구조 설계"],
+      "command planning": [50, "안전한 실행 순서를 만들고 있습니다.", "안전한 실행 순서 구성"],
+      scaffold: [62, "Operator 프로젝트를 생성하고 있습니다.", "프로젝트 생성"],
+      "artifact patch": [72, "Controller 코드를 요구사항에 맞게 작성하고 있습니다.", "Controller 코드 생성"],
+      validation: [85, "생성 코드와 테스트를 검증하고 있습니다.", "코드와 테스트 검증"],
+      "kind deployment": [92, "로컬 클러스터에서 동작을 확인하고 있습니다.", "로컬 클러스터 검증"],
+      completed: [100, "결과를 정리했습니다.", "결과 정리 완료"],
     };
 
     function renderJob(job) {
-      state.textContent = job.state;
+      state.textContent = stateLabels[job.state] || job.state;
       state.className = `status status-${job.state}`;
-      phase.textContent = job.phase || "running";
-      const info = phaseInfo[job.phase] || [15, "Agent가 작업을 진행하고 있습니다."];
+      const info = phaseInfo[job.phase] || [15, "Agent가 작업을 진행하고 있습니다.", "작업 진행"];
+      phase.textContent = info[2];
       progress.style.width = `${info[0]}%`;
       title.textContent = info[1];
       stdout.textContent = job.stdoutTail || "";
