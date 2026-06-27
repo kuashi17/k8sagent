@@ -161,7 +161,9 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("계획 확인하기", response.text)
-        self.assertIn("<summary>고급 설정</summary>", response.text)
+        self.assertIn("<summary>선택 설정</summary>", response.text)
+        self.assertNotIn("계획 확인 없이 바로 실행", response.text)
+        self.assertNotIn("기존 프로젝트에서 계속", response.text)
         self.assertNotIn("Safety Evaluation</summary>", response.text)
 
     async def test_short_requirement_is_rejected_for_beginner(self) -> None:

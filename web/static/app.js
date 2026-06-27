@@ -1,27 +1,4 @@
 (() => {
-  const directExecute = document.getElementById("direct-execute");
-  const mode = document.getElementById("mode");
-  const confirmation = document.getElementById("execution-confirmation");
-  const submit = document.getElementById("primary-submit");
-  const actionNote = document.querySelector(".action-note");
-
-  function updateExecutionMode() {
-    if (!directExecute || !mode) return;
-    const execute = directExecute.checked;
-    mode.value = execute ? "execute" : "dry-run";
-    confirmation?.classList.toggle("visible", execute);
-    if (submit) {
-      submit.textContent = execute ? "바로 생성하기" : "계획 확인하기";
-    }
-    if (actionNote) {
-      actionNote.textContent = execute
-        ? "승인 후 실제 파일을 생성합니다."
-        : "파일이나 클러스터를 변경하지 않습니다.";
-    }
-  }
-  directExecute?.addEventListener("change", updateExecutionMode);
-  updateExecutionMode();
-
   const panel = document.getElementById("job-panel");
   if (panel) {
     const jobId = panel.dataset.jobId;

@@ -44,6 +44,10 @@ class ResultPresenterTest(unittest.TestCase):
             result.managed_resources,
             ["Deployment", "Service"],
         )
+        self.assertEqual(
+            result.completed_steps,
+            ["요구사항 구조화"],
+        )
 
 
 if __name__ == "__main__":

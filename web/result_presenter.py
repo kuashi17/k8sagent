@@ -15,12 +15,12 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
     warnings = strings(summary.get("warnings"))
     tool_results = summary.get("toolResults") or []
     completed = [
-        str(item.get("tool"))
+        tool_label(str(item.get("tool")))
         for item in tool_results
         if item.get("exitCode") == 0 and item.get("tool")
     ]
     failed = [
-        str(item.get("tool"))
+        tool_label(str(item.get("tool")))
         for item in tool_results
         if item.get("exitCode") not in {None, 0} and item.get("tool")
     ]
@@ -104,3 +104,15 @@ def strings(value: Any) -> list[str]:
 
 def unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def tool_label(value: str) -> str:
+    return {
+        "spec_generator": "요구사항 구조화",
+        "capability_drafter": "관리 리소스 지원 확인",
+        "command_planner": "안전한 작업 계획",
+        "scaffold_runner": "프로젝트 뼈대 생성",
+        "artifact_patcher": "Controller 코드 생성",
+        "validation": "코드 및 테스트 검증",
+        "kind_deployment": "로컬 클러스터 검증",
+    }.get(value, value.replace("_", " "))

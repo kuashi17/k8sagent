@@ -29,7 +29,7 @@
         placeholder="예: RedisCache 리소스를 만들면 StatefulSet과 Service를 생성하고, size와 image 변경을 자동으로 반영해 주세요."
       >{{ default_requirement }}</textarea>
 
-      <input type="hidden" name="mode" id="mode" value="{{ selected_mode or 'dry-run' }}">
+      <input type="hidden" name="mode" value="dry-run">
       <div class="primary-actions">
         <button class="primary-button" type="submit" id="primary-submit">
           계획 확인하기
@@ -37,9 +37,9 @@
         <span class="action-note">파일이나 클러스터를 변경하지 않습니다.</span>
       </div>
 
-      <details class="advanced-settings" {% if selected_mode == "execute" %}open{% endif %}>
-        <summary>고급 설정</summary>
-        <p>대부분의 경우 기본값 그대로 시작하면 됩니다.</p>
+      <details class="advanced-settings">
+        <summary>선택 설정</summary>
+        <p>처음 사용한다면 열지 않아도 됩니다.</p>
         <div class="settings-grid">
           <label>
             참고 Profile
@@ -72,28 +72,8 @@
           <label class="switch-row">
             <input type="checkbox" name="kind_deploy">
             <span>
-              <strong>kind 클러스터 배포 포함</strong>
+              <strong>로컬 클러스터 검증 포함</strong>
               <small>Docker와 배포 설정이 있는 Profile이 필요합니다.</small>
-            </span>
-          </label>
-          <label class="switch-row">
-            <input type="checkbox" name="resume_existing">
-            <span>
-              <strong>기존 프로젝트에서 계속</strong>
-              <small>이미 생성된 scaffold를 다시 만들지 않습니다.</small>
-            </span>
-          </label>
-          <label class="switch-row danger-setting">
-            <input type="checkbox" id="direct-execute" {% if selected_mode == "execute" %}checked{% endif %}>
-            <span>
-              <strong>계획 확인 없이 바로 실행</strong>
-              <small>숙련자용입니다. 실제 파일을 변경할 수 있습니다.</small>
-            </span>
-          </label>
-          <label class="switch-row execution-confirmation" id="execution-confirmation">
-            <input type="checkbox" name="confirm_execute">
-            <span>
-              <strong>실제 변경을 이해했고 실행을 승인합니다</strong>
             </span>
           </label>
         </div>
