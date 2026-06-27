@@ -290,6 +290,7 @@ class ResourceCapabilityCatalog(CatalogModel):
         }
         canonical = {resource.kind for resource in self.resources}
         for resource in self.resources:
+            behavior_targets: dict[str, str] = {}
             for value in [resource.kind, *resource.aliases]:
                 if value in names:
                     raise ValueError(
@@ -331,10 +332,19 @@ class ResourceCapabilityCatalog(CatalogModel):
                             f"behavior {primitive.name} for {resource.kind} "
                             f"is missing paths: {', '.join(sorted(missing))}"
                         )
+                    rendered_target = mutation.target.format(**binding.paths)
                     validate_path(
-                        mutation.target.format(**binding.paths),
+                        rendered_target,
                         f"{resource.kind} behavior mutation",
                     )
+                    previous = behavior_targets.get(rendered_target)
+                    if previous:
+                        raise ValueError(
+                            f"behavior target {rendered_target} for "
+                            f"{resource.kind} is defined by both "
+                            f"{previous} and {primitive.name}"
+                        )
+                    behavior_targets[rendered_target] = primitive.name
         return self
 
     def by_name(self) -> dict[str, ResourceCapabilityDefinition]:

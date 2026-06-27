@@ -1193,7 +1193,7 @@ python3 agent/evaluation/profileless_compile_runner.py \
   --output-dir evaluation/results/profileless-compile/local
 ```
 
-현재 matrix의 9개 요구사항마다 `spec 생성 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
+현재 matrix의 10개 요구사항마다 `spec 생성 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. 이 중 aliased workload fixture는 `variables`, `limits`, `claimRef`처럼 primitive의 기본 필드명과 다른 입력도 명시된 target 동작을 기준으로 추론하는지 확인합니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
 
 생성된 profileless Operator matrix를 실제 kind에서 lifecycle까지 확인:
 

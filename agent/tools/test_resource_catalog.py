@@ -147,6 +147,32 @@ resources:
 """
         )
 
+    def test_duplicate_bound_behavior_target_is_rejected(self) -> None:
+        self.assert_invalid(
+            """version: 1
+behaviorPrimitives:
+  - name: first
+    activationFields: [first]
+    mutations:
+      - source: first
+        target: "{container}.env"
+  - name: second
+    activationFields: [second]
+    mutations:
+      - source: second
+        target: "{container}.env"
+resources:
+  - kind: Broken
+    apiVersion: v1
+    suffix: broken
+    behaviorBindings:
+      - primitive: first
+        paths: {container: spec.containers[0]}
+      - primitive: second
+        paths: {container: spec.containers[0]}
+"""
+        )
+
     def assert_invalid(self, text: str) -> None:
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "catalog.yaml"

@@ -1,0 +1,37 @@
+PortableWorker라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 sample.io, group은 platform, version은 v1alpha1, kind는 PortableWorker로 한다.
+
+spec에는 다음 필드를 포함한다.
+- imageRef:string - workload container image
+- copyCount:int32 - Deployment replica 수
+- variables:map[string]string - container 환경변수
+- limits:map[string]string - container resource limits
+- claimRef:string - mount할 기존 PVC 이름
+- probePath:string - liveness probe HTTP path
+- probePort:int32 - liveness probe port
+
+status에는 다음 필드를 포함한다.
+- phase:string - 현재 처리 상태
+- deploymentName:string - 생성된 Deployment 이름
+- readyReplicas:int32 - 준비된 replica 수
+- message:string - 상태 설명
+
+Controller는 PortableWorker 변경을 감지하고 Deployment를 생성/수정/삭제한다.
+
+Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다.
+- spec.imageRef -> Deployment.spec.template.spec.containers[0].image
+- spec.copyCount -> Deployment.spec.replicas
+- spec.variables -> Deployment.spec.template.spec.containers[0].env
+- spec.limits -> Deployment.spec.template.spec.containers[0].resources.limits
+- spec.claimRef -> Deployment.spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+- spec.probePath -> Deployment.spec.template.spec.containers[0].livenessProbe.httpGet.path
+- spec.probePort -> Deployment.spec.template.spec.containers[0].livenessProbe.httpGet.port
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- apps/deployments
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test

@@ -261,6 +261,99 @@ class ControllerIRBuilderTest(unittest.TestCase):
                 for item in deployment.static_mutations
             },
         )
+
+    def test_explicit_targets_activate_behaviors_for_aliased_fields(
+        self,
+    ) -> None:
+        deployment = build_controller_ir(
+            model(
+                ["Deployment"],
+                ["variables", "claimRef"],
+                ["phase"],
+                [
+                    {
+                        "from": "spec.variables",
+                        "to": (
+                            "Deployment.spec.template.spec."
+                            "containers[0].env"
+                        ),
+                    },
+                    {
+                        "from": "spec.claimRef",
+                        "to": (
+                            "Deployment.spec.template.spec.volumes[0]."
+                            "persistentVolumeClaim.claimName"
+                        ),
+                    },
+                ],
+            )
+        ).resource("Deployment")
+
+        mappings = {
+            item.source_path: item
+            for item in deployment.field_mappings
+        }
+        self.assertEqual(mappings["spec.variables"].transform, "env-map")
+        self.assertIn("container-env", deployment.active_behaviors)
+        self.assertIn("pvc-volume", deployment.active_behaviors)
+        static = {
+            item.target_path: item.value
+            for item in deployment.static_mutations
+        }
+        self.assertEqual(
+            static[
+                "spec.template.spec.containers[0].volumeMounts[0].mountPath"
+            ],
+            "/workspace",
+        )
+        self.assertEqual(
+            static["spec.template.spec.volumes[0].name"],
+            "workload-data",
+        )
+
+    def test_conflicting_explicit_targets_are_rejected(self) -> None:
+        target = "Deployment.spec.template.spec.containers[0].env"
+        with self.assertRaisesRegex(
+            ValueError,
+            "conflicting Deployment mutation target",
+        ):
+            build_controller_ir(
+                model(
+                    ["Deployment"],
+                    ["variables", "overrides"],
+                    ["phase"],
+                    [
+                        {"from": "spec.variables", "to": target},
+                        {"from": "spec.overrides", "to": target},
+                    ],
+                )
+            )
+
+    def test_duplicate_explicit_mapping_is_normalized(self) -> None:
+        target = "Deployment.spec.template.spec.containers[0].env"
+        deployment = build_controller_ir(
+            model(
+                ["Deployment"],
+                ["variables"],
+                ["phase"],
+                [
+                    {"from": "spec.variables", "to": target},
+                    {"from": "spec.variables", "to": target},
+                ],
+            )
+        ).resource("Deployment")
+
+        self.assertEqual(
+            len(
+                [
+                    item
+                    for item in deployment.field_mappings
+                    if item.target_path.endswith("containers[0].env")
+                ]
+            ),
+            1,
+        )
+
     def test_immutable_fields_are_explicit_lifecycle_contracts(
         self,
     ) -> None:

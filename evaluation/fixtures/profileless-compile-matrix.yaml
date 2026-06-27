@@ -8,3 +8,4 @@ requirements:
   - evaluation/fixtures/requirements/queue-worker.txt
   - evaluation/fixtures/requirements/node-sidecar.txt
   - evaluation/fixtures/requirements/composable-workload.txt
+  - evaluation/fixtures/requirements/aliased-workload.txt

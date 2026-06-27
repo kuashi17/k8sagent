@@ -20,6 +20,7 @@ from agent.tools.controller_ir import (
 )
 from agent.tools.resource_catalog import (
     CatalogBehaviorPrimitive,
+    CatalogPrimitiveMutation,
     ResourceCapabilityDefinition,
     load_resource_catalog,
 )
@@ -100,14 +101,21 @@ def build_managed_resource(
     name_field = first_field(fields, *defaults.nameFields)
     capabilities = capabilities_for(defaults)
     behavior_mappings, static_mutations, active_behaviors = (
-        behavior_contract_for(defaults, primitives, fields)
+        behavior_contract_for(
+            defaults,
+            primitives,
+            fields,
+            explicit_mappings,
+        )
     )
     mappings = mappings_for(
         defaults,
         fields,
         explicit_mappings,
         behavior_mappings,
+        primitives,
     )
+    validate_mutation_contract(kind, mappings, static_mutations)
     return ManagedResourceSpec(
         resource_id=kind[:1].lower() + kind[1:],
         api_version=defaults.apiVersion,
@@ -149,17 +157,30 @@ def behavior_contract_for(
     defaults: ResourceCapabilityDefinition,
     primitives: dict[str, CatalogBehaviorPrimitive],
     fields: set[str],
+    explicit_mappings: list[FieldMapping],
 ) -> tuple[list[FieldMapping], list[StaticMutation], list[str]]:
     mappings: list[FieldMapping] = []
     static: list[StaticMutation] = []
     active: list[str] = []
+    explicit_targets = {
+        normalize_target_path(mapping.target_path)
+        for mapping in explicit_mappings
+        if target_resource(mapping.target_path) == defaults.kind
+    }
     for binding in defaults.behaviorBindings:
         primitive = primitives[binding.primitive]
         present = [field in fields for field in primitive.activationFields]
-        enabled = (
+        field_enabled = (
             all(present)
             if primitive.activationMode == "all"
             else any(present)
+        )
+        rendered_targets = {
+            mutation.target.format(**binding.paths)
+            for mutation in primitive.mutations
+        }
+        enabled = field_enabled or bool(
+            rendered_targets.intersection(explicit_targets)
         )
         if not enabled:
             continue
@@ -176,6 +197,11 @@ def behavior_contract_for(
                         update_policy=mutation.updatePolicy,
                     )
                 )
+            elif target in explicit_targets:
+                # The explicit mapping carries the user-selected source field.
+                # Its target still activates this behavior and receives the
+                # primitive transform in mappings_for().
+                continue
             elif mutation.source and mutation.defaultValue is not None:
                 static.append(
                     StaticMutation(
@@ -247,13 +273,24 @@ def mappings_for(
     fields: set[str],
     explicit: list[FieldMapping],
     behavior_mappings: list[FieldMapping],
+    primitives: dict[str, CatalogBehaviorPrimitive],
 ) -> list[FieldMapping]:
     kind = defaults.kind
     result = []
+    explicit_pairs: set[tuple[str, str]] = set()
     for item in explicit:
         if target_resource(item.target_path) != kind:
             continue
         target = normalize_target_path(item.target_path)
+        pair = (item.source_path, target)
+        if pair in explicit_pairs:
+            continue
+        explicit_pairs.add(pair)
+        primitive_mutation = behavior_mutation_for_target(
+            defaults,
+            primitives,
+            target,
+        )
         behavior = next(
             (
                 candidate
@@ -272,25 +309,25 @@ def mappings_for(
             ),
             None,
         )
+        if primitive_mutation:
+            transform = primitive_mutation.transform
+            mutability = primitive_mutation.mutability
+            update_policy = primitive_mutation.updatePolicy
+        elif behavior:
+            transform = behavior.transform
+            mutability = behavior.mutability
+            update_policy = behavior.update_policy
+        else:
+            transform = mapping_transform(defaults, item)
+            mutability = field_mutability(kind, target)
+            update_policy = field_update_policy(kind, target)
         result.append(
             item.model_copy(
                 update={
                     "target_path": target,
-                    "transform": (
-                        behavior.transform
-                        if behavior
-                        else mapping_transform(defaults, item)
-                    ),
-                    "mutability": (
-                        behavior.mutability
-                        if behavior
-                        else field_mutability(kind, target)
-                    ),
-                    "update_policy": (
-                        behavior.update_policy
-                        if behavior
-                        else field_update_policy(kind, target)
-                    ),
+                    "transform": transform,
+                    "mutability": mutability,
+                    "update_policy": update_policy,
                     "assertion_path": (
                         catalog_mapping.assertionPath
                         if catalog_mapping
@@ -331,6 +368,44 @@ def mappings_for(
             result.append(mapping)
             existing_pairs.add(pair)
     return result
+
+
+def validate_mutation_contract(
+    kind: str,
+    mappings: list[FieldMapping],
+    static_mutations: list[StaticMutation],
+) -> None:
+    targets: dict[str, str] = {}
+    for mapping in mappings:
+        previous = targets.get(mapping.target_path)
+        if previous and previous != mapping.source_path:
+            raise ValueError(
+                f"conflicting {kind} mutation target "
+                f"{mapping.target_path}: {previous} and "
+                f"{mapping.source_path}"
+            )
+        targets[mapping.target_path] = mapping.source_path
+    for mutation in static_mutations:
+        previous = targets.get(mutation.target_path)
+        if previous:
+            raise ValueError(
+                f"conflicting {kind} mutation target "
+                f"{mutation.target_path}: {previous} and static value"
+            )
+        targets[mutation.target_path] = "static value"
+
+
+def behavior_mutation_for_target(
+    defaults: ResourceCapabilityDefinition,
+    primitives: dict[str, CatalogBehaviorPrimitive],
+    target: str,
+) -> CatalogPrimitiveMutation | None:
+    for binding in defaults.behaviorBindings:
+        primitive = primitives[binding.primitive]
+        for mutation in primitive.mutations:
+            if mutation.target.format(**binding.paths) == target:
+                return mutation
+    return None
 
 
 def mapping_transform(
