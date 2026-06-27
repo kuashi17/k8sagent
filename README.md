@@ -1193,7 +1193,7 @@ python3 agent/evaluation/profileless_compile_runner.py \
   --output-dir evaluation/results/profileless-compile/local
 ```
 
-현재 matrix의 10개 요구사항마다 `spec 생성 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. 이 중 aliased workload fixture는 `variables`, `limits`, `claimRef`처럼 primitive의 기본 필드명과 다른 입력도 명시된 target 동작을 기준으로 추론하는지 확인합니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
+현재 matrix의 13개 요구사항마다 `spec 생성 → capability 확인 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. aliased workload fixture는 `variables`, `limits`, `claimRef`처럼 primitive의 기본 필드명과 다른 입력도 명시된 target 동작을 기준으로 추론하는지 확인합니다. NetworkPolicy, ServiceAccount, Role, ClusterRole, HorizontalPodAutoscaler는 catalog 항목만으로 추가한 일반화 증거입니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
 
 생성된 profileless Operator matrix를 실제 kind에서 lifecycle까지 확인:
 
@@ -1215,6 +1215,10 @@ Controller 생성의 일반화 경계는 다음과 같습니다.
 `evaluation/fixtures/requirements/queue-worker.txt`는 core 변경 없이 새로운 Custom Resource Kind를 생성·컴파일할 수 있는지 확인하는 held-out fixture입니다.
 
 관리 리소스 capability는 [resource-capabilities.yaml](config/resource-capabilities.yaml)에 선언합니다. 각 항목은 alias, API version, scope, ownership, lifecycle, name 후보, base object, 조건부 object, label path, dependency, field/status mapping을 포함하며 Pydantic으로 검증됩니다. catalog 최상위의 재사용 가능한 behavior primitive를 workload별 path binding으로 조합해 env, resource limits, PVC volume/mount, liveness/readiness probe를 생성합니다. 단일 mutation renderer는 `containers[0].ports[0]` 같은 map/list 혼합 경로와 `int64`, `env-map`, `string-map`, `merge-string-map`, `string-slice` transform을 공통 처리합니다.
+
+catalog에 없는 관리 리소스는 `capability_drafter`가 local LLM 초안을 생성하고 동일한 Pydantic catalog Schema와 안전 경로 정책으로 검증합니다. dry-run에서는 `generated/*-capability-proposal.yaml`에 `pending-approval` 상태로만 기록하며, execute 승인 경계를 통과한 경우에만 `config/resource-capability-overrides.yaml` overlay에 반영합니다. identity, ownerReference, finalizer, status 및 저장소 밖 경로를 덮어쓰는 mutation은 승인 전에 거부됩니다.
+
+profileless Controller status에는 `observedGeneration`과 표준 `Conditions`가 자동 추가됩니다. 정상 상태는 30초 재조정, 실패는 controller-runtime 오류 재시도와 10초 requeue 근거, immutable 변경은 `Recreating` Condition과 2초 재조정으로 구분됩니다. cluster-scoped 등 ownerReference를 사용할 수 없는 `explicit-delete` capability는 finalizer로 삭제 lifecycle을 완료합니다.
 
 새 관리 리소스 일반화 검증은 Python 분기나 emitter를 추가하는 방식이 아니라 catalog 항목과 `evaluation/fixtures/requirements/`의 held-out 요구사항만 추가하여 수행합니다. 중복 alias, 잘못된 nested path, 미완성·미등록 dependency, read-only mutation 및 cluster-scoped ownerReference는 catalog 로드 단계에서 거부됩니다.
 

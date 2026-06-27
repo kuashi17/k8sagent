@@ -61,6 +61,26 @@ resources:
 """
         )
 
+    def test_identity_and_status_mutation_paths_are_rejected(self) -> None:
+        for target in (
+            "metadata.ownerReferences",
+            "metadata.finalizers[0]",
+            "metadata.namespace",
+            "status.phase",
+        ):
+            with self.subTest(target=target):
+                self.assert_invalid(
+                    f"""version: 1
+resources:
+  - kind: Broken
+    apiVersion: v1
+    suffix: broken
+    fieldMappings:
+      - source: value
+        target: {target}
+"""
+                )
+
     def test_incomplete_dependency_is_rejected(self) -> None:
         self.assert_invalid(
             """version: 1

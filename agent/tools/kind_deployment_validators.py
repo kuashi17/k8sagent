@@ -403,6 +403,9 @@ class ManagedResourceValidator:
         self.update_mode = str(
             config.get("updateMode") or "in-place"
         )
+        self.state_machine_status = bool(
+            config.get("stateMachineStatus", False)
+        )
         self.initial_assertions = [
             {
                 "resource": str(item.get("resource") or ""),
@@ -519,6 +522,14 @@ class ManagedResourceValidator:
                 )
         engine.checks["managedResources"] = managed
         engine.checks["customResourceStatus"] = status
+        if self.state_machine_status:
+            self.verify_state_machine_status(custom_resource, status)
+            engine.checks["stateMachineStatus"] = {
+                "observedGeneration": status.get(
+                    "observedGeneration"
+                ),
+                "conditions": status.get("conditions") or [],
+            }
         if self.initial_assertions:
             engine.checks["initialAssertions"] = [
                 self.wait_assertion(engine, item)
@@ -577,6 +588,39 @@ class ManagedResourceValidator:
         self.verify_initial(engine)
         engine.checks["lifecycleRestore"] = {"restored": True}
 
+    def verify_state_machine_status(
+        self,
+        custom_resource: dict[str, Any],
+        status: dict[str, Any],
+    ) -> None:
+        generation = int(
+            (custom_resource.get("metadata") or {}).get("generation") or 0
+        )
+        observed = int(status.get("observedGeneration") or 0)
+        if generation <= 0 or observed != generation:
+            raise RuntimeError(
+                "observedGeneration does not match metadata.generation: "
+                f"generation={generation}, observed={observed}"
+            )
+        conditions = status.get("conditions") or []
+        ready = next(
+            (
+                item
+                for item in conditions
+                if isinstance(item, dict)
+                and item.get("type") == "Ready"
+            ),
+            None,
+        )
+        if not ready or ready.get("status") != "True":
+            raise RuntimeError(
+                f"Ready condition was not true: {conditions}"
+            )
+        if int(ready.get("observedGeneration") or 0) != generation:
+            raise RuntimeError(
+                "Ready condition observedGeneration does not match "
+                f"metadata.generation: {ready}"
+            )
     def verify_update(self, engine: DeploymentEngine) -> None:
         engine.failed_step = "verify-update"
         patch_payload = json.dumps(
@@ -666,6 +710,7 @@ class ManagedResourceValidator:
             "updateSpec": self.update_spec,
             "updateAssertions": self.update_assertions,
             "updateMode": self.update_mode,
+            "stateMachineStatus": self.state_machine_status,
         }
 
     def rbac_checks(self) -> list[dict[str, str]]:

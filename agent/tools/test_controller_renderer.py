@@ -41,6 +41,41 @@ def model(resources, spec_fields, status_fields):
 
 
 class ControllerRendererTest(unittest.TestCase):
+    def test_state_machine_status_and_requeue_are_rendered(self) -> None:
+        rendered = render_controller(
+            model(
+                ["ConfigMap"],
+                ["data"],
+                [
+                    "phase",
+                    "message",
+                    "observedGeneration",
+                    "conditions",
+                ],
+            )
+        )
+
+        self.assertIn("instance.Status.ObservedGeneration", rendered)
+        self.assertIn("meta.SetStatusCondition", rendered)
+        self.assertIn("ObservedGeneration: instance.Generation", rendered)
+        self.assertIn("RequeueAfter: 30 * time.Second", rendered)
+        self.assertIn('"Recreating"', rendered)
+
+    def test_explicit_delete_resource_uses_finalizer(self) -> None:
+        rendered = render_controller(
+            model(
+                ["ClusterRole"],
+                ["clusterRoleName", "ruleVerbs"],
+                ["phase", "message"],
+            )
+        )
+
+        self.assertIn("const managedFinalizer", rendered)
+        self.assertIn("controllerutil.AddFinalizer", rendered)
+        self.assertIn("finalizeManagedResources", rendered)
+        self.assertIn("finalize ClusterRole", rendered)
+        self.assertNotIn("setOwner(instance, object", rendered)
+
     def test_deployment_and_service_behavior_is_rendered(self) -> None:
         rendered = render_controller(
             model(

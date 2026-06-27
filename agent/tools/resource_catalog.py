@@ -25,6 +25,12 @@ CATALOG_PATH = (
     / "config"
     / "resource-capabilities.yaml"
 )
+DEFAULT_CATALOG_PATH = CATALOG_PATH
+DEFAULT_OVERRIDE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "config"
+    / "resource-capability-overrides.yaml"
+)
 
 
 class CatalogModel(BaseModel):
@@ -172,7 +178,10 @@ class ResourceCapabilityDefinition(CatalogModel):
                 f"duplicate behavior binding in {self.kind}"
             )
         for mapping in self.fieldMappings:
-            validate_path(mapping.target, f"{self.kind} field mapping")
+            validate_mutation_path(
+                mapping.target,
+                f"{self.kind} field mapping",
+            )
             if mapping.transform not in ALLOWED_TRANSFORMS:
                 raise ValueError(
                     f"unsupported transform for {self.kind}: "
@@ -233,7 +242,7 @@ class ResourceCapabilityDefinition(CatalogModel):
                 f"incomplete dependency contract for {self.kind}"
             )
         if self.dependencyTargetPath:
-            validate_path(
+            validate_mutation_path(
                 self.dependencyTargetPath,
                 f"{self.kind} dependency target",
             )
@@ -333,7 +342,7 @@ class ResourceCapabilityCatalog(CatalogModel):
                             f"is missing paths: {', '.join(sorted(missing))}"
                         )
                     rendered_target = mutation.target.format(**binding.paths)
-                    validate_path(
+                    validate_mutation_path(
                         rendered_target,
                         f"{resource.kind} behavior mutation",
                     )
@@ -361,9 +370,11 @@ class ResourceCapabilityCatalog(CatalogModel):
         }
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=8)
 def load_resource_catalog(
     path: Path = CATALOG_PATH,
+    *,
+    override_path: Path | None = None,
 ) -> ResourceCapabilityCatalog:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -371,6 +382,33 @@ def load_resource_catalog(
         raise ValueError(
             f"failed to load resource capability catalog: {path}"
         ) from exc
+    selected_override = override_path
+    if selected_override is None and path.resolve() == CATALOG_PATH.resolve():
+        selected_override = DEFAULT_OVERRIDE_PATH
+    if selected_override and selected_override.is_file():
+        try:
+            overlay = yaml.safe_load(
+                selected_override.read_text(encoding="utf-8")
+            ) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            raise ValueError(
+                f"failed to load resource capability overrides: "
+                f"{selected_override}"
+            ) from exc
+        if not isinstance(overlay, dict):
+            raise ValueError(
+                f"resource capability overrides must be a mapping: "
+                f"{selected_override}"
+            )
+        data = dict(data or {})
+        data["resources"] = [
+            *(data.get("resources") or []),
+            *(overlay.get("resources") or []),
+        ]
+        data["behaviorPrimitives"] = [
+            *(data.get("behaviorPrimitives") or []),
+            *(overlay.get("behaviorPrimitives") or []),
+        ]
     return ResourceCapabilityCatalog.model_validate(data)
 
 
@@ -396,3 +434,35 @@ def validate_path(path: str, context: str) -> None:
         for part in path.split(".")
     ):
         raise ValueError(f"invalid nested path for {context}: {path}")
+
+
+FORBIDDEN_MUTATION_PATHS = {
+    "apiVersion",
+    "kind",
+    "metadata.name",
+    "metadata.namespace",
+    "metadata.ownerReferences",
+    "metadata.finalizers",
+    "metadata.deletionTimestamp",
+    "metadata.managedFields",
+    "metadata.resourceVersion",
+    "metadata.uid",
+}
+
+
+def validate_mutation_path(path: str, context: str) -> None:
+    validate_path(path, context)
+    if path == "status" or path.startswith("status."):
+        raise ValueError(
+            f"status mutation is forbidden for {context}: {path}"
+        )
+    if any(
+        path == blocked
+        or path.startswith(blocked + ".")
+        or path.startswith(blocked + "[")
+        for blocked in FORBIDDEN_MUTATION_PATHS
+    ):
+        raise ValueError(
+            f"identity or lifecycle mutation is forbidden for "
+            f"{context}: {path}"
+        )

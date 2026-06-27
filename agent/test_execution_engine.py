@@ -75,6 +75,17 @@ class ExecutionEngineTest(unittest.TestCase):
         ctx["kindDeploymentRequested"] = True
         self.assertIn("kind_deployment", build_supported_calls(ctx, "dry-run", False))
 
+    def test_capability_drafter_requires_execute_for_approval(self) -> None:
+        dry_run = build_supported_calls(context(), "dry-run", False)
+        execute = build_supported_calls(context(), "execute", True)
+
+        self.assertFalse(
+            dry_run["capability_drafter"]["arguments"]["approve"]
+        )
+        self.assertTrue(
+            execute["capability_drafter"]["arguments"]["approve"]
+        )
+
     @patch("agent.execution_engine.tools.command_planner")
     @patch("agent.execution_engine.tools.spec_generator")
     def test_execution_stops_after_first_failure(self, spec_generator, command_planner) -> None:

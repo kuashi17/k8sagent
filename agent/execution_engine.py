@@ -13,6 +13,7 @@ from agent.tools import langchain_wrappers as tools
 
 TOOL_ORDER = {
     "spec_generator": 10,
+    "capability_drafter": 15,
     "command_planner": 20,
     "scaffold_runner": 30,
     "artifact_patcher": 40,
@@ -79,6 +80,11 @@ def build_supported_calls(
     allow_execute: bool,
 ) -> dict[str, dict[str, Any]]:
     generated = context["generatedFiles"]
+    capability_proposal = generated.get("capabilityProposal") or str(
+        Path(generated["operatorSpec"]).with_name(
+            "capability-proposal.yaml"
+        )
+    )
     mutating_execute = mode == "execute" and allow_execute
     selected_profile = context.get("selectedProfile") or {}
     profile_path = selected_profile.get("path")
@@ -88,6 +94,20 @@ def build_supported_calls(
             "requiredArgs": ["requirement", "output"],
             "arguments": {"requirement": context["requirement"], "output": generated["operatorSpec"]},
             "call": lambda: tools.spec_generator(context["requirement"], generated["operatorSpec"]),
+        },
+        "capability_drafter": {
+            "mutating": True,
+            "requiredArgs": ["input", "output"],
+            "arguments": {
+                "input": generated["operatorSpec"],
+                "output": capability_proposal,
+                "approve": mutating_execute,
+            },
+            "call": lambda: tools.capability_drafter(
+                generated["operatorSpec"],
+                capability_proposal,
+                approve=mutating_execute,
+            ),
         },
         "command_planner": {
             "mutating": False,

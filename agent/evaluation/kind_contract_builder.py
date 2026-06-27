@@ -55,6 +55,7 @@ class KindValidationContract(ContractModel):
     updateMode: str = UpdatePolicy.NONE.value
     setupResources: list[dict[str, Any]] = Field(default_factory=list)
     rbacChecks: list[RBACCheckContract] = Field(default_factory=list)
+    stateMachineStatus: bool = True
 
 
 def build_validation_contract(

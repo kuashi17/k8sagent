@@ -48,6 +48,25 @@ def spec_generator(requirement: str, output: str | None = None) -> dict[str, Any
     return run_command(command)
 
 
+def capability_drafter(
+    input_spec: str,
+    output: str,
+    *,
+    approve: bool = False,
+) -> dict[str, Any]:
+    command = [
+        "python3",
+        "agent/tools/capability_drafter.py",
+        "--input",
+        input_spec,
+        "--output",
+        output,
+    ]
+    if approve:
+        command.extend(["--approve", "--execute"])
+    return run_command(command)
+
+
 def command_planner(input_spec: str, output: str, workspace: str = "workspace/generated-operators") -> dict[str, Any]:
     command = [
         "python3",

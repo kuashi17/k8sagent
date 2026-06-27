@@ -6,11 +6,14 @@ from copy import deepcopy
 from typing import Any
 
 from agent.tools.controller_ir import (
+    ControllerStateMachine,
     ControllerGenerationIR,
+    DeletionPolicy,
     FieldMapping,
     FieldMutability,
     ManagedResourceSpec,
     NameRule,
+    OwnershipPolicy,
     RBACRule,
     ReconcileStrategy,
     ResourceCapability,
@@ -68,11 +71,18 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
             + ", ".join(unsupported)
             + f"; supported resources: {supported}"
         )
+    finalizer_required = any(
+        item.ownership == OwnershipPolicy.FINALIZER
+        or item.deletion_policy == DeletionPolicy.EXPLICIT_DELETE
+        for item in resources
+    )
+    api_group = str(api.get("group") or "")
+    kind = str(api.get("kind") or "")
     return ControllerGenerationIR(
         project_module=str((model.get("project") or {}).get("module") or ""),
-        api_group=str(api.get("group") or ""),
+        api_group=api_group,
         api_version=str(api.get("version") or ""),
-        kind=str(api.get("kind") or ""),
+        kind=kind,
         spec_fields=sorted(fields),
         status_fields=sorted(status_fields),
         status_field_types=status_field_types,
@@ -86,6 +96,13 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
             for item in model.get("rbacResources") or []
             if item.get("resource")
         ],
+        state_machine=ControllerStateMachine(
+            finalizer_name=(
+                f"{api_group}/{kind.lower()}-finalizer"
+                if finalizer_required
+                else ""
+            )
+        ),
     )
 
 

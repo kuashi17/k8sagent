@@ -1,0 +1,38 @@
+AccessBundle이라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 sample.io, group은 access, version은 v1alpha1, kind는 AccessBundle로 한다.
+
+spec에는 다음 필드를 포함한다.
+- serviceAccountName:string - ServiceAccount 이름
+- automountServiceAccountToken:bool - 토큰 자동 mount 여부
+- roleName:string - Role 이름
+- clusterRoleName:string - ClusterRole 이름
+- ruleApiGroups:[]string - 허용 API group
+- ruleResources:[]string - 허용 resource
+- ruleVerbs:[]string - 허용 verb
+
+status에는 다음 필드를 포함한다.
+- phase:string - 처리 상태
+- serviceAccountName:string - 생성된 ServiceAccount 이름
+- roleName:string - 생성된 Role 이름
+- clusterRoleName:string - 생성된 ClusterRole 이름
+- message:string - 상태 설명
+
+Controller는 AccessBundle 변경을 감지하고 ServiceAccount, Role, ClusterRole을 생성/수정/삭제한다.
+- spec.automountServiceAccountToken -> ServiceAccount.automountServiceAccountToken
+- spec.ruleApiGroups -> Role.rules[0].apiGroups
+- spec.ruleResources -> Role.rules[0].resources
+- spec.ruleVerbs -> Role.rules[0].verbs
+- spec.ruleApiGroups -> ClusterRole.rules[0].apiGroups
+- spec.ruleResources -> ClusterRole.rules[0].resources
+- spec.ruleVerbs -> ClusterRole.rules[0].verbs
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- core/serviceaccounts
+- rbac.authorization.k8s.io/roles
+- rbac.authorization.k8s.io/clusterroles
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test

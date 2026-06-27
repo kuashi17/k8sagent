@@ -90,6 +90,15 @@ class RBACRule(IRModel):
     verbs: list[str]
 
 
+class ControllerStateMachine(IRModel):
+    observed_generation: bool = True
+    conditions: bool = True
+    success_requeue_seconds: int = Field(default=30, ge=1)
+    failure_requeue_seconds: int = Field(default=10, ge=1)
+    recreation_requeue_seconds: int = Field(default=2, ge=1)
+    finalizer_name: str = ""
+
+
 class ManagedResourceSpec(IRModel):
     resource_id: str
     api_version: str
@@ -124,6 +133,9 @@ class ControllerGenerationIR(IRModel):
     status_field_types: dict[str, str] = Field(default_factory=dict)
     managed_resources: list[ManagedResourceSpec]
     rbac_rules: list[RBACRule]
+    state_machine: ControllerStateMachine = Field(
+        default_factory=ControllerStateMachine
+    )
 
     def resource(self, kind: str) -> ManagedResourceSpec | None:
         return next(

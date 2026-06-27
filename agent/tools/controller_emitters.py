@@ -118,12 +118,12 @@ def render_recreate_guard(resource: ManagedResourceSpec) -> str:
 \t\t\tif err := r.Delete(ctx, object); err != nil {
 \t\t\t\treturn name, fmt.Errorf("delete immutable managed resource: %%w", err)
 \t\t\t}
-\t\t\treturn name, nil
+\t\t\treturn name, fmt.Errorf("%%w: %s", errRecreationPending)
 \t\t}
 \t} else if !apierrors.IsNotFound(err) {
 \t\treturn name, err
 \t}
-""" % "\n".join(comparisons)
+""" % ("\n".join(comparisons), resource.kind)
 
 
 def source_expression(path: str) -> str:

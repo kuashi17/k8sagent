@@ -61,6 +61,9 @@ def build_requirement_context(
         ),
         "generatedFiles": {
             "operatorSpec": f"generated/{kind_slug}-operator-spec.yaml",
+            "capabilityProposal": (
+                f"generated/{kind_slug}-capability-proposal.yaml"
+            ),
             "commandPlan": f"generated/{kind_slug}-command-plan.md",
         },
         "timings": {

@@ -107,7 +107,11 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
     api = spec.get("api") or spec.get("resource") or {}
     project = spec.get("project") or {}
     spec_fields = spec.get("specFields") or spec.get("spec", {}).get("fields") or []
-    status_fields = spec.get("statusFields") or spec.get("status", {}).get("fields") or []
+    status_fields = ensure_state_machine_status_fields(
+        spec.get("statusFields")
+        or spec.get("status", {}).get("fields")
+        or []
+    )
     patcher_profile = profile.get("artifactPatcher") or {}
     rbac_resources = list(spec.get("rbac", {}).get("resources") or [])
     rbac_resources.extend(
@@ -165,6 +169,27 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
         "rbacSource": "spec.rbac.resources" if rbac_resources else "fallback",
         "validationCommands": spec.get("validation", {}).get("commands") or ["make generate", "make manifests", "make test"],
     }
+
+
+def ensure_state_machine_status_fields(
+    fields: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result = [dict(item) for item in fields if isinstance(item, dict)]
+    names = {str(item.get("name") or "") for item in result}
+    defaults = (
+        {
+            "name": "observedGeneration",
+            "type": "int64",
+            "description": "ObservedGeneration is the reconciled generation.",
+        },
+        {
+            "name": "conditions",
+            "type": "[]metav1.Condition",
+            "description": "Conditions describe the current reconcile state.",
+        },
+    )
+    result.extend(item for item in defaults if item["name"] not in names)
+    return result
 
 
 def required_missing(model: dict[str, Any]) -> list[str]:

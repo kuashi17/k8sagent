@@ -332,6 +332,11 @@ def compact_profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
 def requirement_tool_call_examples(safety_mode: str, include_kind: bool) -> str:
     calls = [
         {"tool": "spec_generator", "mode": "generate", "reason": "Generate the Operator spec."},
+        {
+            "tool": "capability_drafter",
+            "mode": "execute" if safety_mode == "execute" else "dry-run",
+            "reason": "Validate managed resource capabilities.",
+        },
         {"tool": "command_planner", "mode": "dry-run", "reason": "Plan allowlisted commands."},
         {
             "tool": "scaffold_runner",

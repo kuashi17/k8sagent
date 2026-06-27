@@ -9,3 +9,6 @@ requirements:
   - evaluation/fixtures/requirements/node-sidecar.txt
   - evaluation/fixtures/requirements/composable-workload.txt
   - evaluation/fixtures/requirements/aliased-workload.txt
+  - evaluation/fixtures/requirements/network-policy-controller.txt
+  - evaluation/fixtures/requirements/access-bundle-controller.txt
+  - evaluation/fixtures/requirements/autoscaled-workload.txt

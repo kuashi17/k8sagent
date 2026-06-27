@@ -18,6 +18,38 @@ from agent.tools.langchain_wrappers import kind_deployment_runner
 
 
 class KindDeploymentValidatorTest(unittest.TestCase):
+    def test_state_machine_status_requires_matching_ready_generation(
+        self,
+    ) -> None:
+        validator = ManagedResourceValidator(
+            {
+                "resource": "examples",
+                "sampleName": "sample",
+                "managedResources": [],
+            }
+        )
+        validator.verify_state_machine_status(
+            {"metadata": {"generation": 3}},
+            {
+                "observedGeneration": 3,
+                "conditions": [
+                    {
+                        "type": "Ready",
+                        "status": "True",
+                        "observedGeneration": 3,
+                    }
+                ],
+            },
+        )
+        with self.assertRaisesRegex(RuntimeError, "Ready condition"):
+            validator.verify_state_machine_status(
+                {"metadata": {"generation": 3}},
+                {
+                    "observedGeneration": 3,
+                    "conditions": [],
+                },
+            )
+
     def test_appconfig_validator_exposes_profile_specific_plan(self) -> None:
         validator = create_validator(
             "appconfig-configmap",

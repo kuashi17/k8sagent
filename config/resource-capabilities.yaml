@@ -302,6 +302,92 @@ resources:
     statusMappings:
       - {field: readyReplicas, source: status.numberReady}
 
+  - kind: NetworkPolicy
+    apiVersion: networking.k8s.io/v1
+    suffix: network-policy
+    nameFields: [networkPolicyName, policyName]
+    baseObject:
+      spec:
+        podSelector:
+          matchLabels: {}
+        policyTypes: [Ingress]
+    fieldMappings:
+      - {source: podSelectorLabels, target: spec.podSelector.matchLabels, transform: string-map}
+      - {source: policyTypes, target: spec.policyTypes, transform: string-slice}
+    statusMappings:
+      - {field: networkPolicyName, source: metadata.name, resourceName: true}
+
+  - kind: ServiceAccount
+    apiVersion: v1
+    suffix: service-account
+    nameFields: [serviceAccountName, accountName]
+    baseObject:
+      automountServiceAccountToken: false
+    fieldMappings:
+      - {source: automountServiceAccountToken, target: automountServiceAccountToken}
+    statusMappings:
+      - {field: serviceAccountName, source: metadata.name, resourceName: true}
+
+  - kind: Role
+    apiVersion: rbac.authorization.k8s.io/v1
+    suffix: role
+    nameFields: [roleName]
+    baseObject:
+      rules:
+        - apiGroups: [""]
+          resources: [configmaps]
+          verbs: [get]
+    fieldMappings:
+      - {source: ruleApiGroups, target: "rules[0].apiGroups", transform: string-slice}
+      - {source: ruleResources, target: "rules[0].resources", transform: string-slice}
+      - {source: ruleVerbs, target: "rules[0].verbs", transform: string-slice}
+    statusMappings:
+      - {field: roleName, source: metadata.name, resourceName: true}
+
+  - kind: ClusterRole
+    apiVersion: rbac.authorization.k8s.io/v1
+    suffix: cluster-role
+    scope: Cluster
+    ownership: finalizer
+    deletionPolicy: explicit-delete
+    nameFields: [clusterRoleName]
+    baseObject:
+      rules:
+        - apiGroups: [""]
+          resources: [configmaps]
+          verbs: [get]
+    fieldMappings:
+      - {source: ruleApiGroups, target: "rules[0].apiGroups", transform: string-slice}
+      - {source: ruleResources, target: "rules[0].resources", transform: string-slice}
+      - {source: ruleVerbs, target: "rules[0].verbs", transform: string-slice}
+    statusMappings:
+      - {field: clusterRoleName, source: metadata.name, resourceName: true}
+
+  - kind: HorizontalPodAutoscaler
+    aliases: [HPA]
+    apiVersion: autoscaling/v2
+    suffix: hpa
+    nameFields: [hpaName, appName]
+    baseObject:
+      spec:
+        scaleTargetRef:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: application
+        minReplicas: 1
+        maxReplicas: 3
+        metrics: []
+    fieldMappings:
+      - {source: scaleTargetApiVersion, target: spec.scaleTargetRef.apiVersion}
+      - {source: scaleTargetKind, target: spec.scaleTargetRef.kind}
+      - {source: scaleTargetName, target: spec.scaleTargetRef.name}
+      - {source: minReplicas, target: spec.minReplicas, transform: int64}
+      - {source: maxReplicas, target: spec.maxReplicas, transform: int64}
+    statusMappings:
+      - {field: currentReplicas, source: status.currentReplicas}
+      - {field: desiredReplicas, source: status.desiredReplicas}
+      - {field: hpaName, source: metadata.name, resourceName: true}
+
   - kind: Pod
     apiVersion: v1
     suffix: pod

@@ -6,6 +6,7 @@ from typing import Any
 
 from agent.tools.controller_ir import (
     ControllerGenerationIR,
+    DeletionPolicy,
     ManagedResourceSpec,
     OwnershipPolicy,
     ReconcileStrategy,
@@ -24,6 +25,7 @@ def render_controller(model: dict[str, Any]) -> str:
     kind = ir.kind
     alias = api_alias(ir.api_group, ir.api_version)
     resources = ir.renderable_resources()
+    state = ir.state_machine
     if not resources:
         raise SystemExit(
             "profile-less controller generation requires at least one "
@@ -39,8 +41,12 @@ def render_controller(model: dict[str, Any]) -> str:
             f"r.reconcile{go_name(resource.resource_id)}"
             f"(ctx, &instance)\n"
             "\tif err != nil {\n"
+            "\t\tif errors.Is(err, errRecreationPending) {\n"
+            f'\t\t\t_ = r.updateStatus(ctx, &instance, "Recreating", err.Error(), names)\n'
+            f"\t\t\treturn ctrl.Result{{RequeueAfter: {state.recreation_requeue_seconds} * time.Second}}, nil\n"
+            "\t\t}\n"
             f'\t\t_ = r.updateStatus(ctx, &instance, "Error", err.Error(), names)\n'
-            "\t\treturn ctrl.Result{}, err\n"
+            f"\t\treturn ctrl.Result{{RequeueAfter: {state.failure_requeue_seconds} * time.Second}}, err\n"
             "\t}\n"
             f'\tnames["{resource.kind}"] = {variable}Name'
         )
@@ -50,11 +56,13 @@ def render_controller(model: dict[str, Any]) -> str:
 
 import (
 \t"context"
+\t"errors"
 \t"fmt"
 \t"reflect"
-\t"sort"{render_status_imports(ir)}
+\t"sort"
+\t"time"
 
-\tapierrors "k8s.io/apimachinery/pkg/api/errors"
+\tapierrors "k8s.io/apimachinery/pkg/api/errors"{render_status_imports(ir)}
 \t"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 \t"k8s.io/apimachinery/pkg/runtime"
 \t"k8s.io/apimachinery/pkg/runtime/schema"
@@ -70,6 +78,8 @@ type {kind}Reconciler struct {{
 \tScheme *runtime.Scheme
 }}
 
+var errRecreationPending = errors.New("immutable managed resource recreation pending")
+{render_finalizer_constant(ir)}
 {render_marker_block(ir)}
 
 func (r *{kind}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {{
@@ -81,13 +91,18 @@ func (r *{kind}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 \t\treturn ctrl.Result{{}}, err
 \t}}
 
+{render_finalizer_reconcile(ir)}
 \tnames := map[string]string{{}}
 {chr(10).join(reconcile_calls)}
-\treturn ctrl.Result{{}}, r.updateStatus(ctx, &instance, "Ready", "Managed resources are reconciled.", names)
+\tif err := r.updateStatus(ctx, &instance, "Ready", "Managed resources are reconciled.", names); err != nil {{
+\t\treturn ctrl.Result{{RequeueAfter: {state.failure_requeue_seconds} * time.Second}}, err
+\t}}
+\treturn ctrl.Result{{RequeueAfter: {state.success_requeue_seconds} * time.Second}}, nil
 }}
 
 {chr(10).join(functions)}
 {render_status_function(ir, alias)}
+{render_finalizer_function(ir, alias)}
 
 func managedObject(group, version, kind, namespace, name string) *unstructured.Unstructured {{
 \tobject := &unstructured.Unstructured{{}}
@@ -295,12 +310,12 @@ def render_resource_function(
     recreate_guard = render_recreate_guard(resource)
     owner = (
         ""
-        if resource.ownership == OwnershipPolicy.NONE
+        if resource.ownership != OwnershipPolicy.OWNER_REFERENCE
         else "\t\treturn setOwner(instance, object, r.Scheme)\n"
     )
     final_return = (
         "\t\treturn nil\n"
-        if resource.ownership == OwnershipPolicy.NONE
+        if resource.ownership != OwnershipPolicy.OWNER_REFERENCE
         else owner
     )
     if resource.strategy == ReconcileStrategy.PATCH_EXISTING:
@@ -408,6 +423,91 @@ def render_disable_guard(
 \t}}'''
 
 
+def finalizer_resources(
+    ir: ControllerGenerationIR,
+) -> list[ManagedResourceSpec]:
+    return [
+        resource
+        for resource in ir.renderable_resources()
+        if resource.ownership == OwnershipPolicy.FINALIZER
+        or resource.deletion_policy == DeletionPolicy.EXPLICIT_DELETE
+    ]
+
+
+def render_finalizer_constant(ir: ControllerGenerationIR) -> str:
+    if not finalizer_resources(ir):
+        return ""
+    return f'const managedFinalizer = "{ir.state_machine.finalizer_name}"'
+
+
+def render_finalizer_reconcile(ir: ControllerGenerationIR) -> str:
+    if not finalizer_resources(ir):
+        return ""
+    failure = ir.state_machine.failure_requeue_seconds
+    return f'''\tif !instance.DeletionTimestamp.IsZero() {{
+\t\t_ = r.updateStatus(ctx, &instance, "Finalizing", "Deleting managed resources.", map[string]string{{}})
+\t\tif err := r.finalizeManagedResources(ctx, &instance); err != nil {{
+\t\t\treturn ctrl.Result{{RequeueAfter: {failure} * time.Second}}, err
+\t\t}}
+\t\tcontrollerutil.RemoveFinalizer(&instance, managedFinalizer)
+\t\treturn ctrl.Result{{}}, r.Update(ctx, &instance)
+\t}}
+\tif !controllerutil.ContainsFinalizer(&instance, managedFinalizer) {{
+\t\tcontrollerutil.AddFinalizer(&instance, managedFinalizer)
+\t\tif err := r.Update(ctx, &instance); err != nil {{
+\t\t\treturn ctrl.Result{{RequeueAfter: {failure} * time.Second}}, err
+\t\t}}
+\t}}
+'''
+
+
+def render_finalizer_function(
+    ir: ControllerGenerationIR,
+    alias: str,
+) -> str:
+    resources = finalizer_resources(ir)
+    if not resources:
+        return ""
+    lines = []
+    for resource in resources:
+        group, version = split_api_version(resource.api_version)
+        name = source_expression(resource.name.source_path)
+        suffix = resource.name.fallback_template.replace(
+            "{metadata.name}-",
+            "",
+        )
+        namespace = (
+            '""'
+            if resource.scope == ResourceScope.CLUSTER
+            else "instance.Namespace"
+        )
+        variable = f"{resource.resource_id}Name"
+        lines.extend(
+            [
+                f"\t{variable} := {name}",
+                f'\tif {variable} == "" {{ {variable} = instance.Name + "-{suffix}" }}',
+                (
+                    f'\t{resource.resource_id}Object := managedObject('
+                    f'"{group}", "{version}", "{resource.kind}", '
+                    f"{namespace}, {variable})"
+                ),
+                (
+                    f"\tif err := r.Delete(ctx, {resource.resource_id}Object); "
+                    "client.IgnoreNotFound(err) != nil {"
+                ),
+                (
+                    f'\t\treturn fmt.Errorf("finalize {resource.kind}: %w", err)'
+                ),
+                "\t}",
+            ]
+        )
+    return f'''func (r *{ir.kind}Reconciler) finalizeManagedResources(ctx context.Context, instance *{alias}.{ir.kind}) error {{
+{chr(10).join(lines)}
+\treturn nil
+}}
+'''
+
+
 def render_status_function(
     ir: ControllerGenerationIR,
     alias: str,
@@ -419,6 +519,24 @@ def render_status_function(
         assignments.append("\tinstance.Status.Phase = phase")
     if "message" in status_fields:
         assignments.append("\tinstance.Status.Message = message")
+    if "observedGeneration" in status_fields:
+        assignments.append(
+            "\tinstance.Status.ObservedGeneration = instance.Generation"
+        )
+    if "conditions" in status_fields:
+        assignments.extend(
+            [
+                "\tconditionStatus := metav1.ConditionFalse",
+                '\tif phase == "Ready" { conditionStatus = metav1.ConditionTrue }',
+                "\tmeta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{",
+                '\t\tType: "Ready",',
+                "\t\tStatus: conditionStatus,",
+                "\t\tReason: phase,",
+                "\t\tMessage: message,",
+                "\t\tObservedGeneration: instance.Generation,",
+                "\t})",
+            ]
+        )
     for resource in ir.managed_resources:
         for mapping in resource.status_mappings:
             field = mapping.target_path.removeprefix("status.")
@@ -561,16 +679,18 @@ def render_owned_watches(ir: ControllerGenerationIR) -> str:
 
 
 def render_status_imports(ir: ControllerGenerationIR) -> str:
-    if not any(
+    needs_time_status = any(
         mapping.target_type == "metav1.Time"
         for resource in ir.managed_resources
         for mapping in resource.status_mappings
-    ):
-        return ""
-    return (
-        '\n\t"time"\n'
-        '\n\tmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"'
     )
+    needs_conditions = "conditions" in ir.status_fields
+    if not needs_time_status and not needs_conditions:
+        return ""
+    imports = '\n\tmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"'
+    if needs_conditions:
+        imports = '\n\tmeta "k8s.io/apimachinery/pkg/api/meta"' + imports
+    return imports
 
 
 def render_marker_block(ir: ControllerGenerationIR) -> str:

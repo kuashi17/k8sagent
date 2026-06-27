@@ -80,6 +80,12 @@ class ArtifactPatcherTest(unittest.TestCase):
             },
             model["rbacResources"],
         )
+        status = {
+            item["name"]: item["type"]
+            for item in model["statusFields"]
+        }
+        self.assertEqual(status["observedGeneration"], "int64")
+        self.assertEqual(status["conditions"], "[]metav1.Condition")
 
     def test_controller_marker_patch_does_not_require_scaffold_comment(self) -> None:
         model = {

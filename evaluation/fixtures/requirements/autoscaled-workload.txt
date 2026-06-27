@@ -1,0 +1,40 @@
+AutoscaledWorkload라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 sample.io, group은 workload, version은 v1alpha1, kind는 AutoscaledWorkload로 한다.
+
+spec에는 다음 필드를 포함한다.
+- appName:string - Deployment와 HPA 이름
+- image:string - container image
+- replicas:int32 - 초기 replica 수
+- scaleTargetApiVersion:string - scale 대상 API version
+- scaleTargetKind:string - scale 대상 Kind
+- scaleTargetName:string - scale 대상 이름
+- minReplicas:int32 - 최소 replica 수
+- maxReplicas:int32 - 최대 replica 수
+
+status에는 다음 필드를 포함한다.
+- phase:string - 처리 상태
+- deploymentName:string - 생성된 Deployment 이름
+- hpaName:string - 생성된 HPA 이름
+- readyReplicas:int32 - 준비된 replica 수
+- currentReplicas:int32 - 현재 replica 수
+- desiredReplicas:int32 - 목표 replica 수
+- message:string - 상태 설명
+
+Controller는 AutoscaledWorkload 변경을 감지하고 Deployment와 HorizontalPodAutoscaler를 생성/수정/삭제한다.
+- spec.image -> Deployment.spec.template.spec.containers[0].image
+- spec.replicas -> Deployment.spec.replicas
+- spec.scaleTargetApiVersion -> HorizontalPodAutoscaler.spec.scaleTargetRef.apiVersion
+- spec.scaleTargetKind -> HorizontalPodAutoscaler.spec.scaleTargetRef.kind
+- spec.scaleTargetName -> HorizontalPodAutoscaler.spec.scaleTargetRef.name
+- spec.minReplicas -> HorizontalPodAutoscaler.spec.minReplicas
+- spec.maxReplicas -> HorizontalPodAutoscaler.spec.maxReplicas
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- apps/deployments
+- autoscaling/horizontalpodautoscalers
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test

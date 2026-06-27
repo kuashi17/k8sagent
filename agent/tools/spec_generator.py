@@ -239,6 +239,9 @@ def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
             source, target = [part.strip() for part in item.split("->", 1)]
             field_mappings.append({"from": source, "to": target})
             managed_resources.extend(extract_k8s_resources(target))
+            target_kind = mapping_target_kind(target)
+            if target_kind:
+                managed_resources.append(target_kind)
         elif "status." in item and ("갱신" in item or "기준" in item):
             status_rules.append(item)
             managed_resources.extend(extract_k8s_resources(item))
@@ -382,6 +385,11 @@ def extract_k8s_resources(line: str) -> list[str]:
         if re.search(pattern, line, re.I):
             resources.append(resource_kind(canonical))
     return unique(resources)
+
+
+def mapping_target_kind(target: str) -> str:
+    match = re.match(r"([A-Z][A-Za-z0-9]*)\.", target)
+    return match.group(1) if match else ""
 
 
 def resource_kind(resource: str) -> str:

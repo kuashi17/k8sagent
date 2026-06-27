@@ -51,7 +51,7 @@ Safety:
 {safety_mode}
 
 Rules:
-- dry-run: spec_generator, command_planner, scaffold_runner.
+- dry-run: spec_generator, capability_drafter, command_planner, scaffold_runner.
 - execute: also artifact_patcher and validation.
 - validation means make generate, make manifests, make test.
 {kind_deployment_rule}
@@ -71,7 +71,7 @@ Required keys and types:
 - risks: array
 - nextActions: array
 
-Allowed tools: spec_generator, command_planner, scaffold_runner, artifact_patcher, validation{optional_kind_tool_name}
+Allowed tools: spec_generator, capability_drafter, command_planner, scaffold_runner, artifact_patcher, validation{optional_kind_tool_name}
 Safety mode: {safety_mode}
 Workflow: {workflow_options}
 Validation errors: {validation_errors}

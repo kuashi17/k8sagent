@@ -7,10 +7,19 @@ import unittest
 from agent.tools.spec_generator import (
     MAX_PROJECT_NAME_LENGTH,
     bounded_project_name,
+    mapping_target_kind,
 )
 
 
 class SpecGeneratorTest(unittest.TestCase):
+    def test_unknown_managed_kind_is_inferred_from_mapping_target(self) -> None:
+        self.assertEqual(
+            mapping_target_kind(
+                "NetworkPolicy.spec.podSelector.matchLabels"
+            ),
+            "NetworkPolicy",
+        )
+
     def test_short_project_name_keeps_readable_operator_suffix(
         self,
     ) -> None:

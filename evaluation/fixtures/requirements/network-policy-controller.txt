@@ -1,0 +1,25 @@
+TrafficPolicy라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 sample.io, group은 security, version은 v1alpha1, kind는 TrafficPolicy로 한다.
+
+spec에는 다음 필드를 포함한다.
+- policyName:string - NetworkPolicy 이름
+- podSelectorLabels:map[string]string - 대상 Pod label
+- policyTypes:[]string - 적용할 NetworkPolicy 유형
+
+status에는 다음 필드를 포함한다.
+- phase:string - 처리 상태
+- networkPolicyName:string - 생성된 NetworkPolicy 이름
+- message:string - 상태 설명
+
+Controller는 TrafficPolicy 변경을 감지하고 NetworkPolicy를 생성/수정/삭제한다.
+- spec.podSelectorLabels -> NetworkPolicy.spec.podSelector.matchLabels
+- spec.policyTypes -> NetworkPolicy.spec.policyTypes
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- networking.k8s.io/networkpolicies
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test
