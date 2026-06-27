@@ -562,25 +562,6 @@ class ManagedResourceValidator:
 
     def verify_update(self, engine: DeploymentEngine) -> None:
         engine.failed_step = "verify-update"
-        if self.update_mode == "recreate":
-            for item in self.managed_resources:
-                if item["updatePolicy"] != "recreate":
-                    continue
-                engine.run_cmd(
-                    (
-                        "kubectl-delete-recreate-"
-                        f"{item['resource']}-{item['name']}"
-                    ),
-                    self.kubectl(
-                        [
-                            "delete",
-                            item["resource"],
-                            item["name"],
-                            "--ignore-not-found",
-                        ]
-                    ),
-                    timeout=120,
-                )
         patch_payload = json.dumps(
             {"spec": self.update_spec},
             separators=(",", ":"),

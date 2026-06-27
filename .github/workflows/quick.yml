@@ -14,10 +14,21 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ci-history/quick.json
+          key: performance-quick-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: performance-quick-
       - run: python3 -m py_compile $(git ls-files '*.py')
-      - run: python3 scripts/run-regression-tests.py --suite quick --output-dir evaluation/results/regression/ci-quick
+      - run: python3 scripts/run-regression-tests.py --suite quick --output-dir evaluation/results/regression/ci-quick --history-file .ci-history/quick.json
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .ci-history/quick.json
+          key: performance-quick-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: quick-regression
+          name: quick-regression-${{ github.run_id }}
           path: evaluation/results/regression/ci-quick/
+          retention-days: 30

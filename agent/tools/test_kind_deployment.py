@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from agent.tools.kind_deployment_runner import KindDeploymentEngine
 from agent.tools.kind_deployment_validators import (
@@ -134,6 +134,53 @@ class KindDeploymentValidatorTest(unittest.TestCase):
             ),
             8080,
         )
+
+    def test_recreate_update_is_driven_by_controller_contract(self) -> None:
+        validator = ManagedResourceValidator(
+            {
+                "resource": "storagepolicy",
+                "sampleName": "sample",
+                "namespace": "sample-system",
+                "managedResources": [
+                    {
+                        "resource": "persistentvolumeclaim",
+                        "name": "sample-claim",
+                        "updatePolicy": "recreate",
+                    }
+                ],
+                "updateSpec": {"accessModes": ["ReadOnlyMany"]},
+                "updateMode": "recreate",
+                "updateAssertions": [
+                    {
+                        "resource": "persistentvolumeclaim",
+                        "name": "sample-claim",
+                        "path": "spec.accessModes",
+                        "equals": ["ReadOnlyMany"],
+                    }
+                ],
+            }
+        )
+        engine = Mock()
+        engine.checks = {}
+        engine.run_cmd.return_value = {
+            "exitCode": 0,
+            "stdout": "",
+            "stderr": "",
+        }
+
+        with patch.object(
+            validator,
+            "wait_assertion",
+            return_value={"passed": True},
+        ):
+            validator.verify_update(engine)
+
+        names = [call.args[0] for call in engine.run_cmd.call_args_list]
+        self.assertIn("kubectl-patch-custom-resource", names)
+        self.assertFalse(
+            any(name.startswith("kubectl-delete-recreate-") for name in names)
+        )
+
     def test_declarative_assertion_and_snapshot_helpers(self) -> None:
         resource = {
             "apiVersion": "apps/v1",

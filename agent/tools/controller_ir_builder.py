@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from agent.tools.controller_ir import (
@@ -109,7 +110,6 @@ def build_managed_resource(
             fallback_template=f"{{metadata.name}}-{defaults.suffix}",
         ),
         strategy=defaults.strategy,
-        emitter=defaults.emitter,
         capabilities=capabilities,
         ownership=defaults.ownership,
         deletion_policy=defaults.deletionPolicy,
@@ -127,11 +127,35 @@ def build_managed_resource(
             and defaults.disableField in fields
             else ""
         ),
-        base_spec=defaults.baseSpec,
+        base_object=base_object_for(defaults, fields),
         label_paths=defaults.labelPaths,
         dependency_kind=defaults.dependencyKind,
         dependency_variable=defaults.dependencyVariable,
+        dependency_target_path=defaults.dependencyTargetPath,
     )
+
+
+def base_object_for(
+    defaults: ResourceCapabilityDefinition,
+    fields: set[str],
+) -> dict[str, Any]:
+    result = deepcopy(defaults.baseObject)
+    for conditional in defaults.conditionalObjects:
+        source = conditional.whenSource.removeprefix("spec.")
+        if source in fields:
+            merge_mapping(result, deepcopy(conditional.object))
+    return result
+
+
+def merge_mapping(
+    target: dict[str, Any],
+    source: dict[str, Any],
+) -> None:
+    for key, value in source.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            merge_mapping(target[key], value)
+        else:
+            target[key] = value
 
 
 def capabilities_for(

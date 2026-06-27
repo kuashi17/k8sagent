@@ -8,10 +8,21 @@ jobs:
     runs-on: [self-hosted, local-llm]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ci-history/standard.json
+          key: performance-standard-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: performance-standard-
       - run: python3 -m py_compile $(git ls-files '*.py')
-      - run: python3 scripts/run-regression-tests.py --suite standard --output-dir evaluation/results/regression/ci-standard
+      - run: python3 scripts/run-regression-tests.py --suite standard --output-dir evaluation/results/regression/ci-standard --history-file .ci-history/standard.json
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .ci-history/standard.json
+          key: performance-standard-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: standard-regression
+          name: standard-regression-${{ github.run_id }}
           path: evaluation/results/regression/ci-standard/
+          retention-days: 30

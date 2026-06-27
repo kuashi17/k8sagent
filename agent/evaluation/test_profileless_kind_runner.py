@@ -9,6 +9,7 @@ from pathlib import Path
 from agent.evaluation.profileless_kind_runner import (
     build_kind_command,
     build_kind_contract,
+    project_content_digest,
 )
 
 
@@ -84,6 +85,7 @@ spec:
             command = build_kind_command(contract)
             self.assertIn("--skip-prepare-controller", command)
             self.assertIn("--skip-prevalidation", command)
+            self.assertIn(":profileless-", contract["image"])
 
     def test_namespace_contract_creates_setup_and_retain_rules(
         self,
@@ -164,6 +166,21 @@ spec:
             },
             config["rbacChecks"],
         )
+
+    def test_image_digest_changes_with_generated_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            controller = project / "internal" / "controller.go"
+            controller.parent.mkdir(parents=True)
+            controller.write_text("package internal\n", encoding="utf-8")
+            before = project_content_digest(project)
+            controller.write_text(
+                "package internal\n// changed\n",
+                encoding="utf-8",
+            )
+            after = project_content_digest(project)
+
+        self.assertNotEqual(before, after)
 
 
 if __name__ == "__main__":

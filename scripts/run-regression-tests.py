@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.evaluation.unified_evaluation import write_unified_evaluation  # noqa: E402
+from agent.evaluation.performance_trend import write_performance_trend  # noqa: E402
 
 
 def main() -> int:
@@ -26,6 +27,11 @@ def main() -> int:
         choices=["quick", "standard", "full"],
         default="quick",
         help="quick avoids LLM/Docker; standard adds one Agent run; full adds kind and profileless checks.",
+    )
+    parser.add_argument(
+        "--history-file",
+        default="",
+        help="Optional persisted performance baseline shared across runs.",
     )
     parser.add_argument(
         "--output-dir",
@@ -45,12 +51,19 @@ def main() -> int:
 
     generated_snapshot = snapshot_tree(REPO_ROOT / "generated")
     try:
-        return run_suite(args.suite, output_dir)
+        history_file = (
+            resolve(args.history_file) if args.history_file else None
+        )
+        return run_suite(args.suite, output_dir, history_file)
     finally:
         restore_tree(REPO_ROOT / "generated", generated_snapshot)
 
 
-def run_suite(suite: str, output_dir: Path) -> int:
+def run_suite(
+    suite: str,
+    output_dir: Path,
+    history_file: Path | None = None,
+) -> int:
     checks = [
         run_check(
             "agent-unit-tests",
@@ -184,7 +197,7 @@ def run_suite(suite: str, output_dir: Path) -> int:
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    write_performance_trend(output_dir, summary)
+    write_performance_trend(output_dir, summary, history_file)
     write_unified_evaluation(output_dir)
     print(json.dumps({"status": summary["status"], "outputDir": relative(output_dir)}, indent=2))
     return 0 if summary["status"] == "passed" else 1
@@ -202,55 +215,16 @@ def run_check(name: str, command: list[str]) -> dict[str, object]:
     }
 
 
-def write_performance_trend(
-    output_dir: Path,
-    summary: dict[str, object],
-) -> None:
-    current = {
-        "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "suite": summary["suite"],
-        "status": summary["status"],
-        "checks": {
-            item["name"]: item["elapsedSeconds"]
-            for item in summary["checks"]
-        },
-        "totalSeconds": round(
-            sum(float(item["elapsedSeconds"]) for item in summary["checks"]),
-            3,
-        ),
-    }
-    previous = find_previous_performance(output_dir)
-    payload = {"current": current, "previous": previous}
-    (output_dir / "performance-trend.json").write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def find_previous_performance(output_dir: Path) -> dict[str, object]:
-    root = output_dir.parent
-    candidates = sorted(
-        (
-            path
-            for path in root.glob("*/performance-trend.json")
-            if path.parent != output_dir
-        ),
-        reverse=True,
-    )
-    for path in candidates:
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        return data.get("current") or {}
-    return {}
-
-
 def relative(path: Path) -> str:
     try:
         return str(path.relative_to(REPO_ROOT))
     except ValueError:
         return str(path)
+
+
+def resolve(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else REPO_ROOT / path
 
 
 def snapshot_tree(root: Path) -> dict[Path, bytes]:

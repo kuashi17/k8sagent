@@ -77,11 +77,11 @@ class ControllerRendererTest(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            '[]interface{}{"selector", "matchLabels"}',
+            '[]interface{}{"spec", "selector", "matchLabels"}',
             rendered,
         )
         self.assertIn(
-            '[]interface{}{"selector"}',
+            '[]interface{}{"spec", "selector"}',
             rendered,
         )
         self.assertIn(
@@ -102,6 +102,7 @@ class ControllerRendererTest(unittest.TestCase):
             1,
         )[1].split("func ", 1)[0]
         self.assertIn("object.SetLabels(labels)", namespace_function)
+        self.assertIn("mergeStringMapAtPath", namespace_function)
         self.assertIn("r.Get(", namespace_function)
         self.assertIn("r.Update(", namespace_function)
         self.assertNotIn("CreateOrUpdate", namespace_function)
@@ -152,15 +153,24 @@ class ControllerRendererTest(unittest.TestCase):
 
         self.assertIn("reconcileStatefulSet", rendered)
         self.assertIn('serviceName = instance.Name + "-service"', rendered)
-        self.assertIn('"serviceName": serviceName', rendered)
         self.assertIn(
-            'resourceSpec["replicas"] = int64(instance.Spec.Size)',
+            '[]interface{}{"spec", "serviceName"}, serviceName',
+            rendered,
+        )
+        self.assertIn(
+            '[]interface{}{"spec", "replicas"}, int64(instance.Spec.Size)',
             rendered,
         )
         self.assertIn('"volumeClaimTemplates"', rendered)
-        self.assertIn('"storage": instance.Spec.StorageSize', rendered)
+        self.assertIn(
+            '"requests", "storage"}, instance.Spec.StorageSize',
+            rendered,
+        )
         self.assertIn('"mountPath": "/data"', rendered)
-        self.assertIn('"containerPort": int64(instance.Spec.Port)', rendered)
+        self.assertIn(
+            '"containerPort"}, int64(instance.Spec.Port)',
+            rendered,
+        )
         self.assertIn(
             'unstructured.NestedInt64(statefulSetReadyReplicasObject.Object, "status", "readyReplicas")',
             rendered,
@@ -168,6 +178,33 @@ class ControllerRendererTest(unittest.TestCase):
         self.assertIn(
             'Owns(managedObject("apps", "v1", "StatefulSet", "", ""))',
             rendered,
+        )
+
+    def test_immutable_mapping_renders_controller_recreate_guard(
+        self,
+    ) -> None:
+        rendered = render_controller(
+            model(
+                ["PersistentVolumeClaim"],
+                [
+                    "claimName",
+                    "storageSize",
+                    "storageClassName",
+                    "accessModes",
+                ],
+                ["phase", "claimName", "message"],
+            )
+        )
+        function = rendered.split(
+            "func (r *ExampleReconciler) reconcilePersistentVolumeClaim",
+            1,
+        )[1].split("func ", 1)[0]
+
+        self.assertIn("recreate := false", function)
+        self.assertIn("delete immutable managed resource", function)
+        self.assertIn(
+            '[]interface{}{"spec", "accessModes"}',
+            function,
         )
 
 

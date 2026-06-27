@@ -15,6 +15,7 @@ from agent.tools.controller_ir_builder import build_controller_ir
 from agent.tools.controller_emitters import (
     render_dependencies,
     render_mutations,
+    render_recreate_guard,
 )
 
 
@@ -103,14 +104,6 @@ func setOwner(owner client.Object, object client.Object, scheme *runtime.Scheme)
 \treturn controllerutil.SetControllerReference(owner, object, scheme)
 }}
 
-func copyStringMap(input map[string]string) map[string]string {{
-\toutput := make(map[string]string, len(input))
-\tfor key, value := range input {{
-\t\toutput[key] = value
-\t}}
-\treturn output
-}}
-
 func stringMapToInterface(input map[string]string) map[string]interface{{}} {{
 \toutput := make(map[string]interface{{}}, len(input))
 \tfor key, value := range input {{
@@ -125,6 +118,63 @@ func stringSliceToInterface(input []string) []interface{{}} {{
 \t\toutput[index] = value
 \t}}
 \treturn output
+}}
+
+func mergeNestedMap(target, source map[string]interface{{}}) {{
+\tfor key, value := range source {{
+\t\tsourceMap, nested := value.(map[string]interface{{}})
+\t\tif !nested {{
+\t\t\ttarget[key] = value
+\t\t\tcontinue
+\t\t}}
+\t\ttargetMap, ok := target[key].(map[string]interface{{}})
+\t\tif !ok {{
+\t\t\ttargetMap = map[string]interface{{}}{{}}
+\t\t}}
+\t\tmergeNestedMap(targetMap, sourceMap)
+\t\ttarget[key] = targetMap
+\t}}
+}}
+
+func mergeStringMapAtPath(current map[string]interface{{}}, path []interface{{}}, input map[string]string) error {{
+\tmerged := map[string]interface{{}}{{}}
+\tif existing, found := nestedValue(current, path); found {{
+\t\tif values, ok := existing.(map[string]interface{{}}); ok {{
+\t\t\tfor key, value := range values {{
+\t\t\t\tmerged[key] = value
+\t\t\t}}
+\t\t}}
+\t}}
+\tfor key, value := range input {{
+\t\tmerged[key] = value
+\t}}
+\treturn setNestedValue(current, path, merged)
+}}
+
+func nestedValue(current interface{{}}, path []interface{{}}) (interface{{}}, bool) {{
+\tif len(path) == 0 {{
+\t\treturn current, true
+\t}}
+\tswitch node := current.(type) {{
+\tcase map[string]interface{{}}:
+\t\tkey, ok := path[0].(string)
+\t\tif !ok {{
+\t\t\treturn nil, false
+\t\t}}
+\t\tchild, found := node[key]
+\t\tif !found {{
+\t\t\treturn nil, false
+\t\t}}
+\t\treturn nestedValue(child, path[1:])
+\tcase []interface{{}}:
+\t\tindex, ok := path[0].(int)
+\t\tif !ok || index < 0 || index >= len(node) {{
+\t\t\treturn nil, false
+\t\t}}
+\t\treturn nestedValue(node[index], path[1:])
+\tdefault:
+\t\treturn nil, false
+\t}}
 }}
 
 func setNestedValue(current interface{{}}, path []interface{{}}, value interface{{}}) error {{
@@ -225,6 +275,7 @@ def render_resource_function(
         resource,
         namespace,
     )
+    recreate_guard = render_recreate_guard(resource)
     owner = (
         ""
         if resource.ownership == OwnershipPolicy.NONE
@@ -256,6 +307,7 @@ def render_resource_function(
 {dependencies}
 \tobject := managedObject("{group}", "{version}", "{resource.kind}", {namespace}, name)
 {disable_guard}
+{recreate_guard}
 \t_, err := controllerutil.CreateOrUpdate(ctx, r.Client, object, func() error {{
 \t\tlabels := object.GetLabels()
 \t\tif labels == nil {{

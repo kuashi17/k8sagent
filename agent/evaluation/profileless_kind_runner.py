@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -201,12 +202,37 @@ def build_kind_contract(
     return {
         "project": str(project_dir),
         "clusterName": cluster_name,
-        "image": f"{project_name}:profileless-kind",
+        "image": (
+            f"{project_name}:profileless-"
+            f"{project_content_digest(project_dir)}"
+        ),
         "sample": str(sample_path),
         "namespace": f"{project_name}-system",
         "deployment": f"{project_name}-controller-manager",
         "validatorConfig": validator_config,
     }
+
+
+def project_content_digest(project_dir: Path) -> str:
+    digest = hashlib.sha256()
+    candidates = []
+    for path in project_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(project_dir)
+        if path.name in {"Dockerfile", "go.mod", "go.sum"} or (
+            relative_path.parts
+            and relative_path.parts[0] in {"api", "cmd", "internal"}
+            and path.suffix == ".go"
+        ):
+            candidates.append(path)
+    for path in sorted(candidates):
+        relative_path = path.relative_to(project_dir)
+        digest.update(str(relative_path).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()[:12]
 
 
 def build_kind_command(contract: dict[str, Any]) -> list[str]:

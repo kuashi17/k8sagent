@@ -3,7 +3,6 @@ resources:
   - kind: ConfigMap
     apiVersion: v1
     suffix: config
-    emitter: string-map
     nameFields: [configMapName, name]
     disableField: enabled
     fieldMappings:
@@ -15,7 +14,6 @@ resources:
   - kind: Secret
     apiVersion: v1
     suffix: secret
-    emitter: string-map
     nameFields: [secretName, targetName, name]
     disableField: enabled
     fieldMappings:
@@ -28,7 +26,6 @@ resources:
     aliases: [PVC]
     apiVersion: v1
     suffix: pvc
-    emitter: storage-claim
     nameFields: [claimName, pvcName]
     fieldMappings:
       - {source: storageSize, target: spec.resources.requests.storage}
@@ -48,20 +45,20 @@ resources:
   - kind: CronJob
     apiVersion: batch/v1
     suffix: cronjob
-    emitter: generic-object
     nameFields: [cronJobName]
-    baseSpec:
-      schedule: "*/5 * * * *"
-      suspend: true
-      jobTemplate:
-        spec:
-          template:
-            spec:
-              restartPolicy: Never
-              containers:
-                - name: task
-                  image: nginx:latest
-                  command: []
+    baseObject:
+      spec:
+        schedule: "*/5 * * * *"
+        suspend: true
+        jobTemplate:
+          spec:
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: task
+                    image: nginx:latest
+                    command: []
     fieldMappings:
       - {source: schedule, target: spec.schedule}
       - {source: image, target: "spec.jobTemplate.spec.template.spec.containers[0].image"}
@@ -74,24 +71,24 @@ resources:
   - kind: Deployment
     apiVersion: apps/v1
     suffix: deployment
-    emitter: generic-object
     nameFields: [deploymentName, appName]
-    baseSpec:
-      replicas: 1
-      selector:
-        matchLabels: {}
-      template:
-        metadata:
-          labels: {}
-        spec:
-          containers:
-            - name: application
-              image: nginx:latest
-              ports:
-                - containerPort: 1
+    baseObject:
+      spec:
+        replicas: 1
+        selector:
+          matchLabels: {}
+        template:
+          metadata:
+            labels: {}
+          spec:
+            containers:
+              - name: application
+                image: nginx:latest
+                ports:
+                  - containerPort: 1
     labelPaths:
-      - selector.matchLabels
-      - template.metadata.labels
+      - spec.selector.matchLabels
+      - spec.template.metadata.labels
     fieldMappings:
       - {source: image, target: "spec.template.spec.containers[0].image"}
       - {source: replicas, target: spec.replicas, transform: int64}
@@ -105,10 +102,45 @@ resources:
   - kind: StatefulSet
     apiVersion: apps/v1
     suffix: statefulset
-    emitter: stateful-workload
     dependencyKind: Service
     dependencyVariable: serviceName
+    dependencyTargetPath: spec.serviceName
     nameFields: [statefulSetName, appName, cacheName]
+    baseObject:
+      spec:
+        replicas: 1
+        selector:
+          matchLabels: {}
+        template:
+          metadata:
+            labels: {}
+          spec:
+            containers:
+              - name: application
+                image: nginx:latest
+    conditionalObjects:
+      - whenSource: spec.storageSize
+        object:
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: application
+                    image: nginx:latest
+                    volumeMounts:
+                      - name: data
+                        mountPath: /data
+            volumeClaimTemplates:
+              - metadata:
+                  name: data
+                spec:
+                  accessModes: [ReadWriteOnce]
+                  resources:
+                    requests:
+                      storage: 1Gi
+    labelPaths:
+      - spec.selector.matchLabels
+      - spec.template.metadata.labels
     fieldMappings:
       - {source: image, target: "spec.template.spec.containers[0].image"}
       - {source: replicas, target: spec.replicas, transform: int64}
@@ -121,15 +153,15 @@ resources:
   - kind: Service
     apiVersion: v1
     suffix: service
-    emitter: generic-object
     nameFields: [serviceName, appName]
-    baseSpec:
-      selector: {}
-      ports:
-        - port: 1
-          targetPort: 1
+    baseObject:
+      spec:
+        selector: {}
+        ports:
+          - port: 1
+            targetPort: 1
     labelPaths:
-      - selector
+      - spec.selector
     fieldMappings:
       - {source: port, target: "spec.ports[0].port", transform: int64}
       - {source: port, target: "spec.ports[0].targetPort", transform: int64}
@@ -139,35 +171,34 @@ resources:
   - kind: Namespace
     apiVersion: v1
     suffix: namespace
-    emitter: label-patch
     scope: Cluster
     strategy: patch-existing
     ownership: none
     deletionPolicy: retain
     nameFields: [namespaceName]
     fieldMappings:
-      - {source: labels, target: metadata.labels, transform: string-map}
+      - {source: labels, target: metadata.labels, transform: merge-string-map}
     statusMappings:
       - {field: observedNamespace, source: metadata.name, resourceName: true}
 
   - kind: DaemonSet
     apiVersion: apps/v1
     suffix: daemonset
-    emitter: generic-object
     nameFields: [daemonSetName, appName]
-    baseSpec:
-      selector:
-        matchLabels: {}
-      template:
-        metadata:
-          labels: {}
-        spec:
-          containers:
-            - name: application
-              image: nginx:latest
+    baseObject:
+      spec:
+        selector:
+          matchLabels: {}
+        template:
+          metadata:
+            labels: {}
+          spec:
+            containers:
+              - name: application
+                image: nginx:latest
     labelPaths:
-      - selector.matchLabels
-      - template.metadata.labels
+      - spec.selector.matchLabels
+      - spec.template.metadata.labels
     fieldMappings:
       - {source: image, target: "spec.template.spec.containers[0].image"}
       - {source: port, target: "spec.template.spec.containers[0].ports[0].containerPort", transform: int64}
@@ -177,7 +208,6 @@ resources:
   - kind: Pod
     apiVersion: v1
     suffix: pod
-    emitter: read-only
     strategy: read-only
     ownership: none
     deletionPolicy: retain
@@ -185,7 +215,6 @@ resources:
   - kind: Job
     apiVersion: batch/v1
     suffix: job
-    emitter: read-only
     strategy: read-only
     ownership: none
     deletionPolicy: retain

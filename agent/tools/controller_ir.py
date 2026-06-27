@@ -89,7 +89,6 @@ class ManagedResourceSpec(IRModel):
     scope: ResourceScope
     name: NameRule
     strategy: ReconcileStrategy
-    emitter: str
     capabilities: list[ResourceCapability]
     ownership: OwnershipPolicy
     deletion_policy: DeletionPolicy
@@ -98,10 +97,11 @@ class ManagedResourceSpec(IRModel):
     field_mappings: list[FieldMapping] = Field(default_factory=list)
     status_mappings: list[StatusMapping] = Field(default_factory=list)
     disable_when: str = ""
-    base_spec: dict[str, Any] = Field(default_factory=dict)
+    base_object: dict[str, Any] = Field(default_factory=dict)
     label_paths: list[str] = Field(default_factory=list)
     dependency_kind: str = ""
     dependency_variable: str = ""
+    dependency_target_path: str = ""
 
 
 class ControllerGenerationIR(IRModel):

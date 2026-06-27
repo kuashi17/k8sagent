@@ -49,6 +49,17 @@ class GeneralizationBoundaryTest(unittest.TestCase):
         ):
             self.assertNotIn(value, runner)
 
+    def test_mutation_renderer_has_no_emitter_dispatch_table(self) -> None:
+        source = (
+            REPO_ROOT / "agent" / "tools" / "controller_emitters.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("EMITTERS", source)
+        self.assertNotIn("emit_string_map", source)
+        self.assertNotIn("emit_storage_claim", source)
+        self.assertNotIn("emit_stateful_workload", source)
+        self.assertNotIn("emit_label_patch", source)
+
     def test_unseen_custom_kind_uses_existing_capabilities(
         self,
     ) -> None:
@@ -111,9 +122,9 @@ class GeneralizationBoundaryTest(unittest.TestCase):
         )
 
         self.assertIn("reconcileDaemonSet", rendered)
-        self.assertIn("setNestedValue(resourceSpec", rendered)
+        self.assertIn("setNestedValue(object.Object", rendered)
         self.assertIn(
-            '[]interface{}{"template", "spec", "containers", 0, "image"}',
+            '[]interface{}{"spec", "template", "spec", "containers", 0, "image"}',
             rendered,
         )
         self.assertIn("int64(instance.Spec.Port)", rendered)

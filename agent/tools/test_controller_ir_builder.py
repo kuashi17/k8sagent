@@ -83,7 +83,7 @@ class ControllerIRBuilderTest(unittest.TestCase):
             DeletionPolicy.GARBAGE_COLLECT,
         )
         self.assertIn(ResourceCapability.CREATE, deployment.capabilities)
-        self.assertEqual(deployment.emitter, "generic-object")
+        self.assertIn("spec", deployment.base_object)
         self.assertEqual(
             deployment.update_policy,
             UpdatePolicy.IN_PLACE,
@@ -134,7 +134,10 @@ class ControllerIRBuilderTest(unittest.TestCase):
             ResourceCapability.PATCH_EXISTING,
             namespace.capabilities,
         )
-        self.assertEqual(namespace.emitter, "label-patch")
+        self.assertEqual(
+            namespace.field_mappings[0].transform,
+            "merge-string-map",
+        )
 
     def test_enabled_resource_has_explicit_disable_condition(self) -> None:
         secret = build_controller_ir(
@@ -180,6 +183,14 @@ class ControllerIRBuilderTest(unittest.TestCase):
         self.assertEqual(
             statefulset.ownership,
             OwnershipPolicy.OWNER_REFERENCE,
+        )
+        self.assertEqual(
+            statefulset.dependency_target_path,
+            "spec.serviceName",
+        )
+        self.assertIn(
+            "volumeClaimTemplates",
+            statefulset.base_object["spec"],
         )
         self.assertTrue(
             any(

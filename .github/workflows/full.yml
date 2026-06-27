@@ -8,14 +8,31 @@ jobs:
     runs-on: [self-hosted, local-llm, docker, kind]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ci-history/full.json
+          key: performance-full-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: performance-full-
       - run: docker info
       - run: python3 -m py_compile $(git ls-files '*.py')
-      - run: python3 scripts/run-regression-tests.py --suite full --output-dir evaluation/results/regression/ci-full
+      - run: python3 scripts/run-regression-tests.py --suite full --output-dir evaluation/results/regression/ci-full --history-file .ci-history/full.json
       - run: test -f evaluation/results/regression/ci-full/profileless-compile/profileless-compile-results.json
       - run: test -f evaluation/results/regression/ci-full/profileless-kind/profileless-kind-results.json
       - run: test -f evaluation/results/regression/ci-full/final-evaluation.json
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .ci-history/full.json
+          key: performance-full-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: full-regression
+          name: full-regression-${{ github.run_id }}
           path: evaluation/results/regression/ci-full/
+          retention-days: 30
+      - name: Clean up ephemeral kind clusters
+        if: always()
+        run: |
+          for cluster in trainingjob-e2e trainingjob-deploy rediscache-e2e rediscache-deploy profileless-matrix; do
+            kind delete cluster --name "$cluster"
+          done

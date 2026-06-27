@@ -1115,7 +1115,11 @@ GitHub Actions 분리:
 - `.github/workflows/standard.yml`: `local-llm` self-hosted runner에서 수동 실행
 - `.github/workflows/full.yml`: `local-llm`, `docker`, `kind` self-hosted runner에서 수동 실행
 
+세 workflow는 suite별 `.ci-history/*.json`을 Actions cache로 복원·저장하므로 새 checkout에서도 직전 성능과 비교할 수 있습니다. 실행 결과 artifact는 run ID별 이름으로 30일 보존하며, `full`은 종료 시 자신이 사용하는 임시 kind 클러스터를 정리합니다.
+
 `full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
+
+profileless kind matrix는 7개 요구사항에서 Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC의 공통 lifecycle을 검증합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
 
 빠른 정책/캐시 검증:
 
@@ -1198,21 +1202,21 @@ python3 agent/evaluation/profileless_kind_runner.py \
   --output-dir evaluation/results/profileless-kind/local
 ```
 
-이 검증은 임시 workspace에서 WebService, SecretSync, ScheduledTask, NamespaceLabelPolicy Operator를 새로 생성·컴파일합니다. 생성된 Controller를 같은 kind 클러스터에 순차 배포하여 관리 리소스 생성, 재적용 멱등성, 변경 반영, 삭제 정책, sample 복구를 확인합니다. profile fixture나 전용 Controller 준비 코드는 사용하지 않으며 결과는 `profileless-kind-results.json`에 저장됩니다.
+이 검증은 임시 workspace에서 7개 profileless Operator를 새로 생성·컴파일합니다. 생성된 Controller를 같은 kind 클러스터에 순차 배포하여 관리 리소스 생성, 재적용 멱등성, 변경 반영, immutable 재생성, 삭제 정책, sample 복구를 확인합니다. profile fixture나 전용 Controller 준비 코드는 사용하지 않으며 결과는 `profileless-kind-results.json`에 저장됩니다.
 
 Controller 생성의 일반화 경계는 다음과 같습니다.
 
-- resource catalog는 Kubernetes resource를 행동형 emitter와 기본 field mapping으로 변환
+- resource catalog는 Kubernetes resource의 base/conditional object와 field mapping을 행동 IR로 변환
 - IR은 field mutability, in-place/recreate update, ownership, delete/retain 계약을 보관
-- `controller_renderer.py`는 resource Kind를 분기하지 않고 IR의 emitter만 호출
+- mutation renderer는 resource Kind를 분기하지 않고 모든 object에 동일한 nested path 연산을 적용
 - kind lifecycle 계약은 동일한 IR에서 생성되며 setup, update, recreate, delete, retain을 결정
 - 실제 사례 목록과 held-out 요구사항은 `evaluation/fixtures/`에만 위치
 
 `evaluation/fixtures/requirements/queue-worker.txt`는 core 변경 없이 새로운 Custom Resource Kind를 생성·컴파일할 수 있는지 확인하는 held-out fixture입니다.
 
-관리 리소스 capability는 [resource-capabilities.yaml](config/resource-capabilities.yaml)에 선언합니다. 각 항목은 alias, API version, scope, ownership, lifecycle, name 후보, base spec, label path, field/status mapping을 포함하며 Pydantic으로 검증됩니다. `generic-object` emitter는 `containers[0].ports[0]` 같은 map/list 혼합 경로와 `int64`, `string-map`, `string-slice` transform을 공통 처리합니다.
+관리 리소스 capability는 [resource-capabilities.yaml](config/resource-capabilities.yaml)에 선언합니다. 각 항목은 alias, API version, scope, ownership, lifecycle, name 후보, base object, 조건부 object, label path, dependency, field/status mapping을 포함하며 Pydantic으로 검증됩니다. 단일 mutation renderer는 `containers[0].ports[0]` 같은 map/list 혼합 경로와 `int64`, `string-map`, `merge-string-map`, `string-slice` transform을 공통 처리합니다.
 
-새 관리 리소스 일반화 검증은 Python 분기를 추가하는 방식이 아니라 catalog 항목과 `evaluation/fixtures/requirements/`의 held-out 요구사항만 추가하여 수행합니다.
+새 관리 리소스 일반화 검증은 Python 분기나 emitter를 추가하는 방식이 아니라 catalog 항목과 `evaluation/fixtures/requirements/`의 held-out 요구사항만 추가하여 수행합니다. 중복 alias, 잘못된 nested path, 미완성·미등록 dependency, read-only mutation 및 cluster-scoped ownerReference는 catalog 로드 단계에서 거부됩니다.
 
 ## 스펙 기반 Kubebuilder Scaffold
 
