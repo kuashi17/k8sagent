@@ -42,6 +42,13 @@ def render_mutations(
             f"{resource.dependency_variable}); err != nil "
             "{ return err }"
         )
+    for mutation in resource.static_mutations:
+        lines.append(
+            "\t\tif err := setNestedValue(object.Object, "
+            f"{go_path(mutation.target_path)}, "
+            f"{static_value(mutation.value, mutation.transform)}); "
+            "err != nil { return err }"
+        )
     for mapping in resource.field_mappings:
         if mapping.transform == "merge-string-map":
             lines.append(
@@ -137,7 +144,20 @@ def mapping_value(mapping: Any) -> str:
         return f"stringSliceToInterface({expression})"
     if mapping.transform == "string-map":
         return f"stringMapToInterface({expression})"
+    if mapping.transform == "env-map":
+        return f"envMapToInterface({expression})"
     return expression
+
+
+def static_value(value: Any, transform: str) -> str:
+    literal = go_literal(value)
+    if transform == "int64":
+        return f"int64({literal})"
+    if transform == "string-map":
+        return literal
+    if transform == "string-slice":
+        return literal
+    return literal
 
 
 def go_path(path: str) -> str:

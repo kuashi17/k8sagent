@@ -403,6 +403,18 @@ class ManagedResourceValidator:
         self.update_mode = str(
             config.get("updateMode") or "in-place"
         )
+        self.initial_assertions = [
+            {
+                "resource": str(item.get("resource") or ""),
+                "name": str(item.get("name") or self.sample_name),
+                "path": str(item.get("path") or ""),
+                "equals": item.get("equals"),
+            }
+            for item in config.get("initialAssertions") or []
+            if isinstance(item, dict)
+            and item.get("resource")
+            and item.get("path")
+        ]
         self.update_assertions = [
             {
                 "resource": str(item.get("resource") or ""),
@@ -507,6 +519,11 @@ class ManagedResourceValidator:
                 )
         engine.checks["managedResources"] = managed
         engine.checks["customResourceStatus"] = status
+        if self.initial_assertions:
+            engine.checks["initialAssertions"] = [
+                self.wait_assertion(engine, item)
+                for item in self.initial_assertions
+            ]
 
     def verify_lifecycle(self, engine: DeploymentEngine) -> None:
         self.verify_idempotency(engine)
@@ -645,6 +662,7 @@ class ManagedResourceValidator:
                 "namespace": self.namespace,
             },
             "managedResources": self.managed_resources,
+            "initialAssertions": self.initial_assertions,
             "updateSpec": self.update_spec,
             "updateAssertions": self.update_assertions,
             "updateMode": self.update_mode,

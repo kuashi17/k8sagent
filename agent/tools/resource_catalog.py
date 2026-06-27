@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from string import Formatter
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,8 @@ class CatalogFieldMapping(CatalogModel):
     transform: str = "direct"
     mutability: FieldMutability = FieldMutability.MUTABLE
     updatePolicy: UpdatePolicy = UpdatePolicy.IN_PLACE
+    assertionPath: str = ""
+    assertionTransform: str = ""
 
 
 class CatalogStatusMapping(CatalogModel):
@@ -48,6 +51,83 @@ class CatalogStatusMapping(CatalogModel):
 class CatalogConditionalObject(CatalogModel):
     whenSource: str
     object: dict[str, Any]
+
+
+class CatalogPrimitiveMutation(CatalogModel):
+    target: str
+    source: str = ""
+    transform: str = "direct"
+    literal: Any = None
+    defaultValue: Any = None
+    mutability: FieldMutability = FieldMutability.MUTABLE
+    updatePolicy: UpdatePolicy = UpdatePolicy.IN_PLACE
+
+    @model_validator(mode="after")
+    def validate_value_source(self) -> "CatalogPrimitiveMutation":
+        if not self.source and self.literal is None:
+            raise ValueError(
+                f"primitive mutation {self.target} requires source or literal"
+            )
+        if self.source and self.literal is not None:
+            raise ValueError(
+                f"primitive mutation {self.target} cannot mix source and literal"
+            )
+        if self.transform not in ALLOWED_TRANSFORMS:
+            raise ValueError(
+                f"unsupported primitive transform: {self.transform}"
+            )
+        return self
+
+
+class CatalogBehaviorPrimitive(CatalogModel):
+    name: str
+    activationFields: list[str] = Field(min_length=1)
+    activationMode: str = "any"
+    mutations: list[CatalogPrimitiveMutation] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_activation(self) -> "CatalogBehaviorPrimitive":
+        if self.activationMode not in {"any", "all"}:
+            raise ValueError(
+                f"unsupported activation mode for {self.name}: "
+                f"{self.activationMode}"
+            )
+        if len(self.activationFields) != len(set(self.activationFields)):
+            raise ValueError(
+                f"activation fields for {self.name} must be unique"
+            )
+        pairs = [
+            (mutation.source, mutation.target)
+            for mutation in self.mutations
+        ]
+        if len(pairs) != len(set(pairs)):
+            raise ValueError(
+                f"primitive mutations for {self.name} must be unique"
+            )
+        for mutation in self.mutations:
+            try:
+                placeholders = {
+                    field_name
+                    for _, field_name, _, _ in Formatter().parse(
+                        mutation.target
+                    )
+                    if field_name
+                }
+                rendered = mutation.target.format(
+                    **{name: "root" for name in placeholders}
+                )
+            except (KeyError, ValueError) as exc:
+                raise ValueError(
+                    f"invalid target template for {self.name}: "
+                    f"{mutation.target}"
+                ) from exc
+            validate_path(rendered, f"{self.name} target template")
+        return self
+
+
+class CatalogBehaviorBinding(CatalogModel):
+    primitive: str
+    paths: dict[str, str] = Field(default_factory=dict)
 
 
 class ResourceCapabilityDefinition(CatalogModel):
@@ -75,18 +155,42 @@ class ResourceCapabilityDefinition(CatalogModel):
     dependencyKind: str = ""
     dependencyVariable: str = ""
     dependencyTargetPath: str = ""
+    behaviorBindings: list[CatalogBehaviorBinding] = Field(
+        default_factory=list
+    )
 
     @model_validator(mode="after")
     def validate_behavior(self) -> "ResourceCapabilityDefinition":
         names = [self.kind, *self.aliases]
         if len(names) != len(set(names)):
             raise ValueError(f"duplicate kind or alias in {self.kind}")
+        bindings = [
+            binding.primitive for binding in self.behaviorBindings
+        ]
+        if len(bindings) != len(set(bindings)):
+            raise ValueError(
+                f"duplicate behavior binding in {self.kind}"
+            )
         for mapping in self.fieldMappings:
             validate_path(mapping.target, f"{self.kind} field mapping")
             if mapping.transform not in ALLOWED_TRANSFORMS:
                 raise ValueError(
                     f"unsupported transform for {self.kind}: "
                     f"{mapping.transform}"
+                )
+            if mapping.assertionPath:
+                validate_path(
+                    mapping.assertionPath,
+                    f"{self.kind} assertion path",
+                )
+            if (
+                mapping.assertionTransform
+                and mapping.assertionTransform
+                not in ALLOWED_ASSERTION_TRANSFORMS
+            ):
+                raise ValueError(
+                    f"unsupported assertion transform for {self.kind}: "
+                    f"{mapping.assertionTransform}"
                 )
         pairs = [
             (mapping.source, mapping.target)
@@ -138,6 +242,7 @@ class ResourceCapabilityDefinition(CatalogModel):
             or self.baseObject
             or self.conditionalObjects
             or self.labelPaths
+            or self.behaviorBindings
             or any(dependency_values)
         ):
             raise ValueError(
@@ -166,11 +271,23 @@ class ResourceCapabilityDefinition(CatalogModel):
 
 class ResourceCapabilityCatalog(CatalogModel):
     version: int = Field(ge=1)
+    behaviorPrimitives: list[CatalogBehaviorPrimitive] = Field(
+        default_factory=list
+    )
     resources: list[ResourceCapabilityDefinition] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_catalog(self) -> "ResourceCapabilityCatalog":
         names: dict[str, str] = {}
+        primitive_names = [
+            primitive.name for primitive in self.behaviorPrimitives
+        ]
+        if len(primitive_names) != len(set(primitive_names)):
+            raise ValueError("behavior primitive names must be unique")
+        primitives = {
+            primitive.name: primitive
+            for primitive in self.behaviorPrimitives
+        }
         canonical = {resource.kind for resource in self.resources}
         for resource in self.resources:
             for value in [resource.kind, *resource.aliases]:
@@ -188,6 +305,36 @@ class ResourceCapabilityCatalog(CatalogModel):
                     f"unknown dependency {resource.dependencyKind} "
                     f"for {resource.kind}"
                 )
+            for binding in resource.behaviorBindings:
+                primitive = primitives.get(binding.primitive)
+                if not primitive:
+                    raise ValueError(
+                        f"unknown behavior primitive {binding.primitive} "
+                        f"for {resource.kind}"
+                    )
+                for path in binding.paths.values():
+                    validate_path(
+                        path,
+                        f"{resource.kind} behavior binding",
+                    )
+                for mutation in primitive.mutations:
+                    placeholders = {
+                        field_name
+                        for _, field_name, _, _ in Formatter().parse(
+                            mutation.target
+                        )
+                        if field_name
+                    }
+                    missing = placeholders.difference(binding.paths)
+                    if missing:
+                        raise ValueError(
+                            f"behavior {primitive.name} for {resource.kind} "
+                            f"is missing paths: {', '.join(sorted(missing))}"
+                        )
+                    validate_path(
+                        mutation.target.format(**binding.paths),
+                        f"{resource.kind} behavior mutation",
+                    )
         return self
 
     def by_name(self) -> dict[str, ResourceCapabilityDefinition]:
@@ -196,6 +343,12 @@ class ResourceCapabilityCatalog(CatalogModel):
             for value in [resource.kind, *resource.aliases]:
                 result[value] = resource
         return result
+
+    def primitives_by_name(self) -> dict[str, CatalogBehaviorPrimitive]:
+        return {
+            primitive.name: primitive
+            for primitive in self.behaviorPrimitives
+        }
 
 
 @lru_cache(maxsize=1)
@@ -214,9 +367,14 @@ def load_resource_catalog(
 ALLOWED_TRANSFORMS = {
     "direct",
     "int64",
+    "env-map",
     "string-map",
     "merge-string-map",
     "string-slice",
+}
+
+ALLOWED_ASSERTION_TRANSFORMS = {
+    "base64-string-map",
 }
 
 

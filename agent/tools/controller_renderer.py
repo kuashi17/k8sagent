@@ -51,7 +51,8 @@ def render_controller(model: dict[str, Any]) -> str:
 import (
 \t"context"
 \t"fmt"
-\t"reflect"{render_status_imports(ir)}
+\t"reflect"
+\t"sort"{render_status_imports(ir)}
 
 \tapierrors "k8s.io/apimachinery/pkg/api/errors"
 \t"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -116,6 +117,22 @@ func stringSliceToInterface(input []string) []interface{{}} {{
 \toutput := make([]interface{{}}, len(input))
 \tfor index, value := range input {{
 \t\toutput[index] = value
+\t}}
+\treturn output
+}}
+
+func envMapToInterface(input map[string]string) []interface{{}} {{
+\tkeys := make([]string, 0, len(input))
+\tfor key := range input {{
+\t\tkeys = append(keys, key)
+\t}}
+\tsort.Strings(keys)
+\toutput := make([]interface{{}}, 0, len(keys))
+\tfor _, key := range keys {{
+\t\toutput = append(output, map[string]interface{{}}{{
+\t\t\t"name": key,
+\t\t\t"value": input[key],
+\t\t}})
 \t}}
 \treturn output
 }}

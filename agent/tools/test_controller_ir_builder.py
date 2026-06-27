@@ -206,6 +206,61 @@ class ControllerIRBuilderTest(unittest.TestCase):
             )
         )
 
+    def test_composable_workload_behaviors_are_activated(self) -> None:
+        deployment = build_controller_ir(
+            model(
+                ["Deployment"],
+                [
+                    "image",
+                    "env",
+                    "resourceLimits",
+                    "pvcName",
+                    "mountPath",
+                    "healthPath",
+                    "healthPort",
+                ],
+                ["phase", "message"],
+                [
+                    {
+                        "from": "spec.env",
+                        "to": (
+                            "Deployment.spec.template.spec."
+                            "containers[0].env"
+                        ),
+                    }
+                ],
+            )
+        ).resource("Deployment")
+
+        self.assertEqual(
+            set(deployment.active_behaviors),
+            {
+                "container-env",
+                "resource-limits",
+                "pvc-volume",
+                "health-probe",
+            },
+        )
+        mappings = {
+            item.source_path: item
+            for item in deployment.field_mappings
+        }
+        self.assertEqual(mappings["spec.env"].transform, "env-map")
+        self.assertEqual(
+            mappings["spec.resourceLimits"].target_path,
+            "spec.template.spec.containers[0].resources.limits",
+        )
+        self.assertEqual(
+            mappings["spec.pvcName"].target_path,
+            "spec.template.spec.volumes[0].persistentVolumeClaim.claimName",
+        )
+        self.assertIn(
+            "spec.template.spec.containers[0].volumeMounts[0].name",
+            {
+                item.target_path
+                for item in deployment.static_mutations
+            },
+        )
     def test_immutable_fields_are_explicit_lifecycle_contracts(
         self,
     ) -> None:

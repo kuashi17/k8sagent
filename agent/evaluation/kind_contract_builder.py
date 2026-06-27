@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,6 +45,9 @@ class KindValidationContract(ContractModel):
     resource: str
     sampleName: str
     managedResources: list[ManagedResourceContract]
+    initialAssertions: list[AssertionContract] = Field(
+        default_factory=list
+    )
     updateSpec: dict[str, Any] = Field(default_factory=dict)
     updateAssertions: list[AssertionContract] = Field(
         default_factory=list
@@ -66,6 +70,7 @@ def build_validation_contract(
     setup = []
     update_spec: dict[str, Any] = {}
     assertions = []
+    initial_assertions = []
     update_mode = UpdatePolicy.NONE
     rbac = [
         RBACCheckContract(
@@ -84,6 +89,9 @@ def build_validation_contract(
                 deletionPolicy=resource.deletion_policy.value,
                 updatePolicy=resource.update_policy.value,
             )
+        )
+        initial_assertions.extend(
+            initial_assertions_for(resource, sample_spec, name)
         )
         if resource.strategy == ReconcileStrategy.PATCH_EXISTING:
             setup.append(
@@ -114,6 +122,7 @@ def build_validation_contract(
         resource=ir.kind.lower(),
         sampleName=sample_name,
         managedResources=managed,
+        initialAssertions=initial_assertions,
         updateSpec=update_spec,
         updateAssertions=assertions,
         updateMode=update_mode.value,
@@ -130,6 +139,7 @@ def lifecycle_update(
     ordered = sorted(
         resource.field_mappings,
         key=lambda item: (
+            item.transform != "env-map",
             item.mutability != FieldMutability.MUTABLE,
             item.target_path,
         ),
@@ -154,12 +164,81 @@ def lifecycle_update(
     return {}
 
 
+def initial_assertions_for(
+    resource: ManagedResourceSpec,
+    sample_spec: dict[str, Any],
+    name: str,
+) -> list[AssertionContract]:
+    assertions: list[AssertionContract] = []
+    for mapping in resource.field_mappings:
+        field = mapping.source_path.removeprefix("spec.")
+        if field not in sample_spec:
+            continue
+        value = sample_spec[field]
+        if mapping.transform == "merge-string-map":
+            if isinstance(value, dict):
+                assertions.extend(
+                    AssertionContract(
+                        resource=resource_token(resource),
+                        name=name,
+                        path=f"{mapping.target_path}.{key}",
+                        equals=item,
+                    )
+                    for key, item in sorted(value.items())
+                )
+            continue
+        assertions.append(
+            AssertionContract(
+                resource=resource_token(resource),
+                name=name,
+                path=(mapping.assertion_path or mapping.target_path),
+                equals=transformed_value(
+                    mapping.assertion_transform or mapping.transform,
+                    value,
+                ),
+            )
+        )
+    assertions.extend(
+        AssertionContract(
+            resource=resource_token(resource),
+            name=name,
+            path=mutation.target_path,
+            equals=mutation.value,
+        )
+        for mutation in resource.static_mutations
+    )
+    return assertions
+
+
+def transformed_value(transform: str, value: Any) -> Any:
+    if transform == "env-map" and isinstance(value, dict):
+        return [
+            {"name": key, "value": str(value[key])}
+            for key in sorted(value)
+        ]
+    if transform == "base64-string-map" and isinstance(value, dict):
+        return {
+            str(key): base64.b64encode(str(item).encode("utf-8")).decode(
+                "ascii"
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
 def update_candidate(
     mapping: FieldMapping,
     sample_spec: dict[str, Any],
 ) -> tuple[str, Any, Any] | None:
     field = mapping.source_path.removeprefix("spec.")
     current = sample_spec.get(field)
+    if mapping.transform == "env-map" and isinstance(current, dict):
+        updated = {**current, "PROFILELESS_E2E": "updated"}
+        expected = [
+            {"name": key, "value": str(updated[key])}
+            for key in sorted(updated)
+        ]
+        return field, updated, expected
     if mapping.target_path.endswith(".replicas") and isinstance(
         current,
         int,
@@ -200,6 +279,8 @@ def update_candidate(
 
 
 def assertion_path(mapping: FieldMapping) -> str:
+    if mapping.assertion_path:
+        return mapping.assertion_path
     if mapping.target_path == "metadata.labels":
         return "metadata.labels.profileless-e2e"
     return mapping.target_path

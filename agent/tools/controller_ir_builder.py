@@ -14,10 +14,12 @@ from agent.tools.controller_ir import (
     RBACRule,
     ReconcileStrategy,
     ResourceCapability,
+    StaticMutation,
     StatusMapping,
     UpdatePolicy,
 )
 from agent.tools.resource_catalog import (
+    CatalogBehaviorPrimitive,
     ResourceCapabilityDefinition,
     load_resource_catalog,
 )
@@ -53,6 +55,7 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
                 status_fields,
                 status_field_types,
                 explicit_mappings,
+                catalog.primitives_by_name(),
             )
         )
     if unsupported:
@@ -91,14 +94,19 @@ def build_managed_resource(
     status_fields: set[str],
     status_field_types: dict[str, str],
     explicit_mappings: list[FieldMapping],
+    primitives: dict[str, CatalogBehaviorPrimitive],
 ) -> ManagedResourceSpec:
     kind = defaults.kind
     name_field = first_field(fields, *defaults.nameFields)
     capabilities = capabilities_for(defaults)
+    behavior_mappings, static_mutations, active_behaviors = (
+        behavior_contract_for(defaults, primitives, fields)
+    )
     mappings = mappings_for(
         defaults,
         fields,
         explicit_mappings,
+        behavior_mappings,
     )
     return ManagedResourceSpec(
         resource_id=kind[:1].lower() + kind[1:],
@@ -116,6 +124,8 @@ def build_managed_resource(
         update_policy=resource_update_policy(defaults, mappings),
         watch=ResourceCapability.WATCH in capabilities,
         field_mappings=mappings,
+        static_mutations=static_mutations,
+        active_behaviors=active_behaviors,
         status_mappings=status_mappings_for(
             defaults,
             status_fields,
@@ -133,6 +143,56 @@ def build_managed_resource(
         dependency_variable=defaults.dependencyVariable,
         dependency_target_path=defaults.dependencyTargetPath,
     )
+
+
+def behavior_contract_for(
+    defaults: ResourceCapabilityDefinition,
+    primitives: dict[str, CatalogBehaviorPrimitive],
+    fields: set[str],
+) -> tuple[list[FieldMapping], list[StaticMutation], list[str]]:
+    mappings: list[FieldMapping] = []
+    static: list[StaticMutation] = []
+    active: list[str] = []
+    for binding in defaults.behaviorBindings:
+        primitive = primitives[binding.primitive]
+        present = [field in fields for field in primitive.activationFields]
+        enabled = (
+            all(present)
+            if primitive.activationMode == "all"
+            else any(present)
+        )
+        if not enabled:
+            continue
+        active.append(primitive.name)
+        for mutation in primitive.mutations:
+            target = mutation.target.format(**binding.paths)
+            if mutation.source and mutation.source in fields:
+                mappings.append(
+                    FieldMapping(
+                        source_path=f"spec.{mutation.source}",
+                        target_path=target,
+                        transform=mutation.transform,
+                        mutability=mutation.mutability,
+                        update_policy=mutation.updatePolicy,
+                    )
+                )
+            elif mutation.source and mutation.defaultValue is not None:
+                static.append(
+                    StaticMutation(
+                        target_path=target,
+                        value=mutation.defaultValue,
+                        transform=mutation.transform,
+                    )
+                )
+            elif mutation.literal is not None:
+                static.append(
+                    StaticMutation(
+                        target_path=target,
+                        value=mutation.literal,
+                        transform=mutation.transform,
+                    )
+                )
+    return mappings, static, active
 
 
 def base_object_for(
@@ -186,31 +246,64 @@ def mappings_for(
     defaults: ResourceCapabilityDefinition,
     fields: set[str],
     explicit: list[FieldMapping],
+    behavior_mappings: list[FieldMapping],
 ) -> list[FieldMapping]:
     kind = defaults.kind
-    result = [
-        item.model_copy(
-            update={
-                "target_path": normalize_target_path(
-                    item.target_path
-                ),
-                "transform": mapping_transform(
-                    defaults,
-                    item,
-                ),
-                "mutability": field_mutability(
-                    kind,
-                    normalize_target_path(item.target_path),
-                ),
-                "update_policy": field_update_policy(
-                    kind,
-                    normalize_target_path(item.target_path),
-                ),
-            }
+    result = []
+    for item in explicit:
+        if target_resource(item.target_path) != kind:
+            continue
+        target = normalize_target_path(item.target_path)
+        behavior = next(
+            (
+                candidate
+                for candidate in behavior_mappings
+                if candidate.source_path == item.source_path
+                and candidate.target_path == target
+            ),
+            None,
         )
-        for item in explicit
-        if target_resource(item.target_path) == kind
-    ]
+        catalog_mapping = next(
+            (
+                candidate
+                for candidate in defaults.fieldMappings
+                if f"spec.{candidate.source}" == item.source_path
+                and candidate.target == target
+            ),
+            None,
+        )
+        result.append(
+            item.model_copy(
+                update={
+                    "target_path": target,
+                    "transform": (
+                        behavior.transform
+                        if behavior
+                        else mapping_transform(defaults, item)
+                    ),
+                    "mutability": (
+                        behavior.mutability
+                        if behavior
+                        else field_mutability(kind, target)
+                    ),
+                    "update_policy": (
+                        behavior.update_policy
+                        if behavior
+                        else field_update_policy(kind, target)
+                    ),
+                    "assertion_path": (
+                        catalog_mapping.assertionPath
+                        if catalog_mapping
+                        else ""
+                    ),
+                    "assertion_transform": (
+                        catalog_mapping.assertionTransform
+                        if catalog_mapping
+                        else ""
+                    ),
+                }
+            )
+        )
     existing_pairs = {
         (item.source_path, item.target_path)
         for item in result
@@ -227,8 +320,16 @@ def mappings_for(
                     transform=item.transform,
                     mutability=item.mutability,
                     update_policy=item.updatePolicy,
+                    assertion_path=item.assertionPath,
+                    assertion_transform=item.assertionTransform,
                 )
             )
+            existing_pairs.add((source, target))
+    for mapping in behavior_mappings:
+        pair = (mapping.source_path, mapping.target_path)
+        if pair not in existing_pairs:
+            result.append(mapping)
+            existing_pairs.add(pair)
     return result
 
 

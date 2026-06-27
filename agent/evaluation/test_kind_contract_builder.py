@@ -43,6 +43,27 @@ def build_ir(
 
 
 class KindContractBuilderTest(unittest.TestCase):
+    def test_write_only_secret_mapping_asserts_encoded_data(self) -> None:
+        contract = build_validation_contract(
+            build_ir(
+                "Secret",
+                [{"name": "data", "type": "map[string]string"}],
+            ),
+            {
+                "metadata": {"name": "secret-policy"},
+                "spec": {"data": {"token": "value"}},
+            },
+            "genericpolicies",
+            "policy.sample.io",
+        )
+
+        assertion = next(
+            item
+            for item in contract.initialAssertions
+            if item.path == "data"
+        )
+        self.assertEqual(assertion.equals, {"token": "dmFsdWU="})
+
     def test_patch_existing_contract_is_setup_update_and_retain(
         self,
     ) -> None:
@@ -139,6 +160,53 @@ class KindContractBuilderTest(unittest.TestCase):
         self.assertEqual(
             contract.updateAssertions[0].path,
             "spec.template.spec.containers[0].ports[0].containerPort",
+        )
+
+    def test_env_primitive_builds_deterministic_update_assertion(
+        self,
+    ) -> None:
+        contract = build_validation_contract(
+            build_ir(
+                "Deployment",
+                [
+                    {"name": "image", "type": "string"},
+                    {"name": "env", "type": "map[string]string"},
+                ],
+            ),
+            {
+                "metadata": {"name": "advanced"},
+                "spec": {
+                    "image": "nginx:latest",
+                    "env": {"MODE": "test"},
+                },
+            },
+            "advancedworkloads",
+            "apps.sample.io",
+        )
+
+        self.assertEqual(
+            contract.updateSpec,
+            {
+                "env": {
+                    "MODE": "test",
+                    "PROFILELESS_E2E": "updated",
+                }
+            },
+        )
+        self.assertEqual(
+            contract.updateAssertions[0].equals,
+            [
+                {"name": "MODE", "value": "test"},
+                {"name": "PROFILELESS_E2E", "value": "updated"},
+            ],
+        )
+        initial = {
+            item.path: item.equals
+            for item in contract.initialAssertions
+        }
+        self.assertEqual(
+            initial["spec.template.spec.containers[0].env"],
+            [{"name": "MODE", "value": "test"}],
         )
 
 

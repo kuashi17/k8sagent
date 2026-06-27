@@ -67,6 +67,14 @@ class FieldMapping(IRModel):
     transform: str = "direct"
     mutability: FieldMutability = FieldMutability.MUTABLE
     update_policy: UpdatePolicy = UpdatePolicy.IN_PLACE
+    assertion_path: str = ""
+    assertion_transform: str = ""
+
+
+class StaticMutation(IRModel):
+    target_path: str
+    value: Any
+    transform: str = "direct"
 
 
 class StatusMapping(IRModel):
@@ -95,6 +103,8 @@ class ManagedResourceSpec(IRModel):
     update_policy: UpdatePolicy = UpdatePolicy.IN_PLACE
     watch: bool
     field_mappings: list[FieldMapping] = Field(default_factory=list)
+    static_mutations: list[StaticMutation] = Field(default_factory=list)
+    active_behaviors: list[str] = Field(default_factory=list)
     status_mappings: list[StatusMapping] = Field(default_factory=list)
     disable_when: str = ""
     base_object: dict[str, Any] = Field(default_factory=dict)

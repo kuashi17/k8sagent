@@ -65,6 +65,14 @@ class KindDeploymentValidatorTest(unittest.TestCase):
                     }
                 ],
                 "updateSpec": {"image": "busybox:1.36"},
+                "initialAssertions": [
+                    {
+                        "resource": "job",
+                        "name": "sample-job",
+                        "path": "spec.parallelism",
+                        "equals": 1,
+                    }
+                ],
                 "updateAssertions": [
                     {
                         "resource": "job",
@@ -96,6 +104,10 @@ class KindDeploymentValidatorTest(unittest.TestCase):
             ],
         )
         self.assertEqual(validator.rbac_checks()[0]["verb"], "create")
+        self.assertEqual(
+            validator.summary()["initialAssertions"][0]["equals"],
+            1,
+        )
         self.assertIn(
             "verify-update",
             [

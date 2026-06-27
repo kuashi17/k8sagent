@@ -98,6 +98,55 @@ resources:
 """
         )
 
+    def test_unknown_behavior_binding_is_rejected(self) -> None:
+        self.assert_invalid(
+            """version: 1
+resources:
+  - kind: Broken
+    apiVersion: v1
+    suffix: broken
+    behaviorBindings:
+      - primitive: missing
+        paths: {}
+"""
+        )
+
+    def test_missing_behavior_path_binding_is_rejected(self) -> None:
+        self.assert_invalid(
+            """version: 1
+behaviorPrimitives:
+  - name: env
+    activationFields: [env]
+    mutations:
+      - source: env
+        target: "{container}.env"
+        transform: env-map
+resources:
+  - kind: Broken
+    apiVersion: v1
+    suffix: broken
+    behaviorBindings:
+      - primitive: env
+        paths: {}
+"""
+        )
+
+    def test_invalid_behavior_target_template_is_rejected(self) -> None:
+        self.assert_invalid(
+            """version: 1
+behaviorPrimitives:
+  - name: broken
+    activationFields: [value]
+    mutations:
+      - source: value
+        target: "{container.spec.value"
+resources:
+  - kind: Example
+    apiVersion: v1
+    suffix: example
+"""
+        )
+
     def assert_invalid(self, text: str) -> None:
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "catalog.yaml"

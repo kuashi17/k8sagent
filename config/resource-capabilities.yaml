@@ -1,4 +1,58 @@
 version: 1
+behaviorPrimitives:
+  - name: container-env
+    activationFields: [env]
+    mutations:
+      - source: env
+        target: "{container}.env"
+        transform: env-map
+
+  - name: resource-limits
+    activationFields: [resourceLimits, cpuLimit, memoryLimit]
+    mutations:
+      - source: resourceLimits
+        target: "{container}.resources.limits"
+        transform: string-map
+      - source: cpuLimit
+        target: "{container}.resources.limits.cpu"
+      - source: memoryLimit
+        target: "{container}.resources.limits.memory"
+
+  - name: pvc-volume
+    activationFields: [pvcName]
+    mutations:
+      - literal: workload-data
+        target: "{podSpec}.volumes[0].name"
+      - source: pvcName
+        target: "{podSpec}.volumes[0].persistentVolumeClaim.claimName"
+      - literal: workload-data
+        target: "{container}.volumeMounts[0].name"
+      - source: mountPath
+        defaultValue: /workspace
+        target: "{container}.volumeMounts[0].mountPath"
+
+  - name: health-probe
+    activationFields: [healthPath, healthPort]
+    mutations:
+      - source: healthPath
+        defaultValue: /healthz
+        target: "{container}.livenessProbe.httpGet.path"
+      - source: healthPort
+        defaultValue: 8080
+        target: "{container}.livenessProbe.httpGet.port"
+        transform: int64
+
+  - name: readiness-probe
+    activationFields: [readinessPath, readinessPort]
+    mutations:
+      - source: readinessPath
+        defaultValue: /readyz
+        target: "{container}.readinessProbe.httpGet.path"
+      - source: readinessPort
+        defaultValue: 8080
+        target: "{container}.readinessProbe.httpGet.port"
+        transform: int64
+
 resources:
   - kind: ConfigMap
     apiVersion: v1
@@ -17,8 +71,16 @@ resources:
     nameFields: [secretName, targetName, name]
     disableField: enabled
     fieldMappings:
-      - {source: data, target: stringData, transform: string-map}
-      - {source: secretData, target: stringData, transform: string-map}
+      - source: data
+        target: stringData
+        transform: string-map
+        assertionPath: data
+        assertionTransform: base64-string-map
+      - source: secretData
+        target: stringData
+        transform: string-map
+        assertionPath: data
+        assertionTransform: base64-string-map
     statusMappings:
       - {field: secretName, source: metadata.name, resourceName: true}
 
@@ -46,6 +108,15 @@ resources:
     apiVersion: batch/v1
     suffix: cronjob
     nameFields: [cronJobName]
+    behaviorBindings:
+      - primitive: container-env
+        paths: &cronPaths
+          container: spec.jobTemplate.spec.template.spec.containers[0]
+          podSpec: spec.jobTemplate.spec.template.spec
+      - {primitive: resource-limits, paths: *cronPaths}
+      - {primitive: pvc-volume, paths: *cronPaths}
+      - {primitive: health-probe, paths: *cronPaths}
+      - {primitive: readiness-probe, paths: *cronPaths}
     baseObject:
       spec:
         schedule: "*/5 * * * *"
@@ -72,6 +143,15 @@ resources:
     apiVersion: apps/v1
     suffix: deployment
     nameFields: [deploymentName, appName]
+    behaviorBindings:
+      - primitive: container-env
+        paths: &deploymentPaths
+          container: spec.template.spec.containers[0]
+          podSpec: spec.template.spec
+      - {primitive: resource-limits, paths: *deploymentPaths}
+      - {primitive: pvc-volume, paths: *deploymentPaths}
+      - {primitive: health-probe, paths: *deploymentPaths}
+      - {primitive: readiness-probe, paths: *deploymentPaths}
     baseObject:
       spec:
         replicas: 1
@@ -106,6 +186,14 @@ resources:
     dependencyVariable: serviceName
     dependencyTargetPath: spec.serviceName
     nameFields: [statefulSetName, appName, cacheName]
+    behaviorBindings:
+      - primitive: container-env
+        paths: &statefulSetPaths
+          container: spec.template.spec.containers[0]
+          podSpec: spec.template.spec
+      - {primitive: resource-limits, paths: *statefulSetPaths}
+      - {primitive: health-probe, paths: *statefulSetPaths}
+      - {primitive: readiness-probe, paths: *statefulSetPaths}
     baseObject:
       spec:
         replicas: 1
@@ -185,6 +273,15 @@ resources:
     apiVersion: apps/v1
     suffix: daemonset
     nameFields: [daemonSetName, appName]
+    behaviorBindings:
+      - primitive: container-env
+        paths: &daemonSetPaths
+          container: spec.template.spec.containers[0]
+          podSpec: spec.template.spec
+      - {primitive: resource-limits, paths: *daemonSetPaths}
+      - {primitive: pvc-volume, paths: *daemonSetPaths}
+      - {primitive: health-probe, paths: *daemonSetPaths}
+      - {primitive: readiness-probe, paths: *daemonSetPaths}
     baseObject:
       spec:
         selector:

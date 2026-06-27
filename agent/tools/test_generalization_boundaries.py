@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from agent.tools.controller_renderer import render_controller
+from agent.tools.resource_catalog import load_resource_catalog
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -161,6 +162,51 @@ class GeneralizationBoundaryTest(unittest.TestCase):
         )[1].split("func ", 1)[0]
 
         self.assertNotIn("nestedLabels :=", cron_function)
+
+    def test_every_behavior_binding_renders_without_kind_dispatch(
+        self,
+    ) -> None:
+        catalog = load_resource_catalog()
+        primitives = catalog.primitives_by_name()
+        for resource in catalog.resources:
+            for binding in resource.behaviorBindings:
+                primitive = primitives[binding.primitive]
+                with self.subTest(
+                    resource=resource.kind,
+                    primitive=primitive.name,
+                ):
+                    rendered = render_controller(
+                        {
+                            "project": {
+                                "module": "sample.io/boundary-operator"
+                            },
+                            "api": {
+                                "kind": "BoundaryPolicy",
+                                "group": "boundary",
+                                "version": "v1alpha1",
+                            },
+                            "controller": {
+                                "managedResources": [resource.kind]
+                            },
+                            "specFields": [
+                                {"name": field}
+                                for field in primitive.activationFields
+                            ],
+                            "statusFields": [{"name": "phase"}],
+                            "rbacResources": [],
+                        }
+                    )
+
+                    self.assertIn(
+                        f"reconcile{resource.kind}",
+                        rendered,
+                    )
+                    for mutation in primitive.mutations:
+                        target = mutation.target.format(**binding.paths)
+                        self.assertIn(
+                            target.split(".")[0],
+                            rendered,
+                        )
 
 
 if __name__ == "__main__":

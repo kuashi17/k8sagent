@@ -207,6 +207,41 @@ class ControllerRendererTest(unittest.TestCase):
             function,
         )
 
+    def test_composable_container_primitives_are_rendered(self) -> None:
+        rendered = render_controller(
+            model(
+                ["Deployment"],
+                [
+                    "image",
+                    "env",
+                    "resourceLimits",
+                    "pvcName",
+                    "mountPath",
+                    "healthPath",
+                    "healthPort",
+                ],
+                ["phase", "message"],
+            )
+        )
+
+        self.assertIn("envMapToInterface(instance.Spec.Env)", rendered)
+        self.assertIn(
+            '"resources", "limits"}, stringMapToInterface',
+            rendered,
+        )
+        self.assertIn(
+            '"persistentVolumeClaim", "claimName"}, instance.Spec.PVCName',
+            rendered,
+        )
+        self.assertIn(
+            '"volumeMounts", 0, "name"}, "workload-data"',
+            rendered,
+        )
+        self.assertIn(
+            '"livenessProbe", "httpGet", "port"}, int64(instance.Spec.HealthPort)',
+            rendered,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

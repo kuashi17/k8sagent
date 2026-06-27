@@ -1,0 +1,48 @@
+ComposableWorkload라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 sample.io, group은 platform, version은 v1alpha1, kind는 ComposableWorkload로 한다.
+
+spec에는 다음 필드를 포함한다.
+- image:string - workload container image
+- replicas:int32 - Deployment replica 수
+- port:int32 - container와 Service port
+- env:map[string]string - container 환경변수
+- resourceLimits:map[string]string - container resource limits
+- pvcName:string - mount할 기존 PVC 이름
+- mountPath:string - PVC mount 경로
+- healthPath:string - liveness probe HTTP path
+- healthPort:int32 - liveness probe port
+- readinessPath:string - readiness probe HTTP path
+- readinessPort:int32 - readiness probe port
+
+status에는 다음 필드를 포함한다.
+- phase:string - 현재 처리 상태
+- deploymentName:string - 생성된 Deployment 이름
+- serviceName:string - 생성된 Service 이름
+- readyReplicas:int32 - 준비된 replica 수
+- message:string - 상태 설명
+
+Controller는 ComposableWorkload 변경을 감지하고 Deployment와 Service를 생성/수정/삭제한다.
+
+Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다.
+- spec.image -> Deployment.spec.template.spec.containers[0].image
+- spec.replicas -> Deployment.spec.replicas
+- spec.port -> Deployment.spec.template.spec.containers[0].ports[0].containerPort
+- spec.port -> Service.spec.ports[0].port
+- spec.env -> Deployment.spec.template.spec.containers[0].env
+- spec.resourceLimits -> Deployment.spec.template.spec.containers[0].resources.limits
+- spec.pvcName -> Deployment.spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+- spec.mountPath -> Deployment.spec.template.spec.containers[0].volumeMounts[0].mountPath
+- spec.healthPath -> Deployment.spec.template.spec.containers[0].livenessProbe.httpGet.path
+- spec.healthPort -> Deployment.spec.template.spec.containers[0].livenessProbe.httpGet.port
+- spec.readinessPath -> Deployment.spec.template.spec.containers[0].readinessProbe.httpGet.path
+- spec.readinessPort -> Deployment.spec.template.spec.containers[0].readinessProbe.httpGet.port
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- apps/deployments
+- core/services
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test
