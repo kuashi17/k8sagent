@@ -11,10 +11,31 @@ from agent.evaluation.unified_evaluation import (
     build_unified_evaluation,
     e2e_section,
     latency_section,
+    lifecycle_evidence,
 )
 
 
 class UnifiedEvaluationTest(unittest.TestCase):
+    def test_finalizer_lifecycle_adds_explicit_evidence(self) -> None:
+        evidence = lifecycle_evidence(
+            {
+                "lifecycleIdempotency": {"reapplyStable": True},
+                "lifecycleDelete": {
+                    "managedResources": {
+                        "clusterrole/managed": {"passed": True}
+                    }
+                },
+                "lifecycleRestore": {"restored": True},
+                "finalizerRegistration": {"registered": True},
+                "finalizerLifecycle": {
+                    "customResourceRemoved": True,
+                    "explicitResourcesRemoved": True,
+                },
+            }
+        )
+
+        self.assertEqual(evidence, [True] * 7)
+
     def test_skipped_optional_idempotency_is_not_failed_evidence(self) -> None:
         result = e2e_section(
             {"results": []},

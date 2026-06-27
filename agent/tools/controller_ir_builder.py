@@ -77,6 +77,14 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
         for item in resources
     )
     api_group = str(api.get("group") or "")
+    qualified_api_group = str(
+        api.get("apiGroup")
+        or (
+            f"{api_group}.{api.get('domain')}"
+            if api_group and api.get("domain")
+            else api_group
+        )
+    )
     kind = str(api.get("kind") or "")
     return ControllerGenerationIR(
         project_module=str((model.get("project") or {}).get("module") or ""),
@@ -98,7 +106,7 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
         ],
         state_machine=ControllerStateMachine(
             finalizer_name=(
-                f"{api_group}/{kind.lower()}-finalizer"
+                f"{qualified_api_group}/{kind.lower()}-finalizer"
                 if finalizer_required
                 else ""
             )

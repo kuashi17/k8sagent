@@ -303,7 +303,7 @@ def lifecycle_evidence(checks: dict[str, Any]) -> list[bool]:
         (checks.get("lifecycleDelete") or {}).get("managedResources")
         or {}
     )
-    return [
+    evidence = [
         bool(
             (checks.get("lifecycleIdempotency") or {}).get(
                 "reapplyStable"
@@ -318,6 +318,17 @@ def lifecycle_evidence(checks: dict[str, Any]) -> list[bool]:
         and all(item.get("passed") for item in deleted.values()),
         bool((checks.get("lifecycleRestore") or {}).get("restored")),
     ]
+    registration = checks.get("finalizerRegistration") or {}
+    lifecycle = checks.get("finalizerLifecycle") or {}
+    if registration or lifecycle:
+        evidence.extend(
+            [
+                bool(registration.get("registered")),
+                bool(lifecycle.get("customResourceRemoved")),
+                bool(lifecycle.get("explicitResourcesRemoved")),
+            ]
+        )
+    return evidence
 
 
 def latency_section(data: dict[str, Any]) -> dict[str, Any]:

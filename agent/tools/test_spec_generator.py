@@ -8,10 +8,36 @@ from agent.tools.spec_generator import (
     MAX_PROJECT_NAME_LENGTH,
     bounded_project_name,
     mapping_target_kind,
+    parse_sample_defaults,
 )
 
 
 class SpecGeneratorTest(unittest.TestCase):
+    def test_requirement_sample_spec_is_parsed_without_profile(self) -> None:
+        warnings: list[str] = []
+        values = parse_sample_defaults(
+            """
+샘플 Custom Resource는 다음 값을 사용한다.
+apiVersion: access.sample.io/v1alpha1
+kind: AccessBundle
+spec:
+  ruleApiGroups: [""]
+  ruleResources: [serviceaccounts]
+  ruleVerbs: [get]
+""",
+            warnings,
+        )
+
+        self.assertEqual(
+            values,
+            {
+                "ruleApiGroups": [""],
+                "ruleResources": ["serviceaccounts"],
+                "ruleVerbs": ["get"],
+            },
+        )
+        self.assertEqual(warnings, [])
+
     def test_unknown_managed_kind_is_inferred_from_mapping_target(self) -> None:
         self.assertEqual(
             mapping_target_kind(

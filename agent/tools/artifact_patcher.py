@@ -119,7 +119,15 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
         for item in patcher_profile.get("rbacResources") or []
         if isinstance(item, dict)
     )
-    profile_sample_defaults = profile.get("sampleDefaults", {}).get("spec") or {}
+    requirement_sample_defaults = spec.get("sampleDefaults") or {}
+    profile_sample_defaults = {
+        **(
+            requirement_sample_defaults
+            if isinstance(requirement_sample_defaults, dict)
+            else {}
+        ),
+        **(profile.get("sampleDefaults", {}).get("spec") or {}),
+    }
 
     kind = api.get("kind", "")
     version = api.get("version", "")

@@ -14,6 +14,33 @@ from agent.tools.scaffold_runner import build_execution_env
 
 
 class ArtifactPatcherTest(unittest.TestCase):
+    def test_requirement_sample_defaults_work_without_profile(self) -> None:
+        model = normalize_spec(
+            {
+                "project": {"name": "access-operator"},
+                "api": {
+                    "kind": "AccessPolicy",
+                    "version": "v1alpha1",
+                    "group": "access",
+                    "domain": "example.io",
+                },
+                "specFields": [
+                    {"name": "ruleVerbs", "type": "[]string"}
+                ],
+                "statusFields": [
+                    {"name": "phase", "type": "string"}
+                ],
+                "sampleDefaults": {"ruleVerbs": ["get"]},
+            },
+            {},
+            None,
+        )
+
+        self.assertEqual(
+            model["profile"]["sampleDefaults"],
+            {"ruleVerbs": ["get"]},
+        )
+
     def test_camel_case_string_sample_is_dns_safe(self) -> None:
         self.assertEqual(
             sample_value("string", "appName"),

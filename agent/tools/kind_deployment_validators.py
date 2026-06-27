@@ -406,6 +406,7 @@ class ManagedResourceValidator:
         self.state_machine_status = bool(
             config.get("stateMachineStatus", False)
         )
+        self.finalizer = str(config.get("finalizer") or "")
         self.initial_assertions = [
             {
                 "resource": str(item.get("resource") or ""),
@@ -522,6 +523,23 @@ class ManagedResourceValidator:
                 )
         engine.checks["managedResources"] = managed
         engine.checks["customResourceStatus"] = status
+        if self.finalizer:
+            finalizers = list(
+                (custom_resource.get("metadata") or {}).get(
+                    "finalizers"
+                )
+                or []
+            )
+            if self.finalizer not in finalizers:
+                raise RuntimeError(
+                    "Expected managed-resource finalizer was not registered: "
+                    f"expected={self.finalizer}, actual={finalizers}"
+                )
+            engine.checks["finalizerRegistration"] = {
+                "name": self.finalizer,
+                "registered": True,
+                "actual": finalizers,
+            }
         if self.state_machine_status:
             self.verify_state_machine_status(custom_resource, status)
             engine.checks["stateMachineStatus"] = {
@@ -584,6 +602,21 @@ class ManagedResourceValidator:
             ),
             "managedResources": managed_results,
         }
+        if self.finalizer:
+            engine.checks["finalizerLifecycle"] = {
+                "name": self.finalizer,
+                "registeredBeforeDelete": True,
+                "customResourceRemoved": bool(
+                    engine.checks["lifecycleDelete"][
+                        "customResourceAbsent"
+                    ]
+                ),
+                "explicitResourcesRemoved": all(
+                    item.get("passed")
+                    for item in managed_results.values()
+                    if item.get("expected") == "absent"
+                ),
+            }
         engine.failed_step = "restore-sample"
         self.verify_initial(engine)
         engine.checks["lifecycleRestore"] = {"restored": True}
@@ -711,6 +744,7 @@ class ManagedResourceValidator:
             "updateAssertions": self.update_assertions,
             "updateMode": self.update_mode,
             "stateMachineStatus": self.state_machine_status,
+            "finalizer": self.finalizer,
         }
 
     def rbac_checks(self) -> list[dict[str, str]]:

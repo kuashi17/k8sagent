@@ -36,3 +36,17 @@ Controller는 AccessBundle 변경을 감지하고 ServiceAccount, Role, ClusterR
 - make generate
 - make manifests
 - make test
+
+샘플 Custom Resource는 다음 값을 사용한다.
+apiVersion: access.sample.io/v1alpha1
+kind: AccessBundle
+metadata:
+  name: accessbundle-sample
+spec:
+  serviceAccountName: managed-access-account
+  automountServiceAccountToken: true
+  roleName: managed-access-role
+  clusterRoleName: managed-access-cluster-role
+  ruleApiGroups: [""]
+  ruleResources: ["serviceaccounts"]
+  ruleVerbs: ["get"]

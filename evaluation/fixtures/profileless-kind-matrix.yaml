@@ -7,3 +7,4 @@ requirements:
   - requirements/namespace-label-policy.txt
   - evaluation/fixtures/requirements/node-sidecar.txt
   - evaluation/fixtures/requirements/composable-workload.txt
+  - evaluation/fixtures/requirements/access-bundle-controller.txt

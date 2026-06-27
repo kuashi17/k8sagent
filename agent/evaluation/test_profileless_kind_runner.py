@@ -14,6 +14,71 @@ from agent.evaluation.profileless_kind_runner import (
 
 
 class ProfilelessKindRunnerTest(unittest.TestCase):
+    def test_access_bundle_contract_includes_cluster_role_finalizer(
+        self,
+    ) -> None:
+        spec = {
+            "project": {
+                "name": "access-bundle-operator",
+                "domain": "sample.io",
+                "module": "sample.io/access-bundle-operator",
+            },
+            "api": {
+                "kind": "AccessBundle",
+                "plural": "accessbundles",
+                "version": "v1alpha1",
+                "group": "access",
+                "domain": "sample.io",
+            },
+            "specFields": [
+                {"name": "clusterRoleName", "type": "string"},
+                {"name": "ruleVerbs", "type": "[]string"},
+            ],
+            "statusFields": [{"name": "phase", "type": "string"}],
+            "controller": {"managedResources": ["ClusterRole"]},
+            "rbac": {"resources": []},
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "access-bundle-operator"
+            sample = (
+                project
+                / "config"
+                / "samples"
+                / "access_v1alpha1_accessbundle.yaml"
+            )
+            sample.parent.mkdir(parents=True, exist_ok=True)
+            sample.write_text(
+                """
+apiVersion: access.sample.io/v1alpha1
+kind: AccessBundle
+metadata:
+  name: access-bundle-sample
+spec:
+  clusterRoleName: managed-access
+  ruleVerbs: [get]
+""",
+                encoding="utf-8",
+            )
+
+            config = build_kind_contract(
+                spec,
+                project,
+                "profileless-test",
+            )["validatorConfig"]
+
+        self.assertEqual(
+            config["finalizer"],
+            "access.sample.io/accessbundle-finalizer",
+        )
+        self.assertEqual(
+            config["managedResources"][0],
+            {
+                "resource": "clusterrole",
+                "name": "managed-access",
+                "deletionPolicy": "explicit-delete",
+                "updatePolicy": "in-place",
+            },
+        )
     def test_webservice_contract_uses_generated_behavior(self) -> None:
         spec = {
             "project": {

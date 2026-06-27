@@ -105,6 +105,7 @@ def generate_spec(text: str, source_file: Path) -> dict[str, Any]:
     controller = parse_controller(text, warnings)
     rbac = parse_rbac(text, api, controller, warnings)
     validation = parse_validation(text, warnings)
+    sample_defaults = parse_sample_defaults(text, warnings)
 
     result: dict[str, Any] = {
         "metadata": parse_metadata(source_file),
@@ -115,11 +116,53 @@ def generate_spec(text: str, source_file: Path) -> dict[str, Any]:
         "controller": controller,
         "rbac": rbac,
         "validation": validation,
+        "sampleDefaults": sample_defaults,
         "warnings": warnings,
         "errors": errors,
     }
     validate_spec(result)
     return result
+
+
+def parse_sample_defaults(
+    text: str,
+    warnings: list[str],
+) -> dict[str, Any]:
+    markers = (
+        "샘플 Custom Resource는 다음 값을 사용한다.",
+        "Sample Custom Resource uses:",
+    )
+    tail = next(
+        (text.split(marker, 1)[1] for marker in markers if marker in text),
+        "",
+    )
+    if not tail:
+        return {}
+    lines = tail.strip().splitlines()
+    try:
+        spec_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == "spec:"
+        )
+    except StopIteration:
+        warnings.append("Sample Custom Resource section has no spec mapping.")
+        return {}
+    spec_lines = ["spec:"]
+    for line in lines[spec_index + 1 :]:
+        if line and not line[0].isspace():
+            break
+        spec_lines.append(line)
+    try:
+        parsed = yaml.safe_load("\n".join(spec_lines)) or {}
+    except yaml.YAMLError:
+        warnings.append("Sample Custom Resource spec YAML could not be parsed.")
+        return {}
+    values = parsed.get("spec") if isinstance(parsed, dict) else None
+    if not isinstance(values, dict):
+        warnings.append("Sample Custom Resource spec must be a mapping.")
+        return {}
+    return values
 
 
 def parse_metadata(source_file: Path) -> dict[str, str]:

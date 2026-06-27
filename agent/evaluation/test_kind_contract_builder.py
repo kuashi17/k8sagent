@@ -43,6 +43,44 @@ def build_ir(
 
 
 class KindContractBuilderTest(unittest.TestCase):
+    def test_cluster_scoped_explicit_delete_exposes_finalizer_contract(
+        self,
+    ) -> None:
+        contract = build_validation_contract(
+            build_ir(
+                "ClusterRole",
+                [
+                    {"name": "clusterRoleName", "type": "string"},
+                    {"name": "ruleVerbs", "type": "[]string"},
+                ],
+            ),
+            {
+                "metadata": {"name": "access-policy"},
+                "spec": {
+                    "clusterRoleName": "managed-access",
+                    "ruleVerbs": ["get"],
+                },
+            },
+            "genericpolicies",
+            "policy.sample.io",
+        )
+
+        self.assertEqual(
+            contract.finalizer,
+            "policy.sample.io/genericpolicy-finalizer",
+        )
+        self.assertEqual(
+            contract.managedResources[0].deletionPolicy,
+            "explicit-delete",
+        )
+        self.assertIn(
+            {
+                "verb": "create",
+                "resource": "clusterroles",
+                "apiGroup": "rbac.authorization.k8s.io",
+            },
+            [item.model_dump(mode="json") for item in contract.rbacChecks],
+        )
     def test_write_only_secret_mapping_asserts_encoded_data(self) -> None:
         contract = build_validation_contract(
             build_ir(

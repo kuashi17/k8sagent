@@ -1119,7 +1119,7 @@ GitHub Actions 분리:
 
 `full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
 
-profileless kind matrix는 8개 요구사항에서 Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC의 공통 lifecycle과 조합형 workload primitive를 검증합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
+profileless kind matrix는 9개 요구사항에서 Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC, ServiceAccount, Role, ClusterRole의 공통 lifecycle과 조합형 workload primitive를 검증합니다. ClusterRole 시나리오는 전체 API group 기반 finalizer 등록, cluster-scoped 리소스의 명시적 삭제, finalizer 제거 후 Custom Resource 삭제, restore까지 실제 kind에서 확인합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
 
 빠른 정책/캐시 검증:
 

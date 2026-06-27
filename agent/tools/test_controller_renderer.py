@@ -71,6 +71,10 @@ class ControllerRendererTest(unittest.TestCase):
         )
 
         self.assertIn("const managedFinalizer", rendered)
+        self.assertIn(
+            'const managedFinalizer = "apps/example-finalizer"',
+            rendered,
+        )
         self.assertIn("controllerutil.AddFinalizer", rendered)
         self.assertIn("finalizeManagedResources", rendered)
         self.assertIn("finalize ClusterRole", rendered)

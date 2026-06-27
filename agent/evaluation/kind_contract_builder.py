@@ -56,6 +56,7 @@ class KindValidationContract(ContractModel):
     setupResources: list[dict[str, Any]] = Field(default_factory=list)
     rbacChecks: list[RBACCheckContract] = Field(default_factory=list)
     stateMachineStatus: bool = True
+    finalizer: str = ""
 
 
 def build_validation_contract(
@@ -129,6 +130,7 @@ def build_validation_contract(
         updateMode=update_mode.value,
         setupResources=setup,
         rbacChecks=rbac,
+        finalizer=ir.state_machine.finalizer_name,
     )
 
 
