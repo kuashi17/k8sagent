@@ -96,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow real execution for mutating tools.",
     )
     parser.add_argument(
+        "--capability-proposal",
+        help="Reviewed capability proposal path for this execution.",
+    )
+    parser.add_argument(
+        "--capability-approval",
+        help="Reviewed proposalId required to approve that exact proposal.",
+    )
+    parser.add_argument(
         "--kind-deploy",
         action="store_true",
         help="Include profile-backed kind deployment after validation.",

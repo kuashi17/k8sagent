@@ -25,6 +25,7 @@ def context(target: str = "workspace/generated-operators/example") -> dict:
             "operatorSpec": "generated/appconfig-operator-spec.yaml",
             "commandPlan": "generated/appconfig-command-plan.md",
         },
+        "requirementSummary": {"managedResources": ["ConfigMap"]},
         "selectedProfile": {"path": "profiles/appconfig.yaml"},
         "kindDeploymentRequested": False,
         "resumeExisting": False,
@@ -75,16 +76,134 @@ class ExecutionEngineTest(unittest.TestCase):
         ctx["kindDeploymentRequested"] = True
         self.assertIn("kind_deployment", build_supported_calls(ctx, "dry-run", False))
 
-    def test_capability_drafter_requires_execute_for_approval(self) -> None:
+    def test_known_capability_never_uses_proposal_approval(self) -> None:
         dry_run = build_supported_calls(context(), "dry-run", False)
         execute = build_supported_calls(context(), "execute", True)
 
         self.assertFalse(
             dry_run["capability_drafter"]["arguments"]["approve"]
         )
-        self.assertTrue(
+        self.assertFalse(
             execute["capability_drafter"]["arguments"]["approve"]
         )
+
+    def test_unknown_capability_requires_matching_separate_approval(self) -> None:
+        ctx = context()
+        ctx["requirementSummary"] = {
+            "managedResources": ["QuantumQueue"]
+        }
+        without_approval = build_supported_calls(ctx, "execute", True)
+        self.assertFalse(
+            without_approval["capability_drafter"]["arguments"]["approve"]
+        )
+        self.assertFalse(
+            without_approval["scaffold_runner"]["arguments"]["execute"]
+        )
+
+        ctx["capabilityApproval"] = {
+            "proposal": "generated/quantum-queue-capability-proposal.yaml",
+            "proposalId": "reviewed-digest",
+        }
+        approved = build_supported_calls(ctx, "execute", True)
+        self.assertTrue(
+            approved["capability_drafter"]["arguments"]["approve"]
+        )
+        self.assertTrue(
+            approved["scaffold_runner"]["arguments"]["execute"]
+        )
+
+    @patch("agent.execution_engine.tools.scaffold_runner")
+    def test_unapproved_unknown_capability_forces_mutations_to_dry_run(
+        self,
+        scaffold_runner,
+    ) -> None:
+        scaffold_runner.return_value = {
+            "exitCode": 0,
+            "status": "succeeded",
+            "stdout": "",
+            "stderr": "",
+        }
+        ctx = context()
+        ctx["requirementSummary"] = {
+            "managedResources": ["QuantumQueue"]
+        }
+        result = execute_planned_tools(
+            ctx,
+            "execute",
+            True,
+            {
+                "llmOutput": {
+                    "toolCalls": [
+                        {
+                            "tool": "scaffold_runner",
+                            "mode": "execute",
+                        }
+                    ]
+                }
+            },
+        )
+
+        self.assertEqual(
+            result["validatedToolCalls"][0]["effectiveMode"],
+            "dry-run",
+        )
+        self.assertFalse(
+            result["validatedToolCalls"][0]["executeAllowed"]
+        )
+        self.assertEqual(
+            result["deferredToolCalls"][0]["tool"],
+            "capability_approval",
+        )
+        scaffold_runner.assert_called_once_with(
+            "generated/appconfig-operator-spec.yaml",
+            "workspace/generated-operators",
+            execute=False,
+        )
+
+    @patch("agent.execution_engine.tools.scaffold_runner")
+    @patch("agent.execution_engine.tools.capability_drafter")
+    def test_runtime_pending_proposal_stops_execute_pipeline(
+        self,
+        capability_drafter,
+        scaffold_runner,
+    ) -> None:
+        capability_drafter.return_value = {
+            "exitCode": 0,
+            "status": "succeeded",
+            "stdout": '{"status":"pending-approval"}\n',
+            "stderr": "",
+        }
+        ctx = context()
+        result = execute_planned_tools(
+            ctx,
+            "execute",
+            True,
+            {
+                "llmOutput": {
+                    "toolCalls": [
+                        {
+                            "tool": "capability_drafter",
+                            "mode": "execute",
+                        },
+                        {
+                            "tool": "scaffold_runner",
+                            "mode": "execute",
+                        },
+                    ]
+                }
+            },
+        )
+
+        self.assertTrue(ctx["capabilityApprovalBlocked"])
+        self.assertEqual(
+            [item["tool"] for item in result["toolResults"]],
+            ["capability_drafter"],
+        )
+        self.assertEqual(
+            result["deferredToolCalls"][0]["tool"],
+            "scaffold_runner",
+        )
+        scaffold_runner.assert_not_called()
 
     @patch("agent.execution_engine.tools.command_planner")
     @patch("agent.execution_engine.tools.spec_generator")

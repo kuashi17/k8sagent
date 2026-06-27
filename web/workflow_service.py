@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from agent.tools.capability_drafter import load_proposal, proposal_digest
 from web.schemas import LogAnalysisRequest, RequirementRunRequest
 
 
@@ -28,6 +29,8 @@ class WorkflowService:
         jobs: Any,
     ) -> dict[str, Any]:
         profile = self.validate_profile(request.profile)
+        if request.capability_proposal:
+            self.validate_capability_approval(request)
         if request.kind_deploy and not profile:
             raise ValueError(
                 "kind 배포는 배포 설정이 있는 Profile을 먼저 선택해야 합니다."
@@ -102,11 +105,42 @@ class WorkflowService:
             command.extend(["--profile", request.profile])
         if request.mode == "execute":
             command.append("--execute")
+        if request.capability_proposal:
+            command.extend(
+                [
+                    "--capability-proposal",
+                    request.capability_proposal,
+                    "--capability-approval",
+                    request.capability_approval,
+                ]
+            )
         if request.kind_deploy:
             command.append("--kind-deploy")
         if request.resume_existing:
             command.append("--resume-existing")
         return command
+
+    def validate_capability_approval(
+        self,
+        request: RequirementRunRequest,
+    ) -> None:
+        path = self.resolve_repo_path(request.capability_proposal)
+        generated_dir = (self.repo_root / "generated").resolve()
+        try:
+            path.relative_to(generated_dir)
+        except ValueError as exc:
+            raise ValueError(
+                "Capability 제안은 generated 폴더의 파일만 승인할 수 있습니다."
+            ) from exc
+        if not path.is_file():
+            raise ValueError("승인할 capability 제안 파일을 찾을 수 없습니다.")
+        proposal = load_proposal(path)
+        if proposal.proposalId != request.capability_approval:
+            raise ValueError("검토한 capability 제안과 승인 값이 일치하지 않습니다.")
+        if proposal.proposalId != proposal_digest(proposal):
+            raise ValueError("Capability 제안 내용이 검토 후 변경되었습니다.")
+        if proposal.status != "pending-approval" or proposal.approved:
+            raise ValueError("대기 중인 capability 제안만 승인할 수 있습니다.")
 
     def validate_profile(self, value: str) -> Path | None:
         if not value:

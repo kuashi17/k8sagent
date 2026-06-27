@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 from agent.contracts import ExecutionResult, ToolResult
 from agent.tool_validator import validate_planned_tool_calls
 from agent.tools import langchain_wrappers as tools
+from agent.tools.resource_catalog import load_resource_catalog
 
 
 TOOL_ORDER = {
@@ -29,14 +31,36 @@ def execute_planned_tools(
     allow_execute: bool,
     planner_result: dict[str, Any],
 ) -> dict[str, Any]:
-    supported_calls = build_supported_calls(context, mode, allow_execute)
+    capability_blocked = bool(
+        mode == "execute"
+        and allow_execute
+        and requires_capability_approval(context)
+        and not has_capability_approval(context)
+    )
+    effective_allow_execute = allow_execute and not capability_blocked
+    context["capabilityApprovalBlocked"] = capability_blocked
+    supported_calls = build_supported_calls(
+        context,
+        mode,
+        effective_allow_execute,
+    )
     validation_started = time.perf_counter()
     validated, rejected, deferred = validate_planned_tool_calls(
         planner_result,
         supported_calls,
         mode,
-        allow_execute,
+        effective_allow_execute,
     )
+    if capability_blocked:
+        deferred.append(
+            {
+                "tool": "capability_approval",
+                "reason": (
+                    "Mutating Tools were forced to dry-run until the "
+                    "generated capability proposal is reviewed separately."
+                ),
+            }
+        )
     validated, resume_deferred = apply_resume_policy(validated, context)
     deferred.extend(resume_deferred)
     validated = order_validated_tool_calls(validated)
@@ -54,7 +78,7 @@ def execute_planned_tools(
 
     execution_started = time.perf_counter()
     results: list[dict[str, Any]] = []
-    for item in validated:
+    for index, item in enumerate(validated):
         name = item["tool"]
         print(f"\nCalling tool: {name}")
         result = supported_calls[name]["call"]()
@@ -63,6 +87,23 @@ def execute_planned_tools(
         results.append(result)
         print(f"exitCode={result['exitCode']} status={result['status']}")
         if result["exitCode"] != 0:
+            break
+        if (
+            name == "capability_drafter"
+            and mode == "execute"
+            and capability_proposal_is_pending(result)
+        ):
+            context["capabilityApprovalBlocked"] = True
+            deferred.extend(
+                {
+                    "tool": remaining["tool"],
+                    "reason": (
+                        "Deferred until the generated capability proposal "
+                        "is reviewed and approved separately."
+                    ),
+                }
+                for remaining in validated[index + 1 :]
+            )
             break
     return execution_result(
         validated,
@@ -85,7 +126,21 @@ def build_supported_calls(
             "capability-proposal.yaml"
         )
     )
-    mutating_execute = mode == "execute" and allow_execute
+    approval = context.get("capabilityApproval") or {}
+    capability_approved = bool(
+        approval.get("proposal") and approval.get("proposalId")
+    )
+    capability_approval_required = bool(
+        requires_capability_approval(context) or capability_approved
+    )
+    mutating_execute = bool(
+        mode == "execute"
+        and allow_execute
+        and (
+            not capability_approval_required
+            or capability_approved
+        )
+    )
     selected_profile = context.get("selectedProfile") or {}
     profile_path = selected_profile.get("path")
     supported_calls: dict[str, dict[str, Any]] = {
@@ -101,12 +156,20 @@ def build_supported_calls(
             "arguments": {
                 "input": generated["operatorSpec"],
                 "output": capability_proposal,
-                "approve": mutating_execute,
+                "approve": capability_approval_required
+                and capability_approved
+                and mutating_execute,
             },
             "call": lambda: tools.capability_drafter(
                 generated["operatorSpec"],
                 capability_proposal,
-                approve=mutating_execute,
+                approve=bool(
+                    capability_approval_required
+                    and capability_approved
+                    and mutating_execute
+                ),
+                approved_proposal=str(approval.get("proposal") or ""),
+                approval_digest=str(approval.get("proposalId") or ""),
             ),
         },
         "command_planner": {
@@ -188,6 +251,32 @@ def build_supported_calls(
             mutating_execute,
         )
     return supported_calls
+
+
+def requires_capability_approval(context: dict[str, Any]) -> bool:
+    requested = set(
+        context.get("requirementSummary", {}).get("managedResources") or []
+    )
+    if not requested:
+        return False
+    supported = set(load_resource_catalog().by_name())
+    return bool(requested - supported)
+
+
+def has_capability_approval(context: dict[str, Any]) -> bool:
+    approval = context.get("capabilityApproval") or {}
+    return bool(approval.get("proposal") and approval.get("proposalId"))
+
+
+def capability_proposal_is_pending(result: dict[str, Any]) -> bool:
+    for line in reversed(str(result.get("stdout") or "").splitlines()):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload.get("status") == "pending-approval"
+    return False
 
 
 def build_kind_deployment_call(

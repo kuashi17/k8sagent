@@ -72,6 +72,10 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     )
     context["kindDeploymentRequested"] = bool(args.kind_deploy)
     context["resumeExisting"] = bool(args.resume_existing)
+    context["capabilityApproval"] = {
+        "proposal": str(getattr(args, "capability_proposal", "") or ""),
+        "proposalId": str(getattr(args, "capability_approval", "") or ""),
+    }
     log_dir = make_agent_log_dir()
 
     print("LLM Agent Orchestrator")

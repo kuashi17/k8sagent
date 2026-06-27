@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from agent.tools.capability_drafter import load_proposal, proposal_digest
 from web.schemas import RunResultView
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def present_run_result(job: dict[str, Any]) -> RunResultView:
@@ -37,6 +42,9 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
     state = str(job.get("state") or "unknown")
     succeeded = state == "succeeded" and not errors
     kind = str(requirement.get("kind") or "")
+    proposal_path, proposal_id, proposal_resources = capability_review(
+        summary
+    )
     title = (
         f"{kind or 'Operator'} 계획이 준비됐습니다."
         if succeeded and (summary.get("agentMode") == "dry-run")
@@ -73,7 +81,45 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             and summary.get("agentMode") == "dry-run"
             and job.get("jobType") == "requirement"
         ),
+        capability_proposal=proposal_path,
+        capability_approval=proposal_id,
+        capability_resources=proposal_resources,
     )
+
+
+def capability_review(
+    summary: dict[str, Any],
+) -> tuple[str, str, list[str]]:
+    relative = str(
+        (summary.get("generatedFiles") or {}).get(
+            "capabilityProposal"
+        )
+        or ""
+    )
+    if not relative:
+        return "", "", []
+    path = (REPO_ROOT / relative).resolve()
+    try:
+        path.relative_to((REPO_ROOT / "generated").resolve())
+    except ValueError:
+        return "", "", []
+    if not path.is_file():
+        return "", "", []
+    try:
+        proposal = load_proposal(path)
+    except (OSError, ValueError):
+        return "", "", []
+    if (
+        proposal.status != "pending-approval"
+        or proposal.approved
+        or proposal.proposalId != proposal_digest(proposal)
+    ):
+        return "", "", []
+    resources = [
+        f"{item.kind} · {item.apiVersion} · {item.scope.value.lower()}"
+        for item in proposal.capabilities
+    ]
+    return relative, proposal.proposalId, resources
 
 
 def developer_details(job: dict[str, Any]) -> dict[str, str]:

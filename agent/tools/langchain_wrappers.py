@@ -53,6 +53,8 @@ def capability_drafter(
     output: str,
     *,
     approve: bool = False,
+    approved_proposal: str = "",
+    approval_digest: str = "",
 ) -> dict[str, Any]:
     command = [
         "python3",
@@ -63,7 +65,16 @@ def capability_drafter(
         output,
     ]
     if approve:
-        command.extend(["--approve", "--execute"])
+        command.extend(
+            [
+                "--approve",
+                "--execute",
+                "--approve-proposal",
+                approved_proposal,
+                "--approval-digest",
+                approval_digest,
+            ]
+        )
     return run_command(command)
 
 

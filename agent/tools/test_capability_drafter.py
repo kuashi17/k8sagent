@@ -10,12 +10,18 @@ import yaml
 
 from agent.tools.capability_drafter import (
     apply_proposal,
+    approved_proposal_path,
     draft_capabilities,
     load_combined_catalog,
+    proposal_digest,
 )
 
 
 class CapabilityDrafterTest(unittest.TestCase):
+    def test_approval_path_cannot_escape_generated_directory(self) -> None:
+        with self.assertRaisesRegex(ValueError, "generated"):
+            approved_proposal_path("../outside-proposal.yaml")
+
     def test_candidate_is_pending_until_explicit_apply(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -32,6 +38,7 @@ class CapabilityDrafterTest(unittest.TestCase):
             )
 
             self.assertEqual(proposal.status, "pending-approval")
+            self.assertEqual(proposal.proposalId, proposal_digest(proposal))
             self.assertFalse(proposal.approved)
             self.assertFalse(override.exists())
 
@@ -44,6 +51,56 @@ class CapabilityDrafterTest(unittest.TestCase):
                 .apiVersion,
                 "networking.k8s.io/v1",
             )
+
+    def test_changed_proposal_is_rejected_after_review(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            catalog = self.write_catalog(root)
+            spec = self.write_spec(root)
+            proposal = draft_capabilities(
+                spec,
+                candidate_path=self.write_candidate(root),
+                catalog_path=catalog,
+                override_path=root / "overrides.yaml",
+            )
+            reviewed = proposal.proposalId
+            proposal.capabilities[0].apiVersion = "networking.k8s.io/v2"
+
+            with self.assertRaisesRegex(ValueError, "proposalId"):
+                apply_proposal(
+                    proposal,
+                    catalog,
+                    root / "overrides.yaml",
+                    expected_proposal_id=reviewed,
+                    spec_path=spec,
+                )
+
+    def test_approval_is_bound_to_current_managed_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            catalog = self.write_catalog(root)
+            spec = self.write_spec(root)
+            proposal = draft_capabilities(
+                spec,
+                candidate_path=self.write_candidate(root),
+                catalog_path=catalog,
+                override_path=root / "overrides.yaml",
+            )
+            spec.write_text(
+                yaml.safe_dump(
+                    {"controller": {"managedResources": ["Secret"]}}
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "current operator spec"):
+                apply_proposal(
+                    proposal,
+                    catalog,
+                    root / "overrides.yaml",
+                    expected_proposal_id=proposal.proposalId,
+                    spec_path=spec,
+                )
 
     def test_malicious_identity_override_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

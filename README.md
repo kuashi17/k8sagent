@@ -1216,7 +1216,15 @@ Controller 생성의 일반화 경계는 다음과 같습니다.
 
 관리 리소스 capability는 [resource-capabilities.yaml](config/resource-capabilities.yaml)에 선언합니다. 각 항목은 alias, API version, scope, ownership, lifecycle, name 후보, base object, 조건부 object, label path, dependency, field/status mapping을 포함하며 Pydantic으로 검증됩니다. catalog 최상위의 재사용 가능한 behavior primitive를 workload별 path binding으로 조합해 env, resource limits, PVC volume/mount, liveness/readiness probe를 생성합니다. 단일 mutation renderer는 `containers[0].ports[0]` 같은 map/list 혼합 경로와 `int64`, `env-map`, `string-map`, `merge-string-map`, `string-slice` transform을 공통 처리합니다.
 
-catalog에 없는 관리 리소스는 `capability_drafter`가 local LLM 초안을 생성하고 동일한 Pydantic catalog Schema와 안전 경로 정책으로 검증합니다. dry-run에서는 `generated/*-capability-proposal.yaml`에 `pending-approval` 상태로만 기록하며, execute 승인 경계를 통과한 경우에만 `config/resource-capability-overrides.yaml` overlay에 반영합니다. identity, ownerReference, finalizer, status 및 저장소 밖 경로를 덮어쓰는 mutation은 승인 전에 거부됩니다.
+catalog에 없는 관리 리소스는 `capability_drafter`가 local LLM 초안을 생성하고 동일한 Pydantic catalog Schema와 안전 경로 정책으로 검증합니다. dry-run에서는 `generated/*-capability-proposal.yaml`에 `pending-approval` 상태와 내용 기반 `proposalId`만 기록합니다. 일반 실행 승인과 capability 승인은 분리되어 있으며, Web UI에서 API 버전과 scope를 별도로 확인하거나 CLI에서 검토한 proposal 경로와 정확한 `proposalId`를 함께 전달해야 `config/resource-capability-overrides.yaml` overlay에 반영됩니다. 제안 파일이 검토 후 변경되거나 현재 Operator spec과 관리 리소스가 다르면 실행을 중단하며, 미승인 상태에서는 나머지 변경 Tool을 dry-run으로 제한합니다. identity, ownerReference, finalizer, status 및 저장소 밖 경로를 덮어쓰는 mutation은 승인 전에 거부됩니다.
+
+```bash
+python3 agent/langchain_agent.py \
+  --requirement requirements/example.txt \
+  --mode execute --execute \
+  --capability-proposal generated/example-capability-proposal.yaml \
+  --capability-approval '<reviewed-proposalId>'
+```
 
 profileless Controller status에는 `observedGeneration`과 표준 `Conditions`가 자동 추가됩니다. 정상 상태는 30초 재조정, 실패는 controller-runtime 오류 재시도와 10초 requeue 근거, immutable 변경은 `Recreating` Condition과 2초 재조정으로 구분됩니다. cluster-scoped 등 ownerReference를 사용할 수 없는 `explicit-delete` capability는 finalizer로 삭제 lifecycle을 완료합니다.
 

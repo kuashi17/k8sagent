@@ -19,12 +19,30 @@ class RequirementRunRequest(WebModel):
     kind_deploy: bool = False
     resume_existing: bool = False
     confirm_execute: bool = False
+    capability_proposal: str = ""
+    capability_approval: str = ""
+    confirm_capability: bool = False
 
     @model_validator(mode="after")
     def require_execute_confirmation(self) -> "RequirementRunRequest":
         if self.mode == "execute" and not self.confirm_execute:
             raise ValueError(
                 "실제 생성을 시작하려면 실행 승인에 체크해 주세요."
+            )
+        has_capability_approval = bool(
+            self.capability_proposal or self.capability_approval
+        )
+        if has_capability_approval and self.mode != "execute":
+            raise ValueError(
+                "Capability 계약 승인은 실제 생성 단계에서만 사용할 수 있습니다."
+            )
+        if has_capability_approval and not (
+            self.capability_proposal
+            and self.capability_approval
+            and self.confirm_capability
+        ):
+            raise ValueError(
+                "새 관리 리소스 지원 계약을 별도로 확인하고 승인해 주세요."
             )
         return self
 
@@ -47,6 +65,15 @@ class RequirementRunRequest(WebModel):
                 ),
                 "confirm_execute": checkbox(
                     form.get("confirm_execute")
+                ),
+                "capability_proposal": str(
+                    form.get("capability_proposal") or ""
+                ).strip(),
+                "capability_approval": str(
+                    form.get("capability_approval") or ""
+                ).strip(),
+                "confirm_capability": checkbox(
+                    form.get("confirm_capability")
                 ),
             }
         )
@@ -77,6 +104,9 @@ class RunResultView(WebModel):
     errors: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
     can_execute: bool = False
+    capability_proposal: str = ""
+    capability_approval: str = ""
+    capability_resources: list[str] = Field(default_factory=list)
 
 
 def checkbox(value: Any) -> bool:

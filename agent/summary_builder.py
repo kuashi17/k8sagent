@@ -166,6 +166,10 @@ def collect_warnings(
             "Requirement has missing or weakly inferred information: "
             + ", ".join(context["missingInformation"])
         )
+    if context.get("capabilityApprovalBlocked"):
+        warnings.append(
+            "새 관리 리소스 capability가 별도로 승인되지 않아 변경 Tool은 실행되지 않았습니다."
+        )
     for result in tool_results:
         if "Warnings:" in result.get("stdout", ""):
             warnings.append(f"{result['tool']} reported warnings.")
@@ -186,6 +190,10 @@ def next_actions(
     planner_result: dict[str, Any],
     final_result: dict[str, Any] | None = None,
 ) -> list[str]:
+    if context.get("capabilityApprovalBlocked"):
+        return [
+            "생성된 capability proposal의 API 버전, 범위, 권한을 검토하고 별도로 승인합니다."
+        ]
     final_actions = (
         ((final_result or {}).get("llmOutput") or {}).get(
             "recommendedNextActions"

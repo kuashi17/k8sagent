@@ -103,6 +103,18 @@
   </section>
   {% endif %}
 
+  {% if result_view.capability_proposal %}
+  <section class="card capability-review">
+    <p class="eyebrow">별도 승인 필요</p>
+    <h2>새 관리 리소스 지원 계약</h2>
+    <p>Agent가 기존 catalog에 없던 리소스를 발견했습니다. 아래 API 종류와 범위를 확인해야 실제 생성에 사용할 수 있습니다.</p>
+    <ul class="clean-list">
+      {% for resource in result_view.capability_resources %}<li>{{ resource }}</li>{% endfor %}
+    </ul>
+    <p class="muted"><code>{{ result_view.capability_proposal }}</code></p>
+  </section>
+  {% endif %}
+
   <section class="decision-card">
     {% if result_view.can_execute %}
     <div>
@@ -116,9 +128,17 @@
       <input type="hidden" name="mode" value="execute">
       <input type="hidden" name="run_level" value="{{ selected_run_level }}">
       <input type="hidden" name="confirm_execute" value="on">
+      {% if result_view.capability_proposal %}
+      <input type="hidden" name="capability_proposal" value="{{ result_view.capability_proposal }}">
+      <input type="hidden" name="capability_approval" value="{{ result_view.capability_approval }}">
+      <label class="capability-confirm">
+        <input type="checkbox" name="confirm_capability" required>
+        위 관리 리소스 지원 계약을 별도로 확인하고 승인합니다.
+      </label>
+      {% endif %}
       {% if selected_kind_deploy %}<input type="hidden" name="kind_deploy" value="on">{% endif %}
       {% if selected_resume_existing %}<input type="hidden" name="resume_existing" value="on">{% endif %}
-      <button class="primary-button" type="submit">계획 승인하고 생성하기</button>
+      <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약과 계획 승인 후 생성하기{% else %}계획 승인하고 생성하기{% endif %}</button>
     </form>
     {% elif not result_view.succeeded and job.attempt < job.maxAttempts %}
     <div>
