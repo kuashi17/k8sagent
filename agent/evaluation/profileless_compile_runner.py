@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import shutil
@@ -52,6 +53,12 @@ def main() -> int:
         action="store_true",
         help="Keep generated projects for local inspection.",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="Maximum concurrent isolated compile cases.",
+    )
     args = parser.parse_args()
 
     output_dir = resolve(args.output_dir)
@@ -67,14 +74,29 @@ def main() -> int:
         requirements = args.requirements or load_matrix(
             resolve(args.matrix)
         )
-        results = [
-            compile_requirement(
-                resolve(value),
-                output_dir,
-                work_root,
+        if args.jobs < 1 or args.jobs > 4:
+            raise SystemExit("--jobs must be between 1 and 4")
+        results = []
+        remaining = list(requirements)
+        if args.jobs > 1 and remaining:
+            results.append(
+                compile_requirement(
+                    resolve(remaining.pop(0)),
+                    output_dir,
+                    work_root,
+                )
             )
-            for value in requirements
-        ]
+        with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+            results.extend(
+                executor.map(
+                    lambda value: compile_requirement(
+                        resolve(value),
+                        output_dir,
+                        work_root,
+                    ),
+                    remaining,
+                )
+            )
     finally:
         if temporary and not args.keep_workspaces:
             shutil.rmtree(work_root, ignore_errors=True)
@@ -151,6 +173,7 @@ def compile_requirement(
             str(workspace),
             "--execute",
             "--force",
+            "--skip-validation",
         ],
     )
     steps.append(scaffold_step)

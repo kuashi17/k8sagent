@@ -6,13 +6,27 @@ on:
 jobs:
   full:
     runs-on: [self-hosted, local-llm, docker, kind]
+    env:
+      GOCACHE: /tmp/k8sagent-go-build
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/k8sagent-go-build
+            ~/go/pkg/mod
+          key: full-go-${{ runner.os }}-${{ hashFiles('agent/tools/scaffold_runner.py', 'agent/evaluation/profileless_compile_runner.py') }}
+          restore-keys: full-go-${{ runner.os }}-
       - uses: actions/cache/restore@v4
         with:
           path: .ci-history/full.json
           key: performance-full-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: performance-full-
+      - uses: actions/cache/restore@v4
+        with:
+          path: .cache/agent/llm-plans
+          key: agent-llm-plans-full-${{ hashFiles('agent/llm/prompts.py', 'agent/llm_cache.py', 'agent/tools/resource_catalog.py') }}-${{ github.run_id }}
+          restore-keys: agent-llm-plans-full-
       - run: docker info
       - run: python3 -m py_compile $(git ls-files '*.py')
       - run: python3 scripts/run-regression-tests.py --suite full --output-dir evaluation/results/regression/ci-full --history-file .ci-history/full.json
@@ -24,6 +38,11 @@ jobs:
         with:
           path: .ci-history/full.json
           key: performance-full-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .cache/agent/llm-plans
+          key: agent-llm-plans-full-${{ hashFiles('agent/llm/prompts.py', 'agent/llm_cache.py', 'agent/tools/resource_catalog.py') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

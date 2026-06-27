@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -141,6 +143,9 @@ def run_suite(
     checks.append(run_check("reliability", reliability_command))
 
     if suite == "full":
+        full_work_root = Path(
+            tempfile.mkdtemp(prefix="k8sagent-full-workspaces-")
+        )
         checks.append(
             run_check(
                 "profile-kind-matrix",
@@ -165,28 +170,41 @@ def run_suite(
                 ],
             )
         )
-        checks.append(
-            run_check(
-                "profileless-compile",
-                [
-                    sys.executable,
-                    "agent/evaluation/profileless_compile_runner.py",
-                    "--output-dir",
-                    str(output_dir / "profileless-compile"),
-                ],
+        try:
+            checks.append(
+                run_check(
+                    "profileless-compile",
+                    [
+                        sys.executable,
+                        "agent/evaluation/profileless_compile_runner.py",
+                        "--output-dir",
+                        str(output_dir / "profileless-compile"),
+                        "--work-root",
+                        str(full_work_root),
+                        "--jobs",
+                        "2",
+                    ],
+                )
             )
-        )
-        checks.append(
-            run_check(
-                "profileless-kind",
-                [
-                    sys.executable,
-                    "agent/evaluation/profileless_kind_runner.py",
-                    "--output-dir",
-                    str(output_dir / "profileless-kind"),
-                ],
+            checks.append(
+                run_check(
+                    "profileless-kind",
+                    [
+                        sys.executable,
+                        "agent/evaluation/profileless_kind_runner.py",
+                        "--output-dir",
+                        str(output_dir / "profileless-kind"),
+                        "--precompiled-results",
+                        str(
+                            output_dir
+                            / "profileless-compile"
+                            / "profileless-compile-results.json"
+                        ),
+                    ],
+                )
             )
-        )
+        finally:
+            shutil.rmtree(full_work_root, ignore_errors=True)
 
     summary = {
         "suite": suite,

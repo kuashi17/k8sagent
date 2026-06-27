@@ -543,7 +543,7 @@ def render_combined_diff(changes: list[dict[str, Any]]) -> str:
 
 
 def execute_patch(spec_path: Path, project_dir: Path, model: dict[str, Any], changes: list[dict[str, Any]], diff_text: str) -> int:
-    log_dir = Path("logs") / "patch" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = Path("logs") / "patch" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "diff.patch").write_text(diff_text, encoding="utf-8")
     if not (model.get("profile") or {}).get("path") and (

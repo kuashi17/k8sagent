@@ -4,16 +4,44 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from agent.evaluation.profileless_kind_runner import (
     build_kind_command,
     build_kind_contract,
     project_content_digest,
+    load_precompiled_results,
 )
 
 
 class ProfilelessKindRunnerTest(unittest.TestCase):
+    def test_precompiled_results_require_existing_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            project = root / "widget-operator"
+            project.mkdir()
+            result = root / "results.json"
+            result.write_text(
+                json.dumps(
+                    {
+                        "status": "passed",
+                        "requirements": [
+                            {
+                                "requirement": "requirements/widget.txt",
+                                "projectDir": str(project),
+                                "passed": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_precompiled_results(result)
+
+        self.assertIn("requirements/widget.txt", loaded)
+
     def test_access_bundle_contract_includes_cluster_role_finalizer(
         self,
     ) -> None:

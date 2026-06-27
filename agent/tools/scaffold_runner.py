@@ -27,6 +27,11 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true", help="Actually run scaffold commands.")
     parser.add_argument("--preflight", action="store_true", help="Run environment and spec checks without scaffolding.")
     parser.add_argument("--force", action="store_true", help="Delete an existing target project directory before execution.")
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip scaffold-only make checks when a later validation gate is guaranteed.",
+    )
     args = parser.parse_args()
 
     if args.dry_run and args.execute:
@@ -38,7 +43,11 @@ def main() -> int:
     model = normalize_spec(spec)
     missing = required_missing(model)
     workspace_parent, target_dir = resolve_workspace(args.workspace, model)
-    steps = build_steps(model, target_dir)
+    steps = build_steps(
+        model,
+        target_dir,
+        include_validation=not args.skip_validation,
+    )
 
     if args.preflight:
         result = run_preflight(input_path, workspace_parent, target_dir, spec, model, missing, args.force)
@@ -152,7 +161,12 @@ def required_missing(model: dict[str, Any]) -> list[str]:
     return [name for name, value in checks.items() if not value]
 
 
-def build_steps(model: dict[str, Any], target_dir: Path) -> list[dict[str, Any]]:
+def build_steps(
+    model: dict[str, Any],
+    target_dir: Path,
+    *,
+    include_validation: bool = True,
+) -> list[dict[str, Any]]:
     project = model["project"]
     api = model["api"]
     controller_flag = "--controller" if model["controllerEnabled"] else "--controller=false"
@@ -202,6 +216,13 @@ def build_steps(model: dict[str, Any], target_dir: Path) -> list[dict[str, Any]]
         {"name": "make-manifests", "command": ["make", "manifests"], "cwd": str(target_dir)},
         {"name": "make-test", "command": ["make", "test"], "cwd": str(target_dir)},
     ]
+    if not include_validation:
+        steps = [
+            step
+            for step in steps
+            if step["name"]
+            not in {"make-generate", "make-manifests", "make-test"}
+        ]
     return steps
 
 
@@ -214,7 +235,7 @@ def run_preflight(
     missing: list[str],
     force: bool,
 ) -> dict[str, Any]:
-    log_dir = Path("logs") / "scaffold" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = Path("logs") / "scaffold" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     log_dir.mkdir(parents=True, exist_ok=True)
     checks: list[dict[str, str]] = []
     env_path = f"{Path.cwd() / '.tools/bin'}:{os.environ.get('PATH', '')}"
@@ -345,7 +366,7 @@ def execute_steps(input_path: Path, target_dir: Path, steps: list[dict[str, Any]
             return 2
         shutil.rmtree(target_dir)
 
-    log_dir = Path("logs") / "scaffold" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = Path("logs") / "scaffold" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     log_dir.mkdir(parents=True, exist_ok=True)
 
     env = build_execution_env()
@@ -447,6 +468,25 @@ def patch_makefile(makefile: Path) -> None:
         "\tgo test $$(go list ./... | grep -v /e2e) -coverprofile cover.out",
     )
     makefile.write_text(text, encoding="utf-8")
+    patch_dockerfile(makefile.parent / "Dockerfile")
+
+
+def patch_dockerfile(dockerfile: Path) -> None:
+    if not dockerfile.is_file():
+        raise FileNotFoundError(f"Dockerfile not found: {dockerfile}")
+    text = dockerfile.read_text(encoding="utf-8")
+    text = text.replace(
+        "RUN go mod download",
+        "RUN --mount=type=cache,target=/go/pkg/mod go mod download",
+    )
+    text = text.replace(
+        "RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go",
+        "RUN --mount=type=cache,target=/go/pkg/mod "
+        "--mount=type=cache,target=/root/.cache/go-build "
+        "CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} "
+        "go build -o manager cmd/main.go",
+    )
+    dockerfile.write_text(text, encoding="utf-8")
 
 
 def patch_controller_tests(workspace: Path, kind: str) -> None:

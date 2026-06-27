@@ -1117,6 +1117,8 @@ GitHub Actions 분리:
 
 세 workflow는 suite별 `.ci-history/*.json`을 Actions cache로 복원·저장하므로 새 checkout에서도 직전 성능과 비교할 수 있습니다. 실행 결과 artifact는 run ID별 이름으로 30일 보존하며, `full`은 종료 시 자신이 사용하는 임시 kind 클러스터를 정리합니다.
 
+`standard`와 `full`은 local LLM planning cache를 workflow 간 복원하며, `full`은 Go module/build cache도 유지합니다. Profileless compile은 첫 fixture로 Go cache를 준비한 뒤 최대 2개만 병렬 실행하고, scaffold 직후의 중복 validation은 생략하되 artifact patch 이후 `make generate`, `make manifests`, `make test` 최종 gate는 그대로 수행합니다. Kind matrix는 동일 실행에서 통과한 compile workspace를 재사용합니다. 생성 Dockerfile은 BuildKit의 module/build cache mount를 사용하고 전체 의존성을 매번 다시 만드는 `go build -a`를 사용하지 않습니다.
+
 `full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
 
 profileless kind matrix는 9개 요구사항에서 Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC, ServiceAccount, Role, ClusterRole의 공통 lifecycle과 조합형 workload primitive를 검증합니다. ClusterRole 시나리오는 전체 API group 기반 finalizer 등록, cluster-scoped 리소스의 명시적 삭제, finalizer 제거 후 Custom Resource 삭제, restore까지 실제 kind에서 확인합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.

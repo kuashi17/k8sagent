@@ -62,6 +62,11 @@ def main() -> int:
         "--cluster-name",
         default="profileless-matrix",
     )
+    parser.add_argument(
+        "--precompiled-results",
+        default="",
+        help="Reuse profileless compile results and generated projects.",
+    )
     args = parser.parse_args()
 
     configured = (
@@ -75,6 +80,11 @@ def main() -> int:
     ]
     output_dir = resolve(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    precompiled = (
+        load_precompiled_results(resolve(args.precompiled_results))
+        if args.precompiled_results
+        else {}
+    )
     work_root = Path(
         tempfile.mkdtemp(prefix="k8sagent-profileless-kind-")
     )
@@ -85,6 +95,7 @@ def main() -> int:
                 output_dir / "cases" / requirement.stem,
                 work_root,
                 args.cluster_name,
+                precompiled.get(relative(requirement)),
             )
             for requirement in requirements
         ]
@@ -124,9 +135,10 @@ def run_requirement(
     output_dir: Path,
     work_root: Path,
     cluster_name: str,
+    precompiled_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    compile_result = compile_requirement(
+    compile_result = precompiled_result or compile_requirement(
         requirement,
         output_dir / "compile",
         work_root,
@@ -172,6 +184,33 @@ def run_requirement(
     )
     write_result(output_dir, payload)
     return payload
+
+
+def load_precompiled_results(path: Path) -> dict[str, dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"failed to load precompiled profileless results: {path}"
+        ) from exc
+    if payload.get("status") != "passed":
+        raise ValueError("precompiled profileless results did not pass")
+    results = {
+        str(item.get("requirement") or ""): item
+        for item in payload.get("requirements") or []
+        if isinstance(item, dict) and item.get("passed")
+    }
+    missing_paths = [
+        item.get("projectDir")
+        for item in results.values()
+        if not Path(str(item.get("projectDir") or "")).is_dir()
+    ]
+    if missing_paths:
+        raise ValueError(
+            "precompiled project directories are unavailable: "
+            + ", ".join(str(item) for item in missing_paths)
+        )
+    return results
 
 
 def build_kind_contract(
