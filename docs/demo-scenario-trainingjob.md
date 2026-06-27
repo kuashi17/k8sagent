@@ -169,6 +169,7 @@ make test
 ```bash
 python3 agent/tools/e2e_runner.py \
   --input generated/trainingjob-operator-spec.yaml \
+  --profile profiles/trainingjob.yaml \
   --clean \
   --execute
 ```

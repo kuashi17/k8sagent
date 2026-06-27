@@ -28,6 +28,7 @@
 - Web 서버 재시작 시 미완료 작업의 `interrupted` 복구
 - 초보자용 빈 입력, 작성 도움말, 한국어 진행 상태, 계획 후 실행 승인 UI
 - HTTP 제출부터 외부 worker, 결과 표시까지 이어지는 사용자 여정 계약 테스트
+- legacy Job e2e adapter의 Pydantic profile 계약과 profileless 실행 차단
 
 ## 주요 모듈 경계
 
@@ -64,7 +65,7 @@ python3 scripts/run-regression-tests.py --suite full
 
 2026-06-28 현재 확인 결과:
 
-- Agent 44개, LLM 3개, Tool 79개, Evaluation 26개 단위 테스트 통과
+- Agent 45개, LLM 3개, Tool 86개, Evaluation 26개 단위 테스트 통과
 - Web 단위·통합 테스트 24개 통과
 - `quick` regression 통과
 - requirement RAG fixture Hit@3 1.0 통과
@@ -106,7 +107,6 @@ python3 scripts/run-regression-tests.py --suite full
 5. kind validator는 profile별 구현을 추가해야 새로운 Operator lifecycle을 깊게 검증할 수 있다.
 6. RAG 품질은 fixture 확대와 reranker 성능 측정이 더 필요하다.
 7. Jenkins, Harbor, Argo CD 연계는 아직 문서/확장 단계다.
-8. legacy `e2e_runner.py`에는 하위 호환용 TrainingJob 기본값이 남아 있어 profile 계약 필수화 후 제거해야 한다.
 
 ## 내부 fixture의 위치
 

@@ -29,13 +29,20 @@ class RequirementAnalyzerTest(unittest.TestCase):
         result = select_profile_hint(
             "TrainingJob Operator",
             "profiles/trainingjob.yaml",
-            {"profileName": "trainingjob"},
+            {
+                "profileName": "trainingjob",
+                "e2e": {"validator": "job-workload-v1"},
+            },
             allow_auto_hint=True,
         )
 
         self.assertEqual(
             result["selectedProfile"]["selectionMode"],
             "explicit-hint",
+        )
+        self.assertEqual(
+            result["selectedProfile"]["e2e"]["validator"],
+            "job-workload-v1",
         )
 
 

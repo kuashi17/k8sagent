@@ -277,6 +277,8 @@ def recommended_command(summary: dict[str, Any], log_dir: Path) -> str:
         command = ["python3", "agent/tools/e2e_runner.py"]
         input_path = summary.get("input")
         profile_path = nested_get(summary, ["profileConfig", "profilePath"])
+        if not profile_path:
+            return insufficient_rerun_info()
         if input_path:
             command.extend(["--input", str(input_path)])
         else:
@@ -286,8 +288,7 @@ def recommended_command(summary: dict[str, Any], log_dir: Path) -> str:
             if not (project and cluster and sample):
                 return insufficient_rerun_info()
             command.extend(["--project", str(project), "--cluster-name", str(cluster), "--sample", str(sample)])
-        if profile_path:
-            command.extend(["--profile", str(profile_path)])
+        command.extend(["--profile", str(profile_path)])
         if summary.get("clean"):
             command.append("--clean")
         if summary.get("deletePvc"):

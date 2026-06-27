@@ -228,9 +228,12 @@ def build_supported_calls(
                 ["generate", "manifests", "test"],
             ),
         },
-        "e2e_runner": {
+    }
+    legacy_e2e = selected_profile.get("e2e") or {}
+    if profile_path and legacy_e2e.get("validator") == "job-workload-v1":
+        supported_calls["e2e_runner"] = {
             "mutating": True,
-            "requiredArgs": ["input"],
+            "requiredArgs": ["input", "profile"],
             "arguments": {
                 "input": generated["operatorSpec"],
                 "profile": profile_path,
@@ -241,8 +244,7 @@ def build_supported_calls(
                 profile_path,
                 execute=mutating_execute,
             ),
-        },
-    }
+        }
     kind_deployment = selected_profile.get("kindDeployment") or {}
     if context.get("kindDeploymentRequested") and kind_deployment.get("enabled"):
         supported_calls["kind_deployment"] = build_kind_deployment_call(

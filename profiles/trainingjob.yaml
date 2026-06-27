@@ -26,6 +26,7 @@ artifactPatcher:
         - list
         - watch
 e2e:
+  validator: job-workload-v1
   clusterName: trainingjob-e2e
   samplePath: config/samples/ml_v1alpha1_trainingjob.yaml
   customResource:

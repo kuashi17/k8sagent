@@ -15,12 +15,29 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from agent.tools.e2e_profile_contract import (
+    JobWorkloadSample,
+    LegacyJobE2EProfile,
+)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Dry-run or execute kind based Operator e2e validation.")
     parser.add_argument("--input", help="Path to generated operator spec YAML.")
-    parser.add_argument("--profile", help="Path to an Operator profile YAML. Existing fallback behavior is used when omitted.")
+    parser.add_argument(
+        "--profile",
+        required=True,
+        help=(
+            "Path to a profile declaring the job-workload-v1 e2e "
+            "contract. Generic resources should use kind_deployment_runner."
+        ),
+    )
     parser.add_argument("--project", help="Path to generated Kubebuilder project.")
     parser.add_argument("--cluster-name", help="kind cluster name.")
     parser.add_argument("--sample", help="Sample Custom Resource YAML to apply.")
@@ -35,14 +52,14 @@ def main() -> int:
         return 2
 
     spec = load_spec(Path(args.input)) if args.input else {}
-    profile = load_profile(Path(args.profile)) if args.profile else {}
+    profile = load_profile(Path(args.profile))
     project_dir = resolve_project(args.project, spec)
     cluster_name = resolve_cluster_name(args.cluster_name, spec, profile)
     sample_path = resolve_sample(args.sample, spec, profile, project_dir)
     validate_inputs(project_dir, sample_path)
 
     expected = load_sample_expectations(sample_path, profile)
-    profile_config = build_profile_config(spec, profile, expected, args.profile)
+    profile_config = build_profile_config(profile, expected, args.profile)
     plan = build_plan(project_dir, cluster_name, sample_path, expected, profile_config, clean=args.clean, delete_pvc=args.delete_pvc)
     if not args.execute:
         print_dry_run(plan)
@@ -66,8 +83,16 @@ def load_profile(path: Path) -> dict[str, Any]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise SystemExit(f"profile YAML must be a mapping: {path}")
-    data["_profilePath"] = str(path)
-    return data
+    try:
+        profile = LegacyJobE2EProfile.model_validate(data)
+    except ValidationError as exc:
+        raise SystemExit(
+            f"profile does not satisfy the job-workload-v1 contract: "
+            f"{validation_message(exc)}"
+        ) from exc
+    normalized = profile.model_dump(mode="python")
+    normalized["_profilePath"] = str(path)
+    return normalized
 
 
 def resolve_project(value: str | None, spec: dict[str, Any]) -> Path:
@@ -117,42 +142,61 @@ def load_sample_expectations(sample_path: Path, profile: dict[str, Any]) -> dict
     profile_defaults = profile.get("sampleDefaults") or {}
     default_spec = profile_defaults.get("spec") or {}
     default_metadata = profile_defaults.get("metadata") or {}
-    spec = {**default_spec, **(sample.get("spec") or {})}
-    metadata = {**default_metadata, **(sample.get("metadata") or {})}
+    merged = {
+        "metadata": {
+            **default_metadata,
+            **(sample.get("metadata") or {}),
+        },
+        "spec": {
+            **default_spec,
+            **(sample.get("spec") or {}),
+        },
+    }
+    try:
+        validated = JobWorkloadSample.model_validate(merged)
+    except ValidationError as exc:
+        raise SystemExit(
+            f"sample does not satisfy the job-workload-v1 contract: "
+            f"{validation_message(exc)}"
+        ) from exc
     return {
-        "crName": metadata.get("name", "trainingjob-sample"),
-        "image": spec.get("image", ""),
-        "gpuCount": int(spec.get("gpuCount") or 0),
-        "pvcName": spec.get("pvcName", ""),
-        "datasetPath": spec.get("datasetPath", ""),
-        "outputPath": spec.get("outputPath", ""),
+        "crName": validated.metadata.name,
+        "image": validated.spec.image,
+        "gpuCount": validated.spec.gpuCount,
+        "pvcName": validated.spec.pvcName,
+        "datasetPath": validated.spec.datasetPath,
+        "outputPath": validated.spec.outputPath,
     }
 
 
-def build_profile_config(spec: dict[str, Any], profile: dict[str, Any], expected: dict[str, Any], profile_path: str | None) -> dict[str, Any]:
-    api = spec.get("api") or {}
-    e2e = profile.get("e2e") or {}
-    custom_resource = e2e.get("customResource") or {}
-    validation = profile.get("jobSpecValidation") or {}
-    pvc = e2e.get("pvc") or {}
-    env_names = e2e.get("envNames") or {}
-    warning = profile.get("warnings", {}).get("gpuPending", {}) or {}
+def build_profile_config(
+    profile: dict[str, Any],
+    expected: dict[str, Any],
+    profile_path: str,
+) -> dict[str, Any]:
+    e2e = profile["e2e"]
+    custom_resource = e2e["customResource"]
+    validation = profile["jobSpecValidation"]
+    pvc = e2e["pvc"]
+    env_names = e2e["envNames"]
+    warning = profile["warnings"]["gpuPending"]
 
-    crd_name = custom_resource.get("crdName") or infer_crd_name(api) or "trainingjobs.ml.ai.sample.io"
-    cr_resource = custom_resource.get("resource") or api.get("kind", "TrainingJob").lower()
-    job_template = validation.get("jobNameTemplate") or "{metadata.name}-job"
-    pod_selector_template = validation.get("podSelectorTemplate") or "job-name={metadata.name}-job"
+    crd_name = custom_resource["crdName"]
+    cr_resource = custom_resource["resource"]
+    job_template = validation["jobNameTemplate"]
+    pod_selector_template = validation["podSelectorTemplate"]
     job_name = render_template(job_template, expected)
     pod_selector = render_template(pod_selector_template, expected)
-    gpu_resource_name = e2e.get("gpuResourceName") or "nvidia.com/gpu"
-    mount_path = pvc.get("mountPath") or "/workspace"
-    volume_name = pvc.get("volumeName") or "workspace"
+    gpu_resource_name = e2e["gpuResourceName"]
+    mount_path = pvc["mountPath"]
+    volume_name = pvc["volumeName"]
 
     return {
-        "profilePath": profile_path or "",
-        "profileName": profile.get("profileName", "default-trainingjob-fallback"),
-        "managedResources": profile.get("managedResources") or ["Job"],
-        "referencedResources": profile.get("referencedResources") or ["Pod", "PersistentVolumeClaim"],
+        "profilePath": profile_path,
+        "profileName": profile["profileName"],
+        "validator": e2e["validator"],
+        "managedResources": profile["managedResources"],
+        "referencedResources": profile["referencedResources"],
         "crdName": crd_name,
         "crResource": cr_resource,
         "jobNameTemplate": job_template,
@@ -161,47 +205,32 @@ def build_profile_config(spec: dict[str, Any], profile: dict[str, Any], expected
         "podSelector": pod_selector,
         "pvcMountPath": mount_path,
         "pvcVolumeName": volume_name,
-        "pvcStorage": pvc.get("storage") or first_setup_resource_value(profile, "PersistentVolumeClaim", "storage") or "1Gi",
+        "pvcStorage": pvc["storage"],
         "gpuResourceName": gpu_resource_name,
         "envNames": {
-            "datasetPath": env_names.get("datasetPath") or "DATASET_PATH",
-            "outputPath": env_names.get("outputPath") or "OUTPUT_PATH",
+            "datasetPath": env_names["datasetPath"],
+            "outputPath": env_names["outputPath"],
         },
         "gpuPendingWarning": {
-            "enabled": warning.get("enabled", True),
-            "match": warning.get("match") or [f"Insufficient {gpu_resource_name}", gpu_resource_name],
-            "message": warning.get("message") or "Pod is Pending due to insufficient GPU resources; treated as warning.",
+            "enabled": warning["enabled"],
+            "match": warning["match"],
+            "message": warning["message"],
         },
-        "jobSpecValidationChecks": validation.get("checks") or [],
+        "jobSpecValidationChecks": validation["checks"],
     }
 
 
-def infer_crd_name(api: dict[str, Any]) -> str:
-    kind = api.get("kind", "")
-    group = api.get("group", "")
-    domain = api.get("domain", "")
-    if not kind or not group or not domain:
-        return ""
-    return f"{pluralize(kind.lower())}.{group}.{domain}"
+def validation_message(exc: ValidationError) -> str:
+    errors = []
+    for item in exc.errors():
+        location = ".".join(str(part) for part in item.get("loc") or [])
+        message = str(item.get("msg") or "invalid value")
+        errors.append(f"{location}: {message}" if location else message)
+    return "; ".join(errors)
 
 
 def render_template(template: str, expected: dict[str, Any]) -> str:
     return template.replace("{metadata.name}", str(expected["crName"]))
-
-
-def first_setup_resource_value(profile: dict[str, Any], kind: str, key: str) -> Any:
-    for resource in profile.get("e2e", {}).get("setupResources") or []:
-        if resource.get("kind") == kind and resource.get(key):
-            return resource[key]
-    return None
-
-
-def pluralize(value: str) -> str:
-    if value.endswith("s"):
-        return value + "es"
-    if value.endswith("y"):
-        return value[:-1] + "ies"
-    return value + "s"
 
 
 def build_plan(
@@ -267,7 +296,8 @@ def print_dry_run(plan: dict[str, Any]) -> None:
     print(f"Sample YAML: {plan['sample']}")
     print(f"Clean before apply: {plan['clean']}")
     print(f"Delete sample PVC during clean: {plan['deletePvc']}")
-    print(f"Profile: {plan['profileConfig']['profileName']} ({plan['profileConfig']['profilePath'] or 'fallback defaults'})")
+    print(f"Profile: {plan['profileConfig']['profileName']} ({plan['profileConfig']['profilePath']})")
+    print(f"Validator contract: {plan['profileConfig']['validator']}")
     print()
     print("Profile-derived values:")
     print(f"- CRD name: {plan['profileConfig']['crdName']}")
@@ -311,16 +341,7 @@ def print_dry_run(plan: dict[str, Any]) -> None:
 
 def validation_check_names(profile_config: dict[str, Any]) -> list[str]:
     checks = profile_config.get("jobSpecValidationChecks") or []
-    if checks:
-        return [str(item.get("name", "unnamed check")) for item in checks]
-    return [
-        "container image matches spec.image",
-        f"{profile_config['gpuResourceName']} limit matches spec.gpuCount, or is absent when gpuCount is 0",
-        "PVC volume claimName matches spec.pvcName",
-        f"{profile_config['pvcMountPath']} volumeMount exists",
-        f"{profile_config['envNames']['datasetPath']} env matches spec.datasetPath",
-        f"{profile_config['envNames']['outputPath']} env matches spec.outputPath",
-    ]
+    return [str(item.get("name", "unnamed check")) for item in checks]
 
 
 def execute_plan(plan: dict[str, Any]) -> int:

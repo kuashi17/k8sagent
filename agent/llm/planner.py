@@ -781,10 +781,13 @@ def normalize_log_analysis_output(data: dict[str, Any], summary: dict[str, Any])
         project = summary.get("projectDir")
         cluster = summary.get("clusterName")
         sample = summary.get("sample")
-        if project and cluster and sample:
+        profile = (summary.get("profileConfig") or {}).get("profilePath")
+        if project and cluster and sample and profile:
             normalized["rerunCommand"] = (
                 "python3 agent/tools/e2e_runner.py "
-                f"--project {project} --cluster-name {cluster} --sample {sample} --clean --execute"
+                f"--profile {profile} --project {project} "
+                f"--cluster-name {cluster} --sample {sample} "
+                "--clean --execute"
             )
         else:
             normalized["rerunCommand"] = "summary.json에 재실행 명령을 구성할 충분한 정보가 없어 동일 runner 명령을 수동으로 확인해야 합니다."

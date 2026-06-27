@@ -79,6 +79,7 @@ clean e2e는 기존 리소스를 자동 정리한다.
 ```bash
 python3 agent/tools/e2e_runner.py \
   --input generated/trainingjob-operator-spec.yaml \
+  --profile profiles/trainingjob.yaml \
   --clean \
   --dry-run
 ```
@@ -212,6 +213,7 @@ cd /home/ch0618/k8sagent
 ```bash
 python3 agent/tools/e2e_runner.py \
   --input generated/trainingjob-operator-spec.yaml \
+  --profile profiles/trainingjob.yaml \
   --clean \
   --execute
 ```

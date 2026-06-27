@@ -140,13 +140,16 @@ python3 agent/langchain_agent.py \
 
 ## 향후 확장 계획
 
-다음 단계에서는 현재 TrainingJob profile 로직이 섞여 있는 부분을 profile/plugin 구조로 분리합니다.
+범용 lifecycle은 공통 kind runner와 validator로 분리되었고, legacy Job e2e는
+명시적인 `job-workload-v1` profile 계약으로 격리되었습니다.
 
 우선순위는 다음과 같습니다.
 
-1. `e2e_runner.py`에서 TrainingJob 전용 검증 규칙 분리
-2. `artifact_patcher.py`에서 sample/RBAC profile 규칙 분리
-3. `log_analyzer.py`에서 profile별 warning/evidence 규칙 분리
+다음 우선순위는 다음과 같습니다.
+
+1. `artifact_patcher.py`에 남은 profile hook 정리
+2. `log_analyzer.py`의 domain-specific warning/evidence plugin화
+3. legacy e2e 호출을 공통 kind validator로 완전히 이관
 
 이후 Jenkins와 연계하면 `make generate`, `make manifests`, `make test`, e2e 결과를 CI에서 수집할 수 있습니다.
 

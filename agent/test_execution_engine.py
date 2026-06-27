@@ -76,6 +76,24 @@ class ExecutionEngineTest(unittest.TestCase):
         ctx["kindDeploymentRequested"] = True
         self.assertIn("kind_deployment", build_supported_calls(ctx, "dry-run", False))
 
+    def test_legacy_e2e_requires_explicit_validator_contract(self) -> None:
+        ctx = context()
+        self.assertNotIn(
+            "e2e_runner",
+            build_supported_calls(ctx, "dry-run", False),
+        )
+
+        ctx["selectedProfile"]["e2e"] = {
+            "validator": "job-workload-v1"
+        }
+        supported = build_supported_calls(ctx, "dry-run", False)
+
+        self.assertIn("e2e_runner", supported)
+        self.assertEqual(
+            supported["e2e_runner"]["requiredArgs"],
+            ["input", "profile"],
+        )
+
     def test_known_capability_never_uses_proposal_approval(self) -> None:
         dry_run = build_supported_calls(context(), "dry-run", False)
         execute = build_supported_calls(context(), "execute", True)

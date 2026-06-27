@@ -83,10 +83,13 @@ TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증용 profile/ex
 | `agent/tools/command_planner.py` | 스펙 기반 Kubebuilder 실행 계획 생성 | 범용 core |
 | `agent/tools/scaffold_runner.py` | Kubebuilder scaffold, preflight, generate/manifests/test 실행 | 범용 core |
 | `agent/tools/artifact_patcher.py` | API 타입, sample, RBAC marker 보정 | core와 TrainingJob profile 로직이 일부 섞임 |
-| `agent/tools/e2e_runner.py` | kind 기반 e2e 실행과 Job spec 검증 | 현재 TrainingJob profile 로직이 강하게 섞임 |
+| `agent/tools/e2e_runner.py` | `job-workload-v1` profile용 legacy 호환 adapter | 명시적 Pydantic profile 계약, 특정 CR 기본값 없음 |
 | `agent/tools/log_analyzer.py` | summary/log 분석과 오류 유형 분류 | core와 TrainingJob 재실행/검증 단계명이 일부 섞임 |
 
-현재 코드는 MVP 검증을 빠르게 하기 위해 일부 profile 지식이 core 도구 안에 들어가 있습니다. 다음 리팩터링에서는 `artifact_patcher.py`, `e2e_runner.py`, `log_analyzer.py`에서 TrainingJob 관련 규칙을 `profiles/trainingjob.yaml` 또는 plugin 계층으로 분리합니다.
+범용 lifecycle은 `kind_deployment_runner.py`와 validator 계약이 담당합니다.
+legacy `e2e_runner.py`는 Job/Pod/PVC 검증이 필요한 profile만
+`e2e.validator: job-workload-v1`로 명시해 사용할 수 있으며, profile이 없거나
+계약이 불완전하면 Tool 실행 전에 거부합니다.
 
 ## Profile 예시
 

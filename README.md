@@ -476,7 +476,10 @@ python3 agent/langchain_agent.py \
 
 TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증용 profile입니다. RedisCache는 StatefulSet/Service 기반 Operator로 확장하기 위한 예시 profile입니다.
 
-현재 `artifact_patcher.py`, `e2e_runner.py`, `log_analyzer.py`에는 TrainingJob profile 로직이 일부 섞여 있습니다. 향후 리팩터링에서는 이 로직을 `profiles/` 또는 plugin 계층으로 분리하여 RedisCache와 다른 Operator profile도 같은 core pipeline을 재사용할 수 있게 합니다.
+범용 생성과 lifecycle 검증은 행동 IR, resource catalog,
+`kind_deployment_runner.py`와 validator 계약을 재사용합니다. legacy
+`e2e_runner.py`의 Job/Pod/PVC 검증은 `job-workload-v1` profile을 명시한 경우에만
+노출되며 특정 Custom Resource 이름이나 CRD를 기본값으로 사용하지 않습니다.
 
 전체 파이프라인은 다음과 같습니다.
 
@@ -627,6 +630,7 @@ python3 agent/tools/artifact_patcher.py \
 
 ```bash
 python3 agent/tools/e2e_runner.py \
+  --profile profiles/trainingjob.yaml \
   --project workspace/generated-operators/trainingjob-operator \
   --cluster-name trainingjob-e2e \
   --sample workspace/generated-operators/trainingjob-operator/config/samples/ml_v1alpha1_trainingjob.yaml \
@@ -637,6 +641,7 @@ python3 agent/tools/e2e_runner.py \
 
 ```bash
 python3 agent/tools/e2e_runner.py \
+  --profile profiles/trainingjob.yaml \
   --project workspace/generated-operators/trainingjob-operator \
   --cluster-name trainingjob-e2e \
   --sample workspace/generated-operators/trainingjob-operator/config/samples/ml_v1alpha1_trainingjob.yaml \
@@ -648,26 +653,23 @@ python3 agent/tools/e2e_runner.py \
 ```bash
 python3 agent/tools/e2e_runner.py \
   --input generated/trainingjob-operator-spec.yaml \
+  --profile profiles/trainingjob.yaml \
   --clean \
   --dry-run
 ```
-
-```bash
-python3 agent/tools/e2e_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --clean \
-  --execute
-```
-
-TrainingJob profile 값을 명시적으로 사용하려면 `--profile`을 함께 전달합니다.
 
 ```bash
 python3 agent/tools/e2e_runner.py \
   --input generated/trainingjob-operator-spec.yaml \
   --profile profiles/trainingjob.yaml \
   --clean \
-  --dry-run
+  --execute
 ```
+
+legacy e2e adapter는 특정 리소스 기본값을 추측하지 않습니다. 반드시
+`e2e.validator: job-workload-v1` 계약이 있는 profile을 `--profile`로
+전달해야 합니다. 다른 관리 리소스는 공통 `kind_deployment_runner.py`와
+profile별 validator를 사용합니다.
 
 e2e 로그와 summary는 `logs/e2e/<timestamp>/` 아래에 저장됩니다.
 

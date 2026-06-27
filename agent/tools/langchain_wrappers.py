@@ -151,11 +151,14 @@ def e2e_runner(
     delete_pvc: bool = False,
     execute: bool = False,
 ) -> dict[str, Any]:
+    if not profile:
+        raise ValueError(
+            "e2e_runner requires a profile with the job-workload-v1 contract"
+        )
     command = ["python3", "agent/tools/e2e_runner.py"]
     if input_spec:
         command.extend(["--input", input_spec])
-    if profile:
-        command.extend(["--profile", profile])
+    command.extend(["--profile", profile])
     if project:
         command.extend(["--project", project])
     if cluster_name:
