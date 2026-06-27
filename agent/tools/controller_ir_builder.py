@@ -2,170 +2,29 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from agent.tools.controller_ir import (
     ControllerGenerationIR,
-    DeletionPolicy,
     FieldMapping,
+    FieldMutability,
     ManagedResourceSpec,
     NameRule,
-    OwnershipPolicy,
     RBACRule,
     ReconcileStrategy,
     ResourceCapability,
-    ResourceScope,
     StatusMapping,
     UpdatePolicy,
-    FieldMutability,
+)
+from agent.tools.resource_catalog import (
+    ResourceCapabilityDefinition,
+    load_resource_catalog,
 )
 
 
-@dataclass(frozen=True)
-class ResourceDefaults:
-    api_version: str
-    canonical_kind: str
-    suffix: str
-    emitter: str
-    scope: ResourceScope = ResourceScope.NAMESPACED
-    strategy: ReconcileStrategy = ReconcileStrategy.CREATE_OR_UPDATE
-    ownership: OwnershipPolicy = OwnershipPolicy.OWNER_REFERENCE
-    deletion_policy: DeletionPolicy = DeletionPolicy.GARBAGE_COLLECT
-
-
-RESOURCE_DEFAULTS = {
-    "ConfigMap": ResourceDefaults("v1", "ConfigMap", "config", "string-map"),
-    "Secret": ResourceDefaults("v1", "Secret", "secret", "string-map"),
-    "PVC": ResourceDefaults("v1", "PersistentVolumeClaim", "pvc", "storage-claim"),
-    "PersistentVolumeClaim": ResourceDefaults(
-        "v1",
-        "PersistentVolumeClaim",
-        "pvc",
-        "storage-claim",
-    ),
-    "CronJob": ResourceDefaults("batch/v1", "CronJob", "cronjob", "scheduled-workload"),
-    "Deployment": ResourceDefaults("apps/v1", "Deployment", "deployment", "replicated-workload"),
-    "StatefulSet": ResourceDefaults(
-        "apps/v1",
-        "StatefulSet",
-        "statefulset",
-        "stateful-workload",
-    ),
-    "Service": ResourceDefaults("v1", "Service", "service", "network-service"),
-    "Namespace": ResourceDefaults(
-        "v1",
-        "Namespace",
-        "namespace",
-        "label-patch",
-        scope=ResourceScope.CLUSTER,
-        strategy=ReconcileStrategy.PATCH_EXISTING,
-        ownership=OwnershipPolicy.NONE,
-        deletion_policy=DeletionPolicy.RETAIN,
-    ),
-    "Pod": ResourceDefaults(
-        "v1",
-        "Pod",
-        "pod",
-        "read-only",
-        strategy=ReconcileStrategy.READ_ONLY,
-        ownership=OwnershipPolicy.NONE,
-        deletion_policy=DeletionPolicy.RETAIN,
-    ),
-    "Job": ResourceDefaults(
-        "batch/v1",
-        "Job",
-        "job",
-        "read-only",
-        strategy=ReconcileStrategy.READ_ONLY,
-        ownership=OwnershipPolicy.NONE,
-        deletion_policy=DeletionPolicy.RETAIN,
-    ),
-}
-
-NAME_FIELDS = {
-    "ConfigMap": ("configMapName", "name"),
-    "Secret": ("secretName", "targetName", "name"),
-    "PersistentVolumeClaim": ("claimName", "pvcName"),
-    "CronJob": ("cronJobName",),
-    "Deployment": ("deploymentName", "appName"),
-    "StatefulSet": ("statefulSetName", "appName", "cacheName"),
-    "Service": ("serviceName", "appName"),
-    "Namespace": ("namespaceName",),
-}
-
-DEFAULT_FIELD_MAPPINGS = {
-    "ConfigMap": (("configData", "data"), ("data", "data")),
-    "Secret": (("data", "stringData"), ("secretData", "stringData")),
-    "PersistentVolumeClaim": (
-        ("storageSize", "spec.resources.requests.storage"),
-        ("size", "spec.resources.requests.storage"),
-        ("storageClassName", "spec.storageClassName"),
-        ("accessModes", "spec.accessModes"),
-    ),
-    "CronJob": (
-        ("schedule", "spec.schedule"),
-        ("image", "spec.jobTemplate.spec.template.spec.containers[0].image"),
-        ("command", "spec.jobTemplate.spec.template.spec.containers[0].command"),
-        ("suspend", "spec.suspend"),
-    ),
-    "Deployment": (
-        ("image", "spec.template.spec.containers[0].image"),
-        ("replicas", "spec.replicas"),
-        ("size", "spec.replicas"),
-        ("port", "spec.template.spec.containers[0].ports[0].containerPort"),
-        ("containerPort", "spec.template.spec.containers[0].ports[0].containerPort"),
-    ),
-    "StatefulSet": (
-        ("image", "spec.template.spec.containers[0].image"),
-        ("replicas", "spec.replicas"),
-        ("size", "spec.replicas"),
-        (
-            "port",
-            "spec.template.spec.containers[0].ports[0].containerPort",
-        ),
-        (
-            "storageSize",
-            "spec.volumeClaimTemplates[0].spec.resources.requests.storage",
-        ),
-    ),
-    "Service": (
-        ("port", "spec.ports[0].port"),
-    ),
-    "Namespace": (
-        ("labels", "metadata.labels"),
-    ),
-}
-
-STATUS_RESOURCE_FIELDS = {
-    "configMapName": ("ConfigMap", "metadata.name", "resource-name"),
-    "secretName": ("Secret", "metadata.name", "resource-name"),
-    "claimName": ("PersistentVolumeClaim", "metadata.name", "resource-name"),
-    "cronJobName": ("CronJob", "metadata.name", "resource-name"),
-    "deploymentName": ("Deployment", "metadata.name", "resource-name"),
-    "serviceName": ("Service", "metadata.name", "resource-name"),
-    "observedNamespace": ("Namespace", "metadata.name", "resource-name"),
-    "readyReplicas": (
-        "Deployment",
-        "status.readyReplicas",
-        "direct",
-    ),
-    "lastScheduleTime": (
-        "CronJob",
-        "status.lastScheduleTime",
-        "direct",
-    ),
-}
-
-STATUS_RESOURCE_FIELD_ALTERNATIVES = {
-    "readyReplicas": (
-        ("Deployment", "status.readyReplicas", "direct"),
-        ("StatefulSet", "status.readyReplicas", "direct"),
-    ),
-}
-
-
 def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
+    catalog = load_resource_catalog()
+    resources_by_name = catalog.by_name()
     api = model["api"]
     fields = field_names(model.get("specFields") or [])
     status_fields = field_names(model.get("statusFields") or [])
@@ -179,13 +38,13 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
     for raw_kind in (
         (model.get("controller") or {}).get("managedResources") or []
     ):
-        defaults = RESOURCE_DEFAULTS.get(str(raw_kind))
+        defaults = resources_by_name.get(str(raw_kind))
         if not defaults:
             unsupported.append(str(raw_kind))
             continue
-        if defaults.canonical_kind in seen:
+        if defaults.kind in seen:
             continue
-        seen.add(defaults.canonical_kind)
+        seen.add(defaults.kind)
         resources.append(
             build_managed_resource(
                 defaults,
@@ -196,7 +55,9 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
             )
         )
     if unsupported:
-        supported = ", ".join(sorted(RESOURCE_DEFAULTS))
+        supported = ", ".join(
+            sorted(item.kind for item in catalog.resources)
+        )
         raise ValueError(
             "unsupported managed resources: "
             + ", ".join(unsupported)
@@ -224,19 +85,23 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
 
 
 def build_managed_resource(
-    defaults: ResourceDefaults,
+    defaults: ResourceCapabilityDefinition,
     fields: set[str],
     status_fields: set[str],
     status_field_types: dict[str, str],
     explicit_mappings: list[FieldMapping],
 ) -> ManagedResourceSpec:
-    kind = defaults.canonical_kind
-    name_field = first_field(fields, *NAME_FIELDS.get(kind, ()))
+    kind = defaults.kind
+    name_field = first_field(fields, *defaults.nameFields)
     capabilities = capabilities_for(defaults)
-    mappings = mappings_for(kind, fields, explicit_mappings)
+    mappings = mappings_for(
+        defaults,
+        fields,
+        explicit_mappings,
+    )
     return ManagedResourceSpec(
         resource_id=kind[:1].lower() + kind[1:],
-        api_version=defaults.api_version,
+        api_version=defaults.apiVersion,
         kind=kind,
         scope=defaults.scope,
         name=NameRule(
@@ -247,25 +112,30 @@ def build_managed_resource(
         emitter=defaults.emitter,
         capabilities=capabilities,
         ownership=defaults.ownership,
-        deletion_policy=defaults.deletion_policy,
+        deletion_policy=defaults.deletionPolicy,
         update_policy=resource_update_policy(defaults, mappings),
         watch=ResourceCapability.WATCH in capabilities,
         field_mappings=mappings,
         status_mappings=status_mappings_for(
-            kind,
+            defaults,
             status_fields,
             status_field_types,
         ),
         disable_when=(
-            "spec.enabled == false"
-            if kind in {"ConfigMap", "Secret"} and "enabled" in fields
+            f"spec.{defaults.disableField} == false"
+            if defaults.disableField
+            and defaults.disableField in fields
             else ""
         ),
+        base_spec=defaults.baseSpec,
+        label_paths=defaults.labelPaths,
+        dependency_kind=defaults.dependencyKind,
+        dependency_variable=defaults.dependencyVariable,
     )
 
 
 def capabilities_for(
-    defaults: ResourceDefaults,
+    defaults: ResourceCapabilityDefinition,
 ) -> list[ResourceCapability]:
     if defaults.strategy == ReconcileStrategy.READ_ONLY:
         return [
@@ -289,15 +159,20 @@ def capabilities_for(
 
 
 def mappings_for(
-    kind: str,
+    defaults: ResourceCapabilityDefinition,
     fields: set[str],
     explicit: list[FieldMapping],
 ) -> list[FieldMapping]:
+    kind = defaults.kind
     result = [
         item.model_copy(
             update={
                 "target_path": normalize_target_path(
                     item.target_path
+                ),
+                "transform": mapping_transform(
+                    defaults,
+                    item,
                 ),
                 "mutability": field_mutability(
                     kind,
@@ -316,23 +191,50 @@ def mappings_for(
         (item.source_path, item.target_path)
         for item in result
     }
-    for field, target in DEFAULT_FIELD_MAPPINGS.get(kind, ()):
+    for item in defaults.fieldMappings:
+        field = item.source
+        target = item.target
         source = f"spec.{field}"
         if field in fields and (source, target) not in existing_pairs:
             result.append(
                 FieldMapping(
                     source_path=source,
                     target_path=target,
-                    mutability=field_mutability(kind, target),
-                    update_policy=field_update_policy(kind, target),
+                    transform=item.transform,
+                    mutability=item.mutability,
+                    update_policy=item.updatePolicy,
                 )
             )
     return result
 
 
+def mapping_transform(
+    defaults: ResourceCapabilityDefinition,
+    mapping: FieldMapping,
+) -> str:
+    target = normalize_target_path(mapping.target_path)
+    source = mapping.source_path.removeprefix("spec.")
+    contract = next(
+        (
+            item
+            for item in defaults.fieldMappings
+            if item.target == target and item.source == source
+        ),
+        next(
+            (
+                item
+                for item in defaults.fieldMappings
+                if item.target == target
+            ),
+            None,
+        ),
+    )
+    return contract.transform if contract else mapping.transform
+
+
 def normalize_target_path(path: str) -> str:
     prefix = path.split(".", 1)[0]
-    if prefix not in RESOURCE_DEFAULTS:
+    if prefix not in load_resource_catalog().by_name():
         return path
     return path.split(".", 1)[1]
 
@@ -341,16 +243,18 @@ def field_mutability(
     kind: str,
     target: str,
 ) -> FieldMutability:
-    immutable_targets = {
-        "PersistentVolumeClaim": {
-            "spec.storageClassName",
-            "spec.accessModes",
-        },
-        "Service": {"spec.clusterIP"},
-        "StatefulSet": {"spec.volumeClaimTemplates"},
-    }
-    if target in immutable_targets.get(kind, set()):
-        return FieldMutability.IMMUTABLE
+    definition = load_resource_catalog().by_name().get(kind)
+    if definition:
+        mapping = next(
+            (
+                item
+                for item in definition.fieldMappings
+                if item.target == target
+            ),
+            None,
+        )
+        if mapping:
+            return mapping.mutability
     return FieldMutability.MUTABLE
 
 
@@ -361,7 +265,7 @@ def field_update_policy(kind: str, target: str) -> UpdatePolicy:
 
 
 def resource_update_policy(
-    defaults: ResourceDefaults,
+    defaults: ResourceCapabilityDefinition,
     mappings: list[FieldMapping],
 ) -> UpdatePolicy:
     if defaults.strategy == ReconcileStrategy.READ_ONLY:
@@ -375,27 +279,24 @@ def resource_update_policy(
 
 
 def status_mappings_for(
-    kind: str,
+    defaults: ResourceCapabilityDefinition,
     status_fields: set[str],
     status_field_types: dict[str, str],
 ) -> list[StatusMapping]:
     result = []
-    for field in sorted(status_fields):
-        alternatives = STATUS_RESOURCE_FIELD_ALTERNATIVES.get(field)
-        if alternatives:
-            mapping = next(
-                (item for item in alternatives if item[0] == kind),
-                None,
-            )
-        else:
-            mapping = STATUS_RESOURCE_FIELDS.get(field)
-        if not mapping or mapping[0] != kind:
+    for mapping in defaults.statusMappings:
+        field = mapping.field
+        if field not in status_fields:
             continue
         result.append(
             StatusMapping(
-                source_path=mapping[1],
+                source_path=mapping.source,
                 target_path=f"status.{field}",
-                transform=mapping[2],
+                transform=(
+                    "resource-name"
+                    if mapping.resourceName
+                    else mapping.transform
+                ),
                 target_type=status_field_types.get(field, "string"),
             )
         )
@@ -423,11 +324,8 @@ def parse_explicit_mappings(
 
 def target_resource(path: str) -> str:
     prefix = path.split(".", 1)[0]
-    aliases = {
-        "PVC": "PersistentVolumeClaim",
-        "PersistentVolumeClaim": "PersistentVolumeClaim",
-    }
-    return aliases.get(prefix, prefix)
+    definition = load_resource_catalog().by_name().get(prefix)
+    return definition.kind if definition else prefix
 
 
 def field_names(values: list[Any]) -> set[str]:

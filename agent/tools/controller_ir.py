@@ -98,6 +98,10 @@ class ManagedResourceSpec(IRModel):
     field_mappings: list[FieldMapping] = Field(default_factory=list)
     status_mappings: list[StatusMapping] = Field(default_factory=list)
     disable_when: str = ""
+    base_spec: dict[str, Any] = Field(default_factory=dict)
+    label_paths: list[str] = Field(default_factory=list)
+    dependency_kind: str = ""
+    dependency_variable: str = ""
 
 
 class ControllerGenerationIR(IRModel):

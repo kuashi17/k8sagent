@@ -116,6 +116,31 @@ class KindContractBuilderTest(unittest.TestCase):
             {"storageClassName": "standard-updated"},
         )
 
+    def test_generic_numeric_mapping_builds_update_assertion(
+        self,
+    ) -> None:
+        contract = build_validation_contract(
+            build_ir(
+                "DaemonSet",
+                [
+                    {"name": "image", "type": "string"},
+                    {"name": "port", "type": "int32"},
+                ],
+            ),
+            {
+                "metadata": {"name": "node-agent"},
+                "spec": {"image": "nginx:latest", "port": 8080},
+            },
+            "genericpolicies",
+            "policy.sample.io",
+        )
+
+        self.assertEqual(contract.updateSpec, {"port": 8081})
+        self.assertEqual(
+            contract.updateAssertions[0].path,
+            "spec.template.spec.containers[0].ports[0].containerPort",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

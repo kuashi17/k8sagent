@@ -3,3 +3,4 @@ requirements:
   - requirements/secret-sync.txt
   - requirements/scheduled-task.txt
   - requirements/namespace-label-policy.txt
+  - evaluation/fixtures/requirements/node-sidecar.txt

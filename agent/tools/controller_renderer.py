@@ -119,6 +119,80 @@ func stringMapToInterface(input map[string]string) map[string]interface{{}} {{
 \treturn output
 }}
 
+func stringSliceToInterface(input []string) []interface{{}} {{
+\toutput := make([]interface{{}}, len(input))
+\tfor index, value := range input {{
+\t\toutput[index] = value
+\t}}
+\treturn output
+}}
+
+func setNestedValue(current interface{{}}, path []interface{{}}, value interface{{}}) error {{
+\t_, err := assignNestedValue(current, path, value)
+\treturn err
+}}
+
+func assignNestedValue(current interface{{}}, path []interface{{}}, value interface{{}}) (interface{{}}, error) {{
+\tif len(path) == 0 {{
+\t\treturn current, fmt.Errorf("nested path is empty")
+\t}}
+\tswitch node := current.(type) {{
+\tcase map[string]interface{{}}:
+\t\tkey, ok := path[0].(string)
+\t\tif !ok {{
+\t\t\treturn current, fmt.Errorf("expected map key, got %T", path[0])
+\t\t}}
+\t\tif len(path) == 1 {{
+\t\t\tnode[key] = value
+\t\t\treturn node, nil
+\t\t}}
+\t\tchild, exists := node[key]
+\t\tif !exists || child == nil {{
+\t\t\tif _, isIndex := path[1].(int); isIndex {{
+\t\t\t\tchild = []interface{{}}{{}}
+\t\t\t}} else {{
+\t\t\t\tchild = map[string]interface{{}}{{}}
+\t\t\t}}
+\t\t\tnode[key] = child
+\t\t}}
+\t\tupdated, err := assignNestedValue(child, path[1:], value)
+\t\tif err != nil {{
+\t\t\treturn current, err
+\t\t}}
+\t\tnode[key] = updated
+\t\treturn node, nil
+\tcase []interface{{}}:
+\t\tindex, ok := path[0].(int)
+\t\tif !ok {{
+\t\t\treturn current, fmt.Errorf("expected list index, got %T", path[0])
+\t\t}}
+\t\tfor len(node) <= index {{
+\t\t\tnode = append(node, nil)
+\t\t}}
+\t\tif len(path) == 1 {{
+\t\t\tnode[index] = value
+\t\t\treturn node, nil
+\t\t}}
+\t\tchild := node[index]
+\t\tif child == nil {{
+\t\t\tif _, isIndex := path[1].(int); isIndex {{
+\t\t\t\tchild = []interface{{}}{{}}
+\t\t\t}} else {{
+\t\t\t\tchild = map[string]interface{{}}{{}}
+\t\t\t}}
+\t\t\tnode[index] = child
+\t\t}}
+\t\tupdated, err := assignNestedValue(child, path[1:], value)
+\t\tif err != nil {{
+\t\t\treturn current, err
+\t\t}}
+\t\tnode[index] = updated
+\t\treturn node, nil
+\tdefault:
+\t\treturn current, fmt.Errorf("cannot descend into %T", current)
+\t}}
+}}
+
 func (r *{kind}Reconciler) SetupWithManager(mgr ctrl.Manager) error {{
 \treturn ctrl.NewControllerManagedBy(mgr).
 \t\tFor(&{alias}.{kind}{{}}){render_owned_watches(ir)}.

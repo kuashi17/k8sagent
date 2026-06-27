@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -788,9 +789,20 @@ def parse_json(text: str) -> dict[str, Any]:
 def get_path(value: dict[str, Any], path: str) -> Any:
     current: Any = value
     for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
+        match = re.fullmatch(r"([^\[]+)(?:\[(\d+)\])?", part)
+        if not match or not isinstance(current, dict):
             return None
-        current = current[part]
+        key, index = match.groups()
+        if key not in current:
+            return None
+        current = current[key]
+        if index is not None:
+            if not isinstance(current, list):
+                return None
+            position = int(index)
+            if position >= len(current):
+                return None
+            current = current[position]
     return current
 
 

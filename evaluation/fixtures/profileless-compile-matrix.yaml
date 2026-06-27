@@ -6,3 +6,4 @@ requirements:
   - requirements/pvc-provisioner.txt
   - requirements/namespace-label-policy.txt
   - evaluation/fixtures/requirements/queue-worker.txt
+  - evaluation/fixtures/requirements/node-sidecar.txt

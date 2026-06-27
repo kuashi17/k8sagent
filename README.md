@@ -1210,6 +1210,10 @@ Controller 생성의 일반화 경계는 다음과 같습니다.
 
 `evaluation/fixtures/requirements/queue-worker.txt`는 core 변경 없이 새로운 Custom Resource Kind를 생성·컴파일할 수 있는지 확인하는 held-out fixture입니다.
 
+관리 리소스 capability는 [resource-capabilities.yaml](config/resource-capabilities.yaml)에 선언합니다. 각 항목은 alias, API version, scope, ownership, lifecycle, name 후보, base spec, label path, field/status mapping을 포함하며 Pydantic으로 검증됩니다. `generic-object` emitter는 `containers[0].ports[0]` 같은 map/list 혼합 경로와 `int64`, `string-map`, `string-slice` transform을 공통 처리합니다.
+
+새 관리 리소스 일반화 검증은 Python 분기를 추가하는 방식이 아니라 catalog 항목과 `evaluation/fixtures/requirements/`의 held-out 요구사항만 추가하여 수행합니다.
+
 ## 스펙 기반 Kubebuilder Scaffold
 
 구조화 스펙 YAML을 기반으로 Kubebuilder 프로젝트를 생성할 수 있습니다.

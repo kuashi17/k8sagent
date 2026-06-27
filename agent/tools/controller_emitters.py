@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import re
+from typing import Any
 
 from agent.tools.controller_ir import (
     ControllerGenerationIR,
@@ -30,26 +32,27 @@ def render_dependencies(
     resource: ManagedResourceSpec,
     ir: ControllerGenerationIR,
 ) -> str:
-    if resource.emitter != "stateful-workload":
+    if not resource.dependency_kind:
         return ""
     service = next(
         (
             item
             for item in ir.managed_resources
-            if item.emitter == "network-service"
+            if item.kind == resource.dependency_kind
         ),
         None,
     )
+    variable = resource.dependency_variable or "dependencyName"
     if not service:
-        return "\tserviceName := name"
+        return f"\t{variable} := name"
     expression = source_expression(service.name.source_path)
     suffix = service.name.fallback_template.replace(
         "{metadata.name}-",
         "",
     )
-    return f'''\tserviceName := {expression}
-\tif serviceName == "" {{
-\t\tserviceName = instance.Name + "-{suffix}"
+    return f'''\t{variable} := {expression}
+\tif {variable} == "" {{
+\t\t{variable} = instance.Name + "-{suffix}"
 \t}}'''
 
 
@@ -107,89 +110,6 @@ def emit_storage_claim(
     return "\n".join(lines)
 
 
-def emit_scheduled_workload(
-    resource: ManagedResourceSpec,
-    _: ControllerGenerationIR,
-) -> str:
-    sources = source_by_target(resource)
-    image = source_expression(
-        sources.get(
-            "spec.jobTemplate.spec.template.spec.containers[0].image",
-            "spec.image",
-        )
-    )
-    lines = [
-        (
-            "\t\tcontainer := map[string]interface{}"
-            f'{{"name": "task", "image": {image}}}'
-        )
-    ]
-    command = sources.get(
-        "spec.jobTemplate.spec.template.spec.containers[0].command"
-    )
-    if command:
-        expression = source_expression(command)
-        lines.extend(
-            [
-                f"\t\tcommand := make([]interface{{}}, len({expression}))",
-                (
-                    f"\t\tfor index, value := range {expression} "
-                    "{ command[index] = value }"
-                ),
-                '\t\tcontainer["command"] = command',
-            ]
-        )
-    lines.append(
-        '\t\tresourceSpec := map[string]interface{}{"jobTemplate": '
-        'map[string]interface{}{"spec": map[string]interface{}'
-        '{"template": map[string]interface{}{"spec": '
-        'map[string]interface{}{"restartPolicy": "Never", '
-        '"containers": []interface{}{container}}}}}}'
-    )
-    append_direct_assignments(
-        lines,
-        sources,
-        {
-            "spec.schedule": "schedule",
-            "spec.suspend": "suspend",
-        },
-    )
-    lines.append(set_spec("resourceSpec"))
-    return "\n".join(lines)
-
-
-def emit_replicated_workload(
-    resource: ManagedResourceSpec,
-    _: ControllerGenerationIR,
-) -> str:
-    sources = source_by_target(resource)
-    lines = workload_container(sources)
-    lines.extend(
-        [
-            "\t\tnestedLabels := stringMapToInterface(labels)",
-            (
-                '\t\ttemplate := map[string]interface{}{"metadata": '
-                'map[string]interface{}{"labels": nestedLabels}, '
-                '"spec": map[string]interface{}'
-                '{"containers": []interface{}{container}}}'
-            ),
-            (
-                '\t\tresourceSpec := map[string]interface{}{"selector": '
-                'map[string]interface{}{"matchLabels": nestedLabels}, '
-                '"template": template}'
-            ),
-        ]
-    )
-    replicas = sources.get("spec.replicas")
-    if replicas:
-        lines.append(
-            '\t\tresourceSpec["replicas"] = int64('
-            f"{source_expression(replicas)})"
-        )
-    lines.append(set_spec("resourceSpec"))
-    return "\n".join(lines)
-
-
 def emit_stateful_workload(
     resource: ManagedResourceSpec,
     _: ControllerGenerationIR,
@@ -242,28 +162,6 @@ def emit_stateful_workload(
     return "\n".join(lines)
 
 
-def emit_network_service(
-    resource: ManagedResourceSpec,
-    _: ControllerGenerationIR,
-) -> str:
-    sources = source_by_target(resource)
-    lines = [
-        '\t\tresourceSpec := map[string]interface{}'
-        '{"selector": stringMapToInterface(labels)}'
-    ]
-    port = sources.get("spec.ports[0].port")
-    if port:
-        expression = source_expression(port)
-        lines.append(
-            '\t\tresourceSpec["ports"] = []interface{}{'
-            'map[string]interface{}{"port": int64('
-            f"{expression}), \"targetPort\": int64({expression})"
-            "}}"
-        )
-    lines.append(set_spec("resourceSpec"))
-    return "\n".join(lines)
-
-
 def emit_label_patch(
     resource: ManagedResourceSpec,
     _: ControllerGenerationIR,
@@ -277,6 +175,34 @@ def emit_label_patch(
         "{ labels[key] = value }\n"
         "\t\tobject.SetLabels(labels)"
     )
+
+
+def emit_generic_object(
+    resource: ManagedResourceSpec,
+    _: ControllerGenerationIR,
+) -> str:
+    lines = [
+        f"\t\tresourceSpec := {go_literal(resource.base_spec)}",
+    ]
+    if resource.label_paths:
+        lines.append(
+            "\t\tnestedLabels := stringMapToInterface(labels)"
+        )
+        for path in resource.label_paths:
+            lines.append(
+                "\t\tif err := setNestedValue(resourceSpec, "
+                f"{go_path(path)}, nestedLabels); err != nil "
+                "{ return err }"
+            )
+    for mapping in resource.field_mappings:
+        target = mapping.target_path.removeprefix("spec.")
+        lines.append(
+            "\t\tif err := setNestedValue(resourceSpec, "
+            f"{go_path(target)}, {mapping_value(mapping)}); "
+            "err != nil { return err }"
+        )
+    lines.append(set_spec("resourceSpec"))
+    return "\n".join(lines)
 
 
 def workload_container(sources: dict[str, str]) -> list[str]:
@@ -300,20 +226,6 @@ def workload_container(sources: dict[str, str]) -> list[str]:
             "}}"
         )
     return lines
-
-
-def append_direct_assignments(
-    lines: list[str],
-    sources: dict[str, str],
-    targets: dict[str, str],
-) -> None:
-    for target, key in targets.items():
-        source = sources.get(target)
-        if source:
-            lines.append(
-                f'\t\tresourceSpec["{key}"] = '
-                f"{source_expression(source)}"
-            )
 
 
 def set_spec(variable: str) -> str:
@@ -345,6 +257,51 @@ def source_expression(path: str) -> str:
     return '""'
 
 
+def mapping_value(mapping: Any) -> str:
+    expression = source_expression(mapping.source_path)
+    if mapping.transform == "int64":
+        return f"int64({expression})"
+    if mapping.transform == "string-slice":
+        return f"stringSliceToInterface({expression})"
+    if mapping.transform == "string-map":
+        return f"stringMapToInterface({expression})"
+    return expression
+
+
+def go_path(path: str) -> str:
+    tokens: list[str] = []
+    for part in path.split("."):
+        match = re.fullmatch(r"([^\[]+)(?:\[(\d+)\])?", part)
+        if not match:
+            raise ValueError(f"unsupported nested target path: {path}")
+        key, index = match.groups()
+        tokens.append(f'"{key}"')
+        if index is not None:
+            tokens.append(index)
+    return "[]interface{}{" + ", ".join(tokens) + "}"
+
+
+def go_literal(value: Any) -> str:
+    if isinstance(value, dict):
+        items = ", ".join(
+            f'"{key}": {go_literal(item)}'
+            for key, item in value.items()
+        )
+        return f"map[string]interface{{}}{{{items}}}"
+    if isinstance(value, list):
+        return "[]interface{}{" + ", ".join(
+            go_literal(item) for item in value
+        ) + "}"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if value is None:
+        return "nil"
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def nested_path(path: str) -> str:
     return ", ".join(
         f'"{part}"' for part in path.split(".") if part
@@ -367,9 +324,7 @@ def go_name(value: str) -> str:
 EMITTERS: dict[str, Emitter] = {
     "string-map": emit_string_map,
     "storage-claim": emit_storage_claim,
-    "scheduled-workload": emit_scheduled_workload,
-    "replicated-workload": emit_replicated_workload,
     "stateful-workload": emit_stateful_workload,
-    "network-service": emit_network_service,
     "label-patch": emit_label_patch,
+    "generic-object": emit_generic_object,
 }

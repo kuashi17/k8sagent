@@ -77,11 +77,11 @@ class ControllerRendererTest(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            '"matchLabels": nestedLabels',
+            '[]interface{}{"selector", "matchLabels"}',
             rendered,
         )
         self.assertIn(
-            '"selector": stringMapToInterface(labels)',
+            '[]interface{}{"selector"}',
             rendered,
         )
         self.assertIn(

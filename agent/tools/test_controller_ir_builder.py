@@ -83,7 +83,7 @@ class ControllerIRBuilderTest(unittest.TestCase):
             DeletionPolicy.GARBAGE_COLLECT,
         )
         self.assertIn(ResourceCapability.CREATE, deployment.capabilities)
-        self.assertEqual(deployment.emitter, "replicated-workload")
+        self.assertEqual(deployment.emitter, "generic-object")
         self.assertEqual(
             deployment.update_policy,
             UpdatePolicy.IN_PLACE,
@@ -154,11 +154,11 @@ class ControllerIRBuilderTest(unittest.TestCase):
     def test_unsupported_managed_resource_is_rejected(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
-            "unsupported managed resources: DaemonSet",
+            "unsupported managed resources: ReplicaSet",
         ):
             build_controller_ir(
                 model(
-                    ["DaemonSet"],
+                    ["ReplicaSet"],
                     ["image"],
                     ["phase"],
                 )

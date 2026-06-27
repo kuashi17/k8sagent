@@ -111,6 +111,29 @@ class KindDeploymentValidatorTest(unittest.TestCase):
             ],
         )
 
+    def test_get_path_supports_nested_list_indexes(self) -> None:
+        value = {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [
+                            {"ports": [{"containerPort": 8080}]}
+                        ]
+                    }
+                }
+            }
+        }
+
+        self.assertEqual(
+            get_path(
+                value,
+                (
+                    "spec.template.spec.containers[0]."
+                    "ports[0].containerPort"
+                ),
+            ),
+            8080,
+        )
     def test_declarative_assertion_and_snapshot_helpers(self) -> None:
         resource = {
             "apiVersion": "apps/v1",

@@ -1,0 +1,30 @@
+NodeSidecar라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 sample.io, group은 workload, version은 v1alpha1, kind는 NodeSidecar로 한다.
+
+spec에는 다음 필드를 포함한다.
+- image:string - 각 노드에서 실행할 컨테이너 이미지
+- port:int32 - 컨테이너 포트
+
+status에는 다음 필드를 포함한다.
+- phase:string - 현재 처리 상태
+- readyReplicas:int32 - 준비된 인스턴스 수
+- message:string - 상태 설명
+
+Controller는 NodeSidecar Custom Resource 변경을 감지한다.
+Controller는 DaemonSet 리소스를 생성/수정/삭제한다.
+
+Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다.
+- spec.image -> DaemonSet.spec.template.spec.containers[0].image
+- spec.port -> DaemonSet.spec.template.spec.containers[0].ports[0].containerPort
+
+Controller는 DaemonSet 상태를 조회하여 status.readyReplicas를 갱신한다.
+NodeSidecar가 삭제되면 ownerReference 정책에 따라 하위 리소스를 정리한다.
+
+필요한 RBAC 권한은 다음 리소스를 기준으로 추론한다.
+- apps/daemonsets
+
+검증 명령은 다음을 사용한다.
+- make generate
+- make manifests
+- make test

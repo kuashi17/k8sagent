@@ -165,6 +165,8 @@ def update_candidate(
         int,
     ):
         return field, current + 1, current + 1
+    if mapping.transform == "int64" and isinstance(current, int):
+        return field, current + 1, current + 1
     if mapping.target_path.endswith(".suspend") and isinstance(
         current,
         bool,
