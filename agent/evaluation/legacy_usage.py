@@ -52,19 +52,36 @@ def measure_legacy_usage(
                 references.append(reference)
                 if not approved:
                     violations.append({"legacyPath": item.get("id"), **reference})
+        reference_count = sum(ref["count"] for ref in references)
+        initial = int(item.get("initialReferences") or reference_count or 1)
+        target = int(item.get("targetReferences") or 0)
+        reduction = round(
+            max(min((initial - reference_count) / max(initial - target, 1) * 100, 100), 0),
+            1,
+        )
+        milestones = sorted(
+            [int(value) for value in item.get("milestones") or []],
+            reverse=True,
+        )
+        next_milestone = next(
+            (value for value in milestones if value < reference_count),
+            target,
+        )
         entries.append(
             {
                 "id": str(item.get("id") or ""),
                 "status": str(item.get("status") or "deprecated"),
                 "rationale": str(item.get("rationale") or ""),
                 "removalCondition": str(item.get("removalCondition") or ""),
-                "referenceCount": sum(ref["count"] for ref in references),
+                "referenceCount": reference_count,
                 "maxReferences": item.get("maxReferences"),
                 "targetReferences": item.get("targetReferences", 0),
+                "initialReferences": initial,
+                "reductionPercent": reduction,
+                "nextMilestone": next_milestone,
                 "references": references,
             }
         )
-        reference_count = sum(ref["count"] for ref in references)
         maximum = item.get("maxReferences")
         if maximum is not None and reference_count > int(maximum):
             violations.append(

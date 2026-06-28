@@ -55,7 +55,7 @@ class WarningContract(ContractModel):
     gpuPending: PendingWarningContract
 
 
-class LegacyJobE2EProfile(ContractModel):
+class JobWorkloadE2EProfile(ContractModel):
     profileName: str = Field(min_length=1)
     managedResources: list[str] = Field(min_length=1)
     referencedResources: list[str] = Field(min_length=1)
@@ -65,7 +65,7 @@ class LegacyJobE2EProfile(ContractModel):
     warnings: WarningContract
 
     @model_validator(mode="after")
-    def validate_adapter_capabilities(self) -> "LegacyJobE2EProfile":
+    def validate_adapter_capabilities(self) -> "JobWorkloadE2EProfile":
         if "Job" not in self.managedResources:
             raise ValueError(
                 f"{JOB_WORKLOAD_VALIDATOR} requires Job in managedResources"

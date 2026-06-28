@@ -52,7 +52,7 @@
     <p class="lead">{{ result_view.summary }}</p>
   </section>
   {% if job.journeyTimings and job.journeyTimings.totalJourneySeconds is not none %}
-  <p class="muted">전체 소요 {{ job.journeyTimings.totalJourneySeconds }}초 · 실행 {{ job.journeyTimings.executionSeconds }}초{% if job.journeyTimings.queueSeconds is not none %} · 대기 {{ job.journeyTimings.queueSeconds }}초{% endif %}</p>
+  <p class="muted">전체 여정 {{ job.journeyTimings.totalJourneySeconds }}초 · 자동화 {{ job.journeyTimings.automationSeconds }}초 · 승인 대기 {{ job.journeyTimings.approvalWaitingSeconds }}초{% if job.journeyTimings.queueSeconds is not none %} · worker 대기 {{ job.journeyTimings.queueSeconds }}초{% endif %}</p>
   {% endif %}
 
   {% if result_view.errors %}
@@ -105,9 +105,23 @@
     <h3>관리 기능의 검증 수준</h3>
     <ul class="clean-list">
       {% for item in result_view.capability_support %}
-      <li><strong>{{ item.resource }}</strong> · {{ item.level }} — {{ item.explanation }}</li>
+      <li>
+        <strong>{{ item.resource }}</strong> · {{ item.level }} — {{ item.explanation }}
+        {% if item.lastValidatedAt %}<br><span class="muted">마지막 검증 {{ item.lastValidatedAt }} · evidence run {{ item.evidenceRun }}</span>{% endif %}
+        {% if item.limitations %}<ul>{% for limitation in item.limitations %}<li>제한: {{ limitation }}</li>{% endfor %}</ul>{% endif %}
+      </li>
       {% endfor %}
     </ul>
+    {% endif %}
+    {% if result_view.code_explanation %}
+    <h3>무엇을 감시하나요?</h3>
+    <ul class="clean-list">{% for item in result_view.code_explanation.watches %}<li>{{ item }}</li>{% endfor %}</ul>
+    <h3>왜 이 권한이 필요한가요?</h3>
+    <ul class="clean-list">{% for item in result_view.code_explanation.rbacReasons %}<li>{{ item }}</li>{% endfor %}</ul>
+    <h3>삭제하면 어떻게 되나요?</h3>
+    <ul class="clean-list">{% for item in result_view.code_explanation.deletionBehavior %}<li>{{ item }}</li>{% endfor %}</ul>
+    <h3>먼저 볼 파일</h3>
+    <ol>{% for item in result_view.code_explanation.firstFiles %}<li><code>{{ item }}</code></li>{% endfor %}</ol>
     {% endif %}
   </section>
   {% endif %}
@@ -182,6 +196,7 @@
       <input type="hidden" name="mode" value="execute">
       <input type="hidden" name="run_level" value="{{ selected_run_level }}">
       <input type="hidden" name="confirm_execute" value="on">
+      <input type="hidden" name="approval_parent_job_id" value="{{ job.jobId }}">
       {% if result_view.capability_proposal %}
       <input type="hidden" name="capability_proposal" value="{{ result_view.capability_proposal }}">
       <input type="hidden" name="capability_approval" value="{{ result_view.capability_approval }}">

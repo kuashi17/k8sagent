@@ -160,6 +160,7 @@ class AgentTechnicalDetails(AgentContract):
     nextActions: list[str] = Field(default_factory=list)
     capabilitySupport: list[dict[str, Any]] = Field(default_factory=list)
     beginnerExplanation: list[str] = Field(default_factory=list)
+    codeExplanation: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApprovalRequest(AgentContract):

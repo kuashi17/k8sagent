@@ -22,6 +22,10 @@ class RequirementRunRequest(WebModel):
     capability_proposal: str = ""
     capability_approval: str = ""
     confirm_capability: bool = False
+    approval_parent_job_id: str = Field(
+        default="",
+        pattern=r"^[0-9A-Za-z-]*$",
+    )
 
     @model_validator(mode="after")
     def require_execute_confirmation(self) -> "RequirementRunRequest":
@@ -35,6 +39,10 @@ class RequirementRunRequest(WebModel):
         if has_capability_approval and self.mode != "execute":
             raise ValueError(
                 "Capability 계약 승인은 실제 생성 단계에서만 사용할 수 있습니다."
+            )
+        if self.approval_parent_job_id and self.mode != "execute":
+            raise ValueError(
+                "승인 대기 연결은 실제 생성 단계에서만 사용할 수 있습니다."
             )
         if has_capability_approval and not (
             self.capability_proposal
@@ -75,6 +83,9 @@ class RequirementRunRequest(WebModel):
                 "confirm_capability": checkbox(
                     form.get("confirm_capability")
                 ),
+                "approval_parent_job_id": str(
+                    form.get("approval_parent_job_id") or ""
+                ).strip(),
             }
         )
 
@@ -105,6 +116,7 @@ class RunResultView(WebModel):
     next_actions: list[str] = Field(default_factory=list)
     capability_support: list[dict[str, Any]] = Field(default_factory=list)
     beginner_explanation: list[str] = Field(default_factory=list)
+    code_explanation: dict[str, Any] = Field(default_factory=dict)
     can_execute: bool = False
     capability_proposal: str = ""
     capability_approval: str = ""

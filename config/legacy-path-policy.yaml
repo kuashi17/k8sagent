@@ -4,11 +4,12 @@ paths:
     status: deprecated
     rationale: Profile-backed Job/Pod/PVC compatibility until generic lifecycle parity is complete.
     removalCondition: Migrate remaining job-workload-v1 profiles to managed-resources validator contracts.
-    maxReferences: 8
+    maxReferences: 4
     targetReferences: 0
+    initialReferences: 19
+    milestones: [10, 5, 0]
     patterns:
       - job-workload-v1
-      - LegacyJobE2EProfile
       - agent.tools.e2e_runner
     allowedPaths:
       - agent/execution_engine.py

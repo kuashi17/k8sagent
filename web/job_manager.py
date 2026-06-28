@@ -112,7 +112,25 @@ class JobManager:
             "safety": read_json(self.repo_root / agent_log_dir / "safety-evaluation.json") if agent_log_dir else {},
             "recovery": (summary.get("recovery") or {}) if isinstance(summary, dict) else {},
         }
-        result["journeyTimings"] = build_journey_timings(result, summary)
+        parent_status = None
+        parent_summary: dict[str, Any] = {}
+        parent_id = str(
+            (status.get("metadata") or {}).get("approvalParentJobId") or ""
+        )
+        if parent_id:
+            parent_dir = self.root / safe_job_id(parent_id)
+            parent_status = self._read_status(parent_dir)
+            parent_log = str((parent_status or {}).get("agentLogDir") or "")
+            if parent_log:
+                parent_summary = read_json(
+                    self.repo_root / parent_log / "summary.json"
+                )
+        result["journeyTimings"] = build_journey_timings(
+            result,
+            summary,
+            parent_status,
+            parent_summary,
+        )
         return result
 
     def list(self, limit: int = 20) -> list[dict[str, Any]]:
@@ -371,6 +389,8 @@ def now_iso() -> str:
 def build_journey_timings(
     job: dict[str, Any],
     summary: dict[str, Any],
+    parent: dict[str, Any] | None = None,
+    parent_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now().astimezone()
     created = parse_iso(job.get("createdAt"))
@@ -378,11 +398,39 @@ def build_journey_timings(
     finished = parse_iso(job.get("finishedAt"))
     end = finished or now
     agent_total = (summary.get("timings") or {}).get("totalSeconds")
+    parent = parent or {}
+    parent_summary = parent_summary or {}
+    parent_created = parse_iso(parent.get("createdAt"))
+    parent_started = parse_iso(parent.get("startedAt"))
+    parent_finished = parse_iso(parent.get("finishedAt"))
+    current_execution = seconds_between(started, end)
+    parent_execution = seconds_between(parent_started, parent_finished)
+    automation = round(
+        (current_execution or 0) + (parent_execution or 0),
+        3,
+    )
+    approval_waiting = (
+        seconds_between(parent_finished, created)
+        if parent_finished
+        else 0.0
+    )
+    journey_start = parent_created or created
     return {
         "queueSeconds": seconds_between(created, started),
-        "executionSeconds": seconds_between(started, end),
-        "totalJourneySeconds": seconds_between(created, end),
+        "executionSeconds": current_execution,
+        "planningAutomationSeconds": parent_execution,
+        "generationAutomationSeconds": current_execution,
+        "automationSeconds": automation,
+        "approvalWaitingSeconds": approval_waiting,
+        "totalJourneySeconds": seconds_between(journey_start, end),
         "agentSeconds": float(agent_total) if agent_total is not None else None,
+        "parentAgentSeconds": (
+            float((parent_summary.get("timings") or {}).get("totalSeconds"))
+            if (parent_summary.get("timings") or {}).get("totalSeconds")
+            is not None
+            else None
+        ),
+        "approvalParentJobId": str(parent.get("jobId") or ""),
         "terminal": job.get("state") in TERMINAL_STATES,
     }
 

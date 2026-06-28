@@ -38,6 +38,13 @@ class AgentResultBuilderTest(unittest.TestCase):
         self.assertEqual(validated.status, "succeeded")
         self.assertEqual(validated.technicalDetails.kind, "Example")
         self.assertEqual(validated.validationResults["makeTest"], "succeeded")
+        support = validated.technicalDetails.capabilitySupport[0]
+        self.assertIn("lastValidatedAt", support)
+        explanation = validated.technicalDetails.codeExplanation
+        self.assertTrue(explanation["watches"])
+        self.assertTrue(explanation["rbacReasons"])
+        self.assertTrue(explanation["deletionBehavior"])
+        self.assertTrue(explanation["firstFiles"])
 
     def test_capability_and_recovery_require_approval(self) -> None:
         result = build_agent_result(

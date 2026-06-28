@@ -95,6 +95,7 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         beginner_explanation=strings(
             technical.get("beginnerExplanation")
         ),
+        code_explanation=dict(technical.get("codeExplanation") or {}),
         can_execute=bool(
             shared.get("canExecute")
             if shared

@@ -74,3 +74,10 @@ class CapabilityMatrixTest(unittest.TestCase):
         self.assertEqual(levels["Deployment"], "stable")
         self.assertEqual(levels["Service"], "stable")
         self.assertEqual(levels["ClusterRole"], "experimental")
+        deployment = next(
+            item
+            for item in result["capabilities"]
+            if item["resource"] == "Deployment"
+        )
+        self.assertTrue(deployment["evidenceBased"])
+        self.assertTrue(deployment["lastValidatedAt"])

@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 from agent.tools.e2e_profile_contract import (
     JOB_WORKLOAD_VALIDATOR,
     JobWorkloadSample,
-    LegacyJobE2EProfile,
+    JobWorkloadE2EProfile,
 )
 
 
@@ -85,7 +85,7 @@ def load_profile(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise SystemExit(f"profile YAML must be a mapping: {path}")
     try:
-        profile = LegacyJobE2EProfile.model_validate(data)
+        profile = JobWorkloadE2EProfile.model_validate(data)
     except ValidationError as exc:
         raise SystemExit(
             f"profile does not satisfy the {JOB_WORKLOAD_VALIDATOR} contract: "

@@ -6,6 +6,7 @@ from typing import Any
 
 from agent.contracts import AgentResult
 from agent.capability_support import support_for
+from agent.controller_explanation import build_controller_explanation
 
 
 def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
@@ -81,6 +82,10 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
                     str(requirement.get("kind") or ""),
                     capability_support,
                     final.get("validationResults") or {},
+                ),
+                "codeExplanation": build_controller_explanation(
+                    summary,
+                    capability_support,
                 ),
             },
             "approvalRequests": approvals,

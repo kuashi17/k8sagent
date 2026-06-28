@@ -8,10 +8,33 @@ import time
 import unittest
 from pathlib import Path
 
-from web.job_manager import JobManager, infer_phase
+from web.job_manager import JobManager, build_journey_timings, infer_phase
 
 
 class JobManagerTest(unittest.TestCase):
+    def test_linked_approval_journey_separates_human_wait(self) -> None:
+        timings = build_journey_timings(
+            {
+                "state": "succeeded",
+                "createdAt": "2026-06-28T00:00:25+00:00",
+                "startedAt": "2026-06-28T00:00:26+00:00",
+                "finishedAt": "2026-06-28T00:00:45+00:00",
+            },
+            {"timings": {"totalSeconds": 18}},
+            {
+                "jobId": "plan-1",
+                "createdAt": "2026-06-28T00:00:00+00:00",
+                "startedAt": "2026-06-28T00:00:01+00:00",
+                "finishedAt": "2026-06-28T00:00:05+00:00",
+            },
+            {"timings": {"totalSeconds": 3}},
+        )
+
+        self.assertEqual(timings["approvalWaitingSeconds"], 20)
+        self.assertEqual(timings["automationSeconds"], 23)
+        self.assertEqual(timings["totalJourneySeconds"], 45)
+        self.assertEqual(timings["approvalParentJobId"], "plan-1")
+
     def test_job_runs_in_background_and_persists_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

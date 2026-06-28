@@ -29,6 +29,18 @@ class WorkflowService:
         jobs: Any,
     ) -> dict[str, Any]:
         profile = self.validate_profile(request.profile)
+        if request.approval_parent_job_id:
+            parent = jobs.get(request.approval_parent_job_id)
+            parent_metadata = (parent or {}).get("metadata") or {}
+            if (
+                not parent
+                or parent.get("state") != "succeeded"
+                or parent.get("jobType") != "requirement"
+                or parent_metadata.get("mode") != "dry-run"
+            ):
+                raise ValueError(
+                    "승인 대기 시간을 연결할 완료된 계획 작업을 찾을 수 없습니다."
+                )
         if request.capability_proposal:
             self.validate_capability_approval(request)
         if request.kind_deploy and not profile:
@@ -62,6 +74,7 @@ class WorkflowService:
                 "runLevel": request.run_level,
                 "kindDeploy": request.kind_deploy,
                 "resumeExisting": request.resume_existing,
+                "approvalParentJobId": request.approval_parent_job_id,
             },
         )
 

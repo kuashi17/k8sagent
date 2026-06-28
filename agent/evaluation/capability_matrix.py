@@ -56,6 +56,10 @@ def build_capability_matrix(
             {
                 "resource": resource,
                 "level": level,
+                "evidenceBased": True,
+                "lastValidatedAt": datetime.now().astimezone().isoformat(
+                    timespec="seconds"
+                ),
                 "evidence": evidence,
                 "limitations": limitations(level, evidence),
             }
