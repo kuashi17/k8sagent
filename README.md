@@ -447,7 +447,7 @@ python3 agent/langchain_agent.py \
 | `agent/requirement_orchestrator.py` | 요구사항 계획, Tool 실행, 최종 평가, 복구 흐름 |
 | `agent/log_analysis_orchestrator.py` | 기존 실행 로그 분석 흐름 |
 | `agent/orchestration_common.py` | 오케스트레이터 공통 LLM 결과, 시간, 로그 헬퍼 |
-| `agent/contracts.py` | RequirementPlan, ToolCall, ToolResult, FinalEvaluation, FailureContext, RecoveryPlan, AgentSummary 계약 |
+| `agent/contracts.py` | RequirementPlan, ToolCall, ToolResult, FinalEvaluation, FailureContext, RecoveryPlan, AgentSummary, AgentResult 계약 |
 | `agent/llm` | Ollama local LLM client, prompt, planner |
 | `agent/rag` | 로컬 Markdown RAG 검색기 |
 | `agent/tools` | 기존 CLI 자동화 도구와 Tool wrapper |
@@ -1128,6 +1128,12 @@ Profileless kind 결과의 `timings.deploymentCategories`에는 Docker build, ki
 image load, cluster 준비, install/deploy, readiness, RBAC, lifecycle 검증 시간이
 사례별·전체 합계로 기록됩니다.
 
+각 kind deployment summary의 `runtimeEvidence`는 멱등성, 외부 drift 복구,
+RBAC 허용 목록과 wildcard 거부, 삭제 정책, finalizer, observedGeneration/Conditions를
+동일한 차원으로 기록합니다. Quick CI의 `legacy-usage` gate는
+`config/legacy-path-policy.yaml`에 승인되지 않은 legacy 참조가 추가되는 것을 막고
+참조 개수를 artifact로 남깁니다.
+
 Self-hosted Full runner의 pinned tool과 Go build/module cache는 runner의 영속
 로컬 경로를 사용합니다. 수백 MB를 매 실행마다 Actions cache로 내려받고 다시
 압축하지 않으며, checkout workspace 밖의 `$HOME/.cache/k8sagent/tools`,
@@ -1145,7 +1151,7 @@ GitHub Actions 분리:
 
 세 workflow는 suite별 `.ci-history/*.json`을 Actions cache로 복원·저장하므로 새 checkout에서도 직전 성능과 비교할 수 있습니다. 실행 결과 artifact는 run ID별 이름으로 30일 보존하며, `full`은 종료 시 자신이 사용하는 임시 kind 클러스터를 정리합니다.
 
-`standard`와 `full`은 local LLM planning cache를 workflow 간 복원하며, `full`은 pinned Go/kind/Kubebuilder 도구와 Go module/build cache도 유지합니다. 따라서 self-hosted runner의 checkout이 완전히 정리되어도 필요한 도구를 cache에서 복원하거나 자동 설치합니다. Profileless compile은 첫 fixture로 Go cache를 준비한 뒤 최대 2개만 병렬 실행하고, scaffold 직후의 중복 validation은 생략하되 artifact patch 이후 `make generate`, `make manifests`, `make test` 최종 gate는 그대로 수행합니다. Kind matrix는 동일 실행에서 통과한 compile workspace를 재사용합니다. 생성 Dockerfile은 BuildKit의 module/build cache mount를 사용하고 전체 의존성을 매번 다시 만드는 `go build -a`를 사용하지 않습니다.
+`standard`와 `full`은 local LLM planning cache를 workflow 간 복원합니다. `full`의 pinned Go/kind/Kubebuilder 도구와 Go module/build cache는 self-hosted runner의 checkout 밖 영속 경로를 사용하고, 도구가 없을 때만 자동 설치합니다. Profileless compile은 첫 fixture로 Go cache를 준비한 뒤 최대 2개만 병렬 실행하고, scaffold 직후의 중복 validation은 생략하되 artifact patch 이후 `make generate`, `make manifests`, `make test` 최종 gate는 그대로 수행합니다. Kind matrix는 동일 실행에서 통과한 compile workspace를 재사용합니다. 생성 Dockerfile은 BuildKit의 module/build cache mount를 사용하고 전체 의존성을 매번 다시 만드는 `go build -a`를 사용하지 않습니다.
 
 `full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
 

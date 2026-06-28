@@ -14,22 +14,26 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def present_run_result(job: dict[str, Any]) -> RunResultView:
     summary = job.get("summary") or {}
+    shared = summary.get("agentResult") or {}
+    technical = shared.get("technicalDetails") or {}
     requirement = summary.get("requirementSummary") or {}
     final = (summary.get("finalLLM") or {}).get("output") or {}
-    errors = strings(summary.get("errors"))
-    warnings = strings(summary.get("warnings"))
+    errors = strings(technical.get("errors") or summary.get("errors"))
+    warnings = strings(
+        technical.get("warnings") or summary.get("warnings")
+    )
     tool_results = summary.get("toolResults") or []
-    completed = [
+    completed = strings(technical.get("completedSteps")) or [
         tool_label(str(item.get("tool")))
         for item in tool_results
         if item.get("exitCode") == 0 and item.get("tool")
     ]
-    failed = [
+    failed = strings(technical.get("failedSteps")) or [
         tool_label(str(item.get("tool")))
         for item in tool_results
         if item.get("exitCode") not in {None, 0} and item.get("tool")
     ]
-    generated = [
+    generated = strings(technical.get("generatedArtifacts")) or [
         str(path)
         for path in (summary.get("generatedFiles") or {}).values()
         if path
@@ -41,7 +45,7 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
     )
     state = str(job.get("state") or "unknown")
     succeeded = state == "succeeded" and not errors
-    kind = str(requirement.get("kind") or "")
+    kind = str(technical.get("kind") or requirement.get("kind") or "")
     (
         proposal_path,
         proposal_id,
@@ -59,7 +63,8 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         )
     )
     beginner_summary = str(
-        final.get("beginnerSummary")
+        shared.get("beginnerSummary")
+        or final.get("beginnerSummary")
         or requirement.get("shortSummary")
         or (
             "계획과 생성 결과를 아래에서 확인할 수 있습니다."
@@ -73,17 +78,27 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         title=title,
         summary=beginner_summary,
         kind=kind,
-        managed_resources=strings(requirement.get("managedResources")),
+        managed_resources=(
+            strings(technical.get("managedResources"))
+            or strings(requirement.get("managedResources"))
+        ),
         completed_steps=completed,
         failed_steps=failed,
         generated_artifacts=unique(generated),
         warnings=warnings,
         errors=errors,
-        next_actions=strings(summary.get("nextRecommendedActions")),
+        next_actions=(
+            strings(technical.get("nextActions"))
+            or strings(summary.get("nextRecommendedActions"))
+        ),
         can_execute=bool(
-            succeeded
-            and summary.get("agentMode") == "dry-run"
-            and job.get("jobType") == "requirement"
+            shared.get("canExecute")
+            if shared
+            else (
+                succeeded
+                and summary.get("agentMode") == "dry-run"
+                and job.get("jobType") == "requirement"
+            )
         ),
         capability_proposal=proposal_path,
         capability_approval=proposal_id,

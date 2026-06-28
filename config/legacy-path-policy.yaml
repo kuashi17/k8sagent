@@ -1,0 +1,19 @@
+version: 1
+paths:
+  - id: legacy-job-workload-e2e
+    status: deprecated
+    rationale: Profile-backed Job/Pod/PVC compatibility until generic lifecycle parity is complete.
+    removalCondition: Migrate remaining job-workload-v1 profiles to managed-resources validator contracts.
+    patterns:
+      - job-workload-v1
+      - LegacyJobE2EProfile
+      - agent.tools.e2e_runner
+    allowedPaths:
+      - agent/execution_engine.py
+      - agent/test_execution_engine.py
+      - agent/test_requirement_analyzer.py
+      - agent/tools/e2e_profile_contract.py
+      - agent/tools/e2e_runner.py
+      - agent/tools/langchain_wrappers.py
+      - agent/tools/test_e2e_runner.py
+      - profiles/*.yaml

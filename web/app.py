@@ -182,16 +182,6 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
     )
 
 
-@app.get("/runs/{run_type}/{run_id}", response_class=HTMLResponse)
-async def legacy_web_run(
-    run_type: str,
-    run_id: str,
-) -> RedirectResponse:
-    if run_type == "job":
-        return RedirectResponse(f"/runs/job/{run_id}")
-    return RedirectResponse("/")
-
-
 @app.get("/api/jobs/{job_id}")
 async def job_status(job_id: str) -> JSONResponse:
     try:

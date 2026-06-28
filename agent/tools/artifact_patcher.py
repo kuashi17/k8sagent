@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agent.tools.controller_renderer import render_controller
+from agent.tools.controller_pipeline import generate_controller
 from agent.tools.controller_ir_builder import build_controller_ir
 from agent.tools.controller_ir import ReconcileStrategy
 from agent.tools.resource_catalog import load_resource_catalog
@@ -438,7 +438,7 @@ def patch_controller(text: str, model: dict[str, Any]) -> str:
         and model.get("project")
         and (model.get("controller") or {}).get("managedResources")
     ):
-        rendered = render_controller(model)
+        _, rendered = generate_controller(model)
         validate_controller_markers(rendered, model)
         validate_controller_behavior(rendered, model)
         return rendered

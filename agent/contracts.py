@@ -149,6 +149,37 @@ class AgentSummary(AgentContract):
     nextRecommendedActions: list[Any]
 
 
+class AgentTechnicalDetails(AgentContract):
+    kind: str = ""
+    managedResources: list[str] = Field(default_factory=list)
+    completedSteps: list[str] = Field(default_factory=list)
+    failedSteps: list[str] = Field(default_factory=list)
+    generatedArtifacts: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    nextActions: list[str] = Field(default_factory=list)
+
+
+class ApprovalRequest(AgentContract):
+    type: Literal["capability", "execution", "recovery"]
+    required: bool = True
+    reason: str
+    proposalPath: str = ""
+
+
+class AgentResult(AgentContract):
+    """Single presentation contract shared by Agent artifacts and Web UI."""
+
+    status: str
+    succeeded: bool
+    beginnerSummary: str
+    technicalDetails: AgentTechnicalDetails
+    approvalRequests: list[ApprovalRequest] = Field(default_factory=list)
+    validationResults: dict[str, Any] = Field(default_factory=dict)
+    recoveryState: dict[str, Any] = Field(default_factory=dict)
+    canExecute: bool = False
+
+
 LLM_OUTPUT_CONTRACTS: dict[str, type[AgentContract]] = {
     "requirement-planning": RequirementPlan,
     "tool-result-evaluation": FinalEvaluation,

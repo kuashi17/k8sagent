@@ -126,6 +126,15 @@ def run_suite(
                 str(output_dir / "rag-quality.json"),
             ],
         ),
+        run_check(
+            "legacy-usage",
+            [
+                sys.executable,
+                "agent/evaluation/legacy_usage.py",
+                "--output",
+                str(output_dir / "legacy-usage.json"),
+            ],
+        ),
     ]
 
     reliability_command = [

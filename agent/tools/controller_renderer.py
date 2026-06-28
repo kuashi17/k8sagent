@@ -1,8 +1,6 @@
-"""Render profile-less Controller behavior from a generalized Operator spec."""
+"""Render Controller source exclusively from validated generation IR."""
 
 from __future__ import annotations
-
-from typing import Any
 
 from agent.tools.controller_ir import (
     ControllerGenerationIR,
@@ -12,7 +10,6 @@ from agent.tools.controller_ir import (
     ReconcileStrategy,
     ResourceScope,
 )
-from agent.tools.controller_ir_builder import build_controller_ir
 from agent.tools.controller_emitters import (
     render_dependencies,
     render_mutations,
@@ -20,8 +17,13 @@ from agent.tools.controller_emitters import (
 )
 
 
-def render_controller(model: dict[str, Any]) -> str:
-    ir = build_controller_ir(model)
+def render_controller(ir: ControllerGenerationIR) -> str:
+    """Render Go source without reading Operator spec or catalog models."""
+    if not isinstance(ir, ControllerGenerationIR):
+        raise TypeError(
+            "render_controller requires ControllerGenerationIR; "
+            "convert source input to IR first"
+        )
     kind = ir.kind
     alias = api_alias(ir.api_group, ir.api_version)
     resources = ir.renderable_resources()

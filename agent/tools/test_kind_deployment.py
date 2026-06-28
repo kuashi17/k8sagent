@@ -6,19 +6,51 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from agent.tools.kind_deployment_runner import KindDeploymentEngine
+from agent.tools.kind_deployment_runner import (
+    KindDeploymentEngine,
+    build_runtime_evidence,
+)
 from agent.tools.kind_deployment_runner import is_transient_docker_failure
 from agent.tools.kind_deployment_validators import (
     AppConfigConfigMapValidator,
     ManagedResourceValidator,
     create_validator,
+    drift_value,
     get_path,
+    json_pointer,
     normalized_resource_snapshot,
 )
 from agent.tools.langchain_wrappers import kind_deployment_runner
 
 
 class KindDeploymentValidatorTest(unittest.TestCase):
+    def test_runtime_evidence_has_stable_quality_dimensions(self) -> None:
+        result = build_runtime_evidence(
+            {
+                "lifecycleIdempotency": {"reapplyStable": True},
+                "lifecycleDriftRecovery": {"recovered": True},
+                "rbacPreflight": [{"allowed": True}],
+                "rbacLeastPrivilege": {"passed": True},
+                "lifecycleDelete": {
+                    "customResourceAbsent": True,
+                    "managedResources": {
+                        "deployment/sample": {"passed": True}
+                    },
+                },
+                "stateMachineStatus": {
+                    "observedGeneration": 2,
+                    "conditions": [{"type": "Ready"}],
+                },
+            }
+        )
+
+        self.assertEqual(result["idempotency"]["status"], "passed")
+        self.assertEqual(result["driftRecovery"]["status"], "passed")
+        self.assertEqual(
+            result["rbacLeastPrivilege"]["status"], "passed"
+        )
+        self.assertEqual(result["finalizer"]["status"], "not-applicable")
+
     def test_only_known_transient_docker_errors_are_retryable(self) -> None:
         self.assertTrue(
             is_transient_docker_failure(
@@ -190,6 +222,25 @@ class KindDeploymentValidatorTest(unittest.TestCase):
                 ),
             ),
             8080,
+        )
+        self.assertEqual(
+            json_pointer(
+                "spec.template.spec.containers[0].ports[0].containerPort"
+            ),
+            "/spec/template/spec/containers/0/ports/0/containerPort",
+        )
+        self.assertEqual(drift_value(2), 39)
+        self.assertEqual(
+            drift_value({"mode": "safe"}),
+            {"mode": "safe-drift"},
+        )
+        self.assertEqual(
+            drift_value(
+                {"token": "dmFsdWU="},
+                resource="secret",
+                path="data",
+            ),
+            {"token": "ZHJpZnQ="},
         )
 
     def test_recreate_update_is_driven_by_controller_contract(self) -> None:

@@ -62,6 +62,16 @@ requirement
 | Error Diagnosis Agent | 오류 원인 후보, 수정 포인트, 다음 조치 방향 제시 |
 | Extension Adapter | GitHub, Jenkins, Harbor, Argo CD 연계를 위한 확장 계층 |
 
+Controller 생성 경계는 `operator_spec → controller_ir → generated_code` 단방향입니다.
+`controller_renderer.py`와 emitter는 `ControllerGenerationIR`만 입력받으며 원본 spec,
+capability catalog, profile 또는 legacy adapter를 직접 참조하지 않습니다. Catalog의
+조건부 객체와 behavior binding은 `capability_adapter.py`, 충돌 검증은
+`capability_validation_policy.py`에서 IR 생성 전에 해소합니다.
+
+Agent 실행 결과는 `AgentResult` 계약으로 `beginnerSummary`, `technicalDetails`,
+`approvalRequests`, `validationResults`, `recoveryState`를 함께 기록합니다. Web UI는
+별도 결과 모델을 추론하지 않고 이 계약을 표시 계층으로 변환합니다.
+
 ## Core Agent와 Profile/Plugin 구분
 
 이 프로젝트는 특정 Operator를 생성하는 단일 목적 도구가 아니라 Kubebuilder 기반 Operator 개발 절차를 자동화하는 범용 Agent 시스템입니다.
@@ -82,7 +92,7 @@ TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증용 profile/ex
 | `agent/tools/spec_generator.py` | 자연어 요구사항을 `operator-spec.yaml`로 변환 | 범용 core |
 | `agent/tools/command_planner.py` | 스펙 기반 Kubebuilder 실행 계획 생성 | 범용 core |
 | `agent/tools/scaffold_runner.py` | Kubebuilder scaffold, preflight, generate/manifests/test 실행 | 범용 core |
-| `agent/tools/artifact_patcher.py` | API 타입, sample, RBAC marker 보정 | core와 TrainingJob profile 로직이 일부 섞임 |
+| `agent/tools/artifact_patcher.py` | API 타입, sample, RBAC marker 보정과 IR pipeline 호출 | 범용 core, legacy profile patch는 명시적 adapter로만 유지 |
 | `agent/tools/e2e_runner.py` | `job-workload-v1` profile용 legacy 호환 adapter | 명시적 Pydantic profile 계약, 특정 CR 기본값 없음 |
 | `agent/tools/log_analyzer.py` | summary/log 분석과 오류 유형 분류 | core와 TrainingJob 재실행/검증 단계명이 일부 섞임 |
 

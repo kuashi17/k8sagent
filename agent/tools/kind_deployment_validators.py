@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import re
 import time
 from pathlib import Path
@@ -419,6 +420,18 @@ class ManagedResourceValidator:
             and item.get("resource")
             and item.get("path")
         ]
+        self.drift_assertions = [
+            {
+                "resource": str(item.get("resource") or ""),
+                "name": str(item.get("name") or self.sample_name),
+                "path": str(item.get("path") or ""),
+                "equals": item.get("equals"),
+            }
+            for item in config.get("driftAssertions") or []
+            if isinstance(item, dict)
+            and item.get("resource")
+            and item.get("path")
+        ]
         self.update_assertions = [
             {
                 "resource": str(item.get("resource") or ""),
@@ -454,6 +467,14 @@ class ManagedResourceValidator:
                     "validator": self.name,
                 }
             )
+            if self.drift_assertions:
+                steps.append(
+                    {
+                        "name": "verify-drift-recovery",
+                        "mutating": True,
+                        "validator": self.name,
+                    }
+                )
         steps.extend([
             {"name": "apply-setup-resources", "validator": self.name},
             {"name": "verify-managed-resources", "validator": self.name},
@@ -556,6 +577,8 @@ class ManagedResourceValidator:
 
     def verify_lifecycle(self, engine: DeploymentEngine) -> None:
         self.verify_idempotency(engine)
+        if self.drift_assertions:
+            self.verify_drift_recovery(engine)
         if self.update_spec:
             self.verify_update(engine)
         engine.failed_step = "verify-delete"
@@ -730,6 +753,49 @@ class ManagedResourceValidator:
             "resources": sorted(before),
         }
 
+    def verify_drift_recovery(self, engine: DeploymentEngine) -> None:
+        engine.failed_step = "verify-drift-recovery"
+        assertion = self.drift_assertions[0]
+        expected = assertion["equals"]
+        drifted = drift_value(
+            expected,
+            resource=assertion["resource"],
+            path=assertion["path"],
+        )
+        patch = json.dumps(
+            [
+                {
+                    "op": "replace",
+                    "path": json_pointer(assertion["path"]),
+                    "value": drifted,
+                }
+            ],
+            separators=(",", ":"),
+        )
+        engine.run_cmd(
+            "kubectl-inject-managed-resource-drift",
+            self.kubectl(
+                [
+                    "patch",
+                    assertion["resource"],
+                    assertion["name"],
+                    "--type=json",
+                    "-p",
+                    patch,
+                ]
+            ),
+            timeout=120,
+        )
+        recovered = self.wait_assertion(engine, assertion)
+        engine.checks["lifecycleDriftRecovery"] = {
+            "resource": assertion["resource"],
+            "name": assertion["name"],
+            "path": assertion["path"],
+            "driftedValue": drifted,
+            "expectedValue": expected,
+            "recovered": bool(recovered.get("passed")),
+        }
+
     def summary(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -740,6 +806,7 @@ class ManagedResourceValidator:
             },
             "managedResources": self.managed_resources,
             "initialAssertions": self.initial_assertions,
+            "driftAssertions": self.drift_assertions,
             "updateSpec": self.update_spec,
             "updateAssertions": self.update_assertions,
             "updateMode": self.update_mode,
@@ -882,6 +949,46 @@ def get_path(value: dict[str, Any], path: str) -> Any:
                 return None
             current = current[position]
     return current
+
+
+def json_pointer(path: str) -> str:
+    parts: list[str] = []
+    for segment in path.split("."):
+        match = re.fullmatch(r"([^\[]+)(?:\[(\d+)\])?", segment)
+        if not match:
+            raise ValueError(f"unsupported assertion path: {path}")
+        key, index = match.groups()
+        parts.append(key.replace("~", "~0").replace("/", "~1"))
+        if index is not None:
+            parts.append(index)
+    return "/" + "/".join(parts)
+
+
+def drift_value(
+    value: Any,
+    *,
+    resource: str = "",
+    path: str = "",
+) -> Any:
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 37
+    if isinstance(value, str):
+        return value + "-drift"
+    if isinstance(value, dict):
+        if value:
+            result = dict(value)
+            first = next(iter(result))
+            if resource == "secret" and path == "data":
+                result[first] = base64.b64encode(b"drift").decode("ascii")
+            else:
+                result[first] = drift_value(result[first])
+            return result
+        return {"drift": "injected"}
+    if isinstance(value, list):
+        return [] if value else ["drift"]
+    raise ValueError(f"unsupported drift value: {value!r}")
 
 
 def normalized_resource_snapshot(

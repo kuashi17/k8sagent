@@ -5,11 +5,15 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from agent.tools.controller_renderer import render_controller
+from agent.tools.controller_pipeline import generate_controller
 from agent.tools.resource_catalog import load_resource_catalog
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def render_controller(model: dict) -> str:
+    return generate_controller(model)[1]
 
 
 class GeneralizationBoundaryTest(unittest.TestCase):
@@ -34,6 +38,27 @@ class GeneralizationBoundaryTest(unittest.TestCase):
         )
         for value in forbidden:
             self.assertNotIn(value, source)
+
+    def test_renderer_accepts_only_ir_and_has_no_spec_dependencies(self) -> None:
+        source = (
+            REPO_ROOT / "agent" / "tools" / "controller_renderer.py"
+        ).read_text(encoding="utf-8")
+        forbidden = (
+            "controller_ir_builder",
+            "resource_catalog",
+            "build_controller_ir",
+            'model.get("controller")',
+            'model["api"]',
+            "operator_spec",
+            "legacy",
+        )
+        for value in forbidden:
+            self.assertNotIn(value, source)
+
+        with self.assertRaises(TypeError):
+            from agent.tools.controller_renderer import render_controller as render_ir
+
+            render_ir({})  # type: ignore[arg-type]
 
     def test_matrix_cases_live_in_fixture_not_runner(self) -> None:
         runner = (

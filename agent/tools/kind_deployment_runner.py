@@ -218,6 +218,34 @@ class KindDeploymentEngine:
                     f"Controller RBAC denied: {item['verb']} {resource}"
                 )
         self.checks["rbacPreflight"] = checks
+        wildcard = self.run_cmd(
+            "kubectl-auth-can-i-wildcard",
+            [
+                "kubectl",
+                "auth",
+                "can-i",
+                "*",
+                "*",
+                "--namespace",
+                self.args.namespace,
+                "--as",
+                service_account,
+            ],
+            check=False,
+        )
+        wildcard_allowed = (
+            wildcard["exitCode"] == 0
+            and wildcard["stdout"].strip() == "yes"
+        )
+        self.checks["rbacLeastPrivilege"] = {
+            "wildcardAllowed": wildcard_allowed,
+            "passed": not wildcard_allowed,
+        }
+        if wildcard_allowed:
+            self.failed_step = "rbac-preflight"
+            raise RuntimeError(
+                "Controller service account unexpectedly has wildcard access"
+            )
 
     def run_cmd(
         self,
@@ -320,12 +348,79 @@ class KindDeploymentEngine:
             "deployment": self.args.deployment,
             "sample": rel(self.sample),
             "checks": self.checks,
+            "runtimeEvidence": build_runtime_evidence(self.checks),
             "steps": self.steps,
             "elapsedSeconds": round(time.time() - self.started, 3),
             "logDir": rel(self.log_dir),
         }
         (self.log_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         return summary
+
+
+def build_runtime_evidence(checks: dict[str, Any]) -> dict[str, Any]:
+    """Normalize lifecycle checks into stable evaluation dimensions."""
+    rbac = checks.get("rbacPreflight") or []
+    least = checks.get("rbacLeastPrivilege") or {}
+    deletion = checks.get("lifecycleDelete") or {}
+    managed_delete = deletion.get("managedResources") or {}
+    finalizer = checks.get("finalizerLifecycle") or {}
+    state_machine = checks.get("stateMachineStatus") or {}
+    return {
+        "idempotency": evidence(
+            checks.get("lifecycleIdempotency"),
+            bool(
+                (checks.get("lifecycleIdempotency") or {}).get(
+                    "reapplyStable"
+                )
+            ),
+        ),
+        "driftRecovery": evidence(
+            checks.get("lifecycleDriftRecovery"),
+            bool(
+                (checks.get("lifecycleDriftRecovery") or {}).get(
+                    "recovered"
+                )
+            ),
+        ),
+        "rbacLeastPrivilege": evidence(
+            {"requiredChecks": rbac, "wildcardCheck": least}
+            if rbac or least
+            else {},
+            bool(rbac)
+            and all(item.get("allowed") for item in rbac)
+            and least.get("passed") is True,
+        ),
+        "deletionPolicy": evidence(
+            deletion,
+            bool(deletion.get("customResourceAbsent"))
+            and all(item.get("passed") for item in managed_delete.values()),
+        ),
+        "finalizer": evidence(
+            finalizer,
+            bool(finalizer.get("customResourceRemoved")),
+            not bool(checks.get("finalizerRegistration")),
+        ),
+        "stateMachine": evidence(
+            state_machine,
+            bool(state_machine.get("observedGeneration"))
+            and bool(state_machine.get("conditions")),
+        ),
+    }
+
+
+def evidence(
+    details: Any,
+    passed: bool,
+    not_applicable: bool = False,
+) -> dict[str, Any]:
+    return {
+        "status": (
+            "not-applicable"
+            if not_applicable
+            else ("passed" if passed else "not-run")
+        ),
+        "details": details or {},
+    }
 
 
 def parse_duration_seconds(value: str) -> int:

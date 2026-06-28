@@ -12,7 +12,11 @@ from agent.tools.controller_ir import (
     UpdatePolicy,
 )
 from agent.tools.controller_ir_builder import build_controller_ir
-from agent.tools.controller_renderer import render_controller
+from agent.tools.controller_pipeline import generate_controller
+
+
+def render_controller(model: dict) -> str:
+    return generate_controller(model)[1]
 from agent.tools.resource_catalog import load_resource_catalog
 
 

@@ -48,6 +48,9 @@ class KindValidationContract(ContractModel):
     initialAssertions: list[AssertionContract] = Field(
         default_factory=list
     )
+    driftAssertions: list[AssertionContract] = Field(
+        default_factory=list
+    )
     updateSpec: dict[str, Any] = Field(default_factory=dict)
     updateAssertions: list[AssertionContract] = Field(
         default_factory=list
@@ -73,6 +76,7 @@ def build_validation_contract(
     update_spec: dict[str, Any] = {}
     assertions = []
     initial_assertions = []
+    drift_assertions = []
     update_mode = UpdatePolicy.NONE
     rbac = [
         RBACCheckContract(
@@ -92,8 +96,14 @@ def build_validation_contract(
                 updatePolicy=resource.update_policy.value,
             )
         )
-        initial_assertions.extend(
-            initial_assertions_for(resource, sample_spec, name)
+        resource_assertions = initial_assertions_for(
+            resource, sample_spec, name
+        )
+        initial_assertions.extend(resource_assertions)
+        drift_assertions.extend(
+            item
+            for item in resource_assertions
+            if is_safe_drift_path(item.path)
         )
         if resource.strategy == ReconcileStrategy.PATCH_EXISTING:
             setup.append(
@@ -125,6 +135,7 @@ def build_validation_contract(
         sampleName=sample_name,
         managedResources=managed,
         initialAssertions=initial_assertions,
+        driftAssertions=drift_assertions[:1],
         updateSpec=update_spec,
         updateAssertions=assertions,
         updateMode=update_mode.value,
@@ -227,6 +238,21 @@ def transformed_value(transform: str, value: Any) -> Any:
             for key, item in value.items()
         }
     return value
+
+
+def is_safe_drift_path(path: str) -> bool:
+    """Limit runtime drift mutation to fields accepted by Kubernetes APIs."""
+    return any(
+        marker in path
+        for marker in (
+            ".image",
+            ".replicas",
+            ".suspend",
+            ".port",
+            ".targetPort",
+            "metadata.labels.",
+        )
+    ) or path in {"data", "stringData"}
 
 
 def update_candidate(

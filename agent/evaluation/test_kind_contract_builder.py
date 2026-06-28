@@ -246,6 +246,10 @@ class KindContractBuilderTest(unittest.TestCase):
             initial["spec.template.spec.containers[0].env"],
             [{"name": "MODE", "value": "test"}],
         )
+        self.assertEqual(
+            contract.driftAssertions[0].path,
+            "spec.template.spec.containers[0].image",
+        )
 
 
 if __name__ == "__main__":

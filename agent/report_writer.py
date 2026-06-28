@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from agent.result_builder import build_agent_result
+
 
 def write_agent_artifacts(
     log_dir: Path,
@@ -24,7 +26,9 @@ def write_agent_artifacts(
         execution = {"validatedToolCalls": [], "rejectedToolCalls": [], "toolResults": execution_or_results}
         tool_results = execution_or_results
 
+    summary["agentResult"] = build_agent_result(summary)
     write_json(log_dir / "summary.json", summary)
+    write_json(log_dir / "agent-result.json", summary["agentResult"])
     write_optional_json(log_dir / "evidence-trace.json", summary.get("evidenceTrace"))
     write_optional_json(log_dir / "safety-evaluation.json", summary.get("safetyEvaluation"))
     write_optional_json(log_dir / "timings.json", summary.get("timings"))

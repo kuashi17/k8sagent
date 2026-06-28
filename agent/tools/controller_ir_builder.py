@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any
+
+from agent.tools.capability_adapter import adapt_capability
+from agent.tools.capability_validation_policy import (
+    validate_mutation_contract,
+)
 
 from agent.tools.controller_ir import (
     ControllerStateMachine,
@@ -17,7 +21,6 @@ from agent.tools.controller_ir import (
     RBACRule,
     ReconcileStrategy,
     ResourceCapability,
-    StaticMutation,
     StatusMapping,
     UpdatePolicy,
 )
@@ -125,22 +128,22 @@ def build_managed_resource(
     kind = defaults.kind
     name_field = first_field(fields, *defaults.nameFields)
     capabilities = capabilities_for(defaults)
-    behavior_mappings, static_mutations, active_behaviors = (
-        behavior_contract_for(
-            defaults,
-            primitives,
-            fields,
-            explicit_mappings,
-        )
+    catalog = load_resource_catalog()
+    adapted = adapt_capability(
+        defaults,
+        primitives,
+        fields,
+        explicit_mappings,
+        catalog.by_name(),
     )
     mappings = mappings_for(
         defaults,
         fields,
         explicit_mappings,
-        behavior_mappings,
+        adapted.field_mappings,
         primitives,
     )
-    validate_mutation_contract(kind, mappings, static_mutations)
+    validate_mutation_contract(kind, mappings, adapted.static_mutations)
     return ManagedResourceSpec(
         resource_id=kind[:1].lower() + kind[1:],
         api_version=defaults.apiVersion,
@@ -158,8 +161,8 @@ def build_managed_resource(
         update_policy=resource_update_policy(defaults, mappings),
         watch=ResourceCapability.WATCH in capabilities,
         field_mappings=mappings,
-        static_mutations=static_mutations,
-        active_behaviors=active_behaviors,
+        static_mutations=adapted.static_mutations,
+        active_behaviors=adapted.active_behaviors,
         status_mappings=status_mappings_for(
             defaults,
             status_fields,
@@ -171,103 +174,12 @@ def build_managed_resource(
             and defaults.disableField in fields
             else ""
         ),
-        base_object=base_object_for(defaults, fields),
+        base_object=adapted.base_object,
         label_paths=defaults.labelPaths,
         dependency_kind=defaults.dependencyKind,
         dependency_variable=defaults.dependencyVariable,
         dependency_target_path=defaults.dependencyTargetPath,
     )
-
-
-def behavior_contract_for(
-    defaults: ResourceCapabilityDefinition,
-    primitives: dict[str, CatalogBehaviorPrimitive],
-    fields: set[str],
-    explicit_mappings: list[FieldMapping],
-) -> tuple[list[FieldMapping], list[StaticMutation], list[str]]:
-    mappings: list[FieldMapping] = []
-    static: list[StaticMutation] = []
-    active: list[str] = []
-    explicit_targets = {
-        normalize_target_path(mapping.target_path)
-        for mapping in explicit_mappings
-        if target_resource(mapping.target_path) == defaults.kind
-    }
-    for binding in defaults.behaviorBindings:
-        primitive = primitives[binding.primitive]
-        present = [field in fields for field in primitive.activationFields]
-        field_enabled = (
-            all(present)
-            if primitive.activationMode == "all"
-            else any(present)
-        )
-        rendered_targets = {
-            mutation.target.format(**binding.paths)
-            for mutation in primitive.mutations
-        }
-        enabled = field_enabled or bool(
-            rendered_targets.intersection(explicit_targets)
-        )
-        if not enabled:
-            continue
-        active.append(primitive.name)
-        for mutation in primitive.mutations:
-            target = mutation.target.format(**binding.paths)
-            if mutation.source and mutation.source in fields:
-                mappings.append(
-                    FieldMapping(
-                        source_path=f"spec.{mutation.source}",
-                        target_path=target,
-                        transform=mutation.transform,
-                        mutability=mutation.mutability,
-                        update_policy=mutation.updatePolicy,
-                    )
-                )
-            elif target in explicit_targets:
-                # The explicit mapping carries the user-selected source field.
-                # Its target still activates this behavior and receives the
-                # primitive transform in mappings_for().
-                continue
-            elif mutation.source and mutation.defaultValue is not None:
-                static.append(
-                    StaticMutation(
-                        target_path=target,
-                        value=mutation.defaultValue,
-                        transform=mutation.transform,
-                    )
-                )
-            elif mutation.literal is not None:
-                static.append(
-                    StaticMutation(
-                        target_path=target,
-                        value=mutation.literal,
-                        transform=mutation.transform,
-                    )
-                )
-    return mappings, static, active
-
-
-def base_object_for(
-    defaults: ResourceCapabilityDefinition,
-    fields: set[str],
-) -> dict[str, Any]:
-    result = deepcopy(defaults.baseObject)
-    for conditional in defaults.conditionalObjects:
-        source = conditional.whenSource.removeprefix("spec.")
-        if source in fields:
-            merge_mapping(result, deepcopy(conditional.object))
-    return result
-
-
-def merge_mapping(
-    target: dict[str, Any],
-    source: dict[str, Any],
-) -> None:
-    for key, value in source.items():
-        if isinstance(value, dict) and isinstance(target.get(key), dict):
-            merge_mapping(target[key], value)
-        else:
-            target[key] = value
 
 
 def capabilities_for(
@@ -394,31 +306,6 @@ def mappings_for(
             result.append(mapping)
             existing_pairs.add(pair)
     return result
-
-
-def validate_mutation_contract(
-    kind: str,
-    mappings: list[FieldMapping],
-    static_mutations: list[StaticMutation],
-) -> None:
-    targets: dict[str, str] = {}
-    for mapping in mappings:
-        previous = targets.get(mapping.target_path)
-        if previous and previous != mapping.source_path:
-            raise ValueError(
-                f"conflicting {kind} mutation target "
-                f"{mapping.target_path}: {previous} and "
-                f"{mapping.source_path}"
-            )
-        targets[mapping.target_path] = mapping.source_path
-    for mutation in static_mutations:
-        previous = targets.get(mutation.target_path)
-        if previous:
-            raise ValueError(
-                f"conflicting {kind} mutation target "
-                f"{mutation.target_path}: {previous} and static value"
-            )
-        targets[mutation.target_path] = "static value"
 
 
 def behavior_mutation_for_target(
