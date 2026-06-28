@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,7 @@ DEFAULT_MATRIX = (
 )
 
 def main() -> int:
+    started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--requirement",
@@ -113,6 +115,10 @@ def main() -> int:
             "status": status,
             "profileUsed": False,
             "results": results,
+            "timings": aggregate_kind_timings(
+                results,
+                round(time.perf_counter() - started, 3),
+            ),
         }
         write_result(output_dir, payload)
         print(
@@ -137,6 +143,7 @@ def run_requirement(
     cluster_name: str,
     precompiled_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    case_started = time.perf_counter()
     output_dir.mkdir(parents=True, exist_ok=True)
     compile_result = precompiled_result or compile_requirement(
         requirement,
@@ -151,21 +158,41 @@ def run_requirement(
             {},
             [],
             "profile-less compile failed",
+            {
+                "caseSeconds": round(
+                    time.perf_counter() - case_started,
+                    3,
+                ),
+                "contractBuildSeconds": 0.0,
+                "runnerSeconds": 0.0,
+                "deploymentStepSeconds": 0.0,
+                "deploymentCategories": {},
+            },
         )
 
     spec_path = Path(compile_result["specPath"])
     project_dir = Path(compile_result["projectDir"])
+    contract_started = time.perf_counter()
     contract = build_kind_contract(
         read_yaml(spec_path),
         project_dir,
         cluster_name,
     )
+    contract_seconds = round(
+        time.perf_counter() - contract_started,
+        3,
+    )
     command = build_kind_command(contract)
+    runner_started = time.perf_counter()
     completed = subprocess.run(
         command,
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,
+    )
+    runner_seconds = round(
+        time.perf_counter() - runner_started,
+        3,
     )
     deployment = parse_summary(completed.stdout)
     status = (
@@ -181,6 +208,20 @@ def run_requirement(
         deployment,
         command,
         completed.stderr[-4000:],
+        {
+            "caseSeconds": round(
+                time.perf_counter() - case_started,
+                3,
+            ),
+            "contractBuildSeconds": contract_seconds,
+            "runnerSeconds": runner_seconds,
+            "deploymentStepSeconds": deployment_step_seconds(
+                deployment
+            ),
+            "deploymentCategories": aggregate_deployment_categories(
+                deployment
+            ),
+        },
     )
     write_result(output_dir, payload)
     return payload
@@ -317,6 +358,7 @@ def result_payload(
     deployment: dict[str, Any],
     command: list[str],
     error: str,
+    timings: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "createdAt": datetime.now().astimezone().isoformat(
@@ -328,8 +370,114 @@ def result_payload(
         "compile": compile_result,
         "kindCommand": command,
         "deploymentSummary": deployment,
+        "timings": timings,
         "error": error,
     }
+
+
+def aggregate_kind_timings(
+    results: list[dict[str, Any]],
+    total_seconds: float,
+) -> dict[str, Any]:
+    categories: dict[str, float] = {}
+    for result in results:
+        for name, seconds in (
+            (result.get("timings") or {})
+            .get("deploymentCategories", {})
+            .items()
+        ):
+            categories[name] = categories.get(name, 0) + float(seconds)
+    return {
+        "totalSeconds": total_seconds,
+        "caseSeconds": round(
+            sum(
+                float((item.get("timings") or {}).get("caseSeconds") or 0)
+                for item in results
+            ),
+            3,
+        ),
+        "contractBuildSeconds": round(
+            sum(
+                float(
+                    (item.get("timings") or {}).get(
+                        "contractBuildSeconds"
+                    )
+                    or 0
+                )
+                for item in results
+            ),
+            3,
+        ),
+        "runnerSeconds": round(
+            sum(
+                float((item.get("timings") or {}).get("runnerSeconds") or 0)
+                for item in results
+            ),
+            3,
+        ),
+        "deploymentStepSeconds": round(
+            sum(
+                float(
+                    (item.get("timings") or {}).get(
+                        "deploymentStepSeconds"
+                    )
+                    or 0
+                )
+                for item in results
+            ),
+            3,
+        ),
+        "deploymentCategories": {
+            name: round(seconds, 3)
+            for name, seconds in sorted(categories.items())
+        },
+    }
+
+
+def deployment_step_seconds(deployment: dict[str, Any]) -> float:
+    return round(
+        sum(
+            float(item.get("elapsedSeconds") or 0)
+            for item in deployment.get("steps") or []
+        ),
+        3,
+    )
+
+
+def aggregate_deployment_categories(
+    deployment: dict[str, Any],
+) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for step in deployment.get("steps") or []:
+        category = deployment_step_category(str(step.get("name") or ""))
+        totals[category] = totals.get(category, 0) + float(
+            step.get("elapsedSeconds") or 0
+        )
+    return {
+        name: round(seconds, 3)
+        for name, seconds in sorted(totals.items())
+    }
+
+
+def deployment_step_category(name: str) -> str:
+    if name.startswith("docker-build"):
+        return "docker-build"
+    if name == "kind-load-image":
+        return "kind-image-load"
+    if name.startswith("kind-") or name == "kubectl-context":
+        return "kind-cluster"
+    if name in {"make-install", "make-deploy"}:
+        return "install-deploy"
+    if name in {
+        "kubectl-rollout-status",
+        "kubectl-get-deployment",
+    }:
+        return "deployment-readiness"
+    if name.startswith("kubectl-auth-can-i"):
+        return "rbac-preflight"
+    if name == "docker-info":
+        return "docker-preflight"
+    return "lifecycle-validation"
 
 
 def write_result(output_dir: Path, payload: dict[str, Any]) -> None:

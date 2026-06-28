@@ -3,6 +3,10 @@ name: full-kind-regression
 on:
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   full:
     runs-on: [self-hosted, local-llm, docker, kind]
@@ -67,3 +71,31 @@ jobs:
           for cluster in trainingjob-e2e trainingjob-deploy rediscache-e2e rediscache-deploy profileless-matrix; do
             kind delete cluster --name "$cluster"
           done
+
+  timing-report:
+    if: always()
+    needs: full
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Collect Full CI timing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 agent/evaluation/full_ci_timing.py \
+            --repository "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --output-dir evaluation/results/regression/ci-full-timing \
+            --max-job-seconds 600
+      - name: Publish timing summary
+        if: always()
+        run: |
+          if test -f evaluation/results/regression/ci-full-timing/full-ci-timing.md; then
+            cat evaluation/results/regression/ci-full-timing/full-ci-timing.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: full-timing-${{ github.run_id }}
+          path: evaluation/results/regression/ci-full-timing/
+          retention-days: 30

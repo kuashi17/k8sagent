@@ -1117,6 +1117,17 @@ python3 scripts/run-regression-tests.py --suite standard
 python3 scripts/run-regression-tests.py --suite full
 ```
 
+Full workflow는 self-hosted `full` job 완료 후 별도 report job에서 GitHub API와
+회귀 artifact를 결합합니다. `full-timing-<run-id>` artifact에는 queue 시간,
+실제 job 시간, workflow step/category, 내부 regression check, workflow overhead가
+`full-ci-timing.json`과 `full-ci-timing.md`로 저장됩니다. queue 시간은 runner
+가용성 지표로 분리하고, 실제 `full` job은 600초 예산을 넘으면 timing report
+gate가 실패합니다.
+
+Profileless kind 결과의 `timings.deploymentCategories`에는 Docker build, kind
+image load, cluster 준비, install/deploy, readiness, RBAC, lifecycle 검증 시간이
+사례별·전체 합계로 기록됩니다.
+
 각 실행은 `evaluation/results/regression/<timestamp>/regression-summary.json`과 하위 검증 결과를 남깁니다. CI와 로컬 개발의 기본 검증은 `quick`, 로컬 LLM까지 포함한 변경은 `standard`, Docker/kind가 준비된 릴리스 전 검증은 `full`을 사용합니다.
 
 각 결과 디렉터리의 `performance-trend.json`에는 검사별 실행 시간, 전체 시간, 직전 실행 비교값이 저장됩니다. `quick`에는 requirement RAG fixture의 Hit@3, Recall@3, MRR 품질 gate도 포함됩니다. `final-evaluation.json`은 요구사항 이해, RAG, artifact, validation, safety, E2E, latency를 하나의 점수로 통합합니다.

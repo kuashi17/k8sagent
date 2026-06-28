@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 
 from agent.evaluation.profileless_kind_runner import (
+    aggregate_deployment_categories,
+    aggregate_kind_timings,
     build_kind_command,
     build_kind_contract,
     project_content_digest,
@@ -16,6 +18,69 @@ from agent.evaluation.profileless_kind_runner import (
 
 
 class ProfilelessKindRunnerTest(unittest.TestCase):
+    def test_kind_timings_group_expensive_deployment_steps(self) -> None:
+        categories = aggregate_deployment_categories(
+            {
+                "steps": [
+                    {"name": "docker-build", "elapsedSeconds": 11.0},
+                    {"name": "kind-load-image", "elapsedSeconds": 4.0},
+                    {"name": "make-deploy", "elapsedSeconds": 2.0},
+                    {
+                        "name": "kubectl-rollout-status",
+                        "elapsedSeconds": 5.0,
+                    },
+                    {
+                        "name": "verify-managed-resource",
+                        "elapsedSeconds": 3.0,
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(categories["docker-build"], 11.0)
+        self.assertEqual(categories["kind-image-load"], 4.0)
+        self.assertEqual(categories["install-deploy"], 2.0)
+        self.assertEqual(categories["deployment-readiness"], 5.0)
+        self.assertEqual(categories["lifecycle-validation"], 3.0)
+
+    def test_kind_timings_are_aggregated_across_cases(self) -> None:
+        timings = aggregate_kind_timings(
+            [
+                {
+                    "timings": {
+                        "caseSeconds": 20,
+                        "contractBuildSeconds": 1,
+                        "runnerSeconds": 19,
+                        "deploymentStepSeconds": 17,
+                        "deploymentCategories": {
+                            "docker-build": 10,
+                            "kind-image-load": 3,
+                        },
+                    }
+                },
+                {
+                    "timings": {
+                        "caseSeconds": 12,
+                        "contractBuildSeconds": 1,
+                        "runnerSeconds": 11,
+                        "deploymentStepSeconds": 9,
+                        "deploymentCategories": {
+                            "docker-build": 4,
+                            "kind-image-load": 2,
+                        },
+                    }
+                },
+            ],
+            32.5,
+        )
+
+        self.assertEqual(timings["totalSeconds"], 32.5)
+        self.assertEqual(timings["runnerSeconds"], 30)
+        self.assertEqual(
+            timings["deploymentCategories"]["docker-build"],
+            14,
+        )
+
     def test_precompiled_results_require_existing_projects(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
