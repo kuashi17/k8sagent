@@ -8,6 +8,8 @@ workspace/*
 !workspace/.gitkeep
 knowledge-base/.index/
 .cache/
+evaluation/results/*
+!evaluation/results/.gitkeep
 
 # Local environment files
 .env

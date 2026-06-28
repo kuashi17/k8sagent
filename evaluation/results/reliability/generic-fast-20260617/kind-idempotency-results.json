@@ -1,4 +1,0 @@
-{
-  "skipped": true,
-  "reason": "--skip-kind-idempotency was provided or level=fast."
-}
