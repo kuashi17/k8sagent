@@ -4,6 +4,8 @@ paths:
     status: deprecated
     rationale: Profile-backed Job/Pod/PVC compatibility until generic lifecycle parity is complete.
     removalCondition: Migrate remaining job-workload-v1 profiles to managed-resources validator contracts.
+    maxReferences: 8
+    targetReferences: 0
     patterns:
       - job-workload-v1
       - LegacyJobE2EProfile

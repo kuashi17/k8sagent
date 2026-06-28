@@ -11,6 +11,7 @@ from agent.contracts import ExecutionResult, ToolResult
 from agent.tool_validator import validate_planned_tool_calls
 from agent.tools import langchain_wrappers as tools
 from agent.tools.resource_catalog import load_resource_catalog
+from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 
 
 TOOL_ORDER = {
@@ -230,7 +231,7 @@ def build_supported_calls(
         },
     }
     legacy_e2e = selected_profile.get("e2e") or {}
-    if profile_path and legacy_e2e.get("validator") == "job-workload-v1":
+    if profile_path and legacy_e2e.get("validator") == JOB_WORKLOAD_VALIDATOR:
         supported_calls["e2e_runner"] = {
             "mutating": True,
             "requiredArgs": ["input", "profile"],

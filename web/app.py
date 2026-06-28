@@ -332,6 +332,7 @@ def job_status_payload(job: dict[str, Any]) -> dict[str, Any]:
         "attempt": job.get("attempt"),
         "maxAttempts": job.get("maxAttempts"),
         "rollbackPolicy": job.get("rollbackPolicy") or {},
+        "journeyTimings": job.get("journeyTimings") or {},
     }
 
 

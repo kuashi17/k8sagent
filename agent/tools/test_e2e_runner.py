@@ -14,6 +14,7 @@ from agent.tools.e2e_runner import (
     load_profile,
     load_sample_expectations,
 )
+from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 from agent.tools.log_analyzer import recommended_command
 
 
@@ -24,7 +25,7 @@ class E2ERunnerContractTest(unittest.TestCase):
     def test_training_profile_satisfies_explicit_contract(self) -> None:
         profile = load_profile(REPO_ROOT / "profiles" / "trainingjob.yaml")
 
-        self.assertEqual(profile["e2e"]["validator"], "job-workload-v1")
+        self.assertEqual(profile["e2e"]["validator"], JOB_WORKLOAD_VALIDATOR)
         self.assertEqual(
             profile["e2e"]["customResource"]["crdName"],
             "trainingjobs.ml.ai.sample.io",
@@ -90,7 +91,7 @@ class E2ERunnerContractTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 SystemExit,
-                "job-workload-v1 contract",
+                f"{JOB_WORKLOAD_VALIDATOR} contract",
             ):
                 load_profile(path)
 

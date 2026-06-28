@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.contracts import AgentResult
+from agent.capability_support import support_for
 
 
 def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
@@ -13,6 +14,8 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
     errors = strings(summary.get("errors"))
     warnings = strings(summary.get("warnings"))
     tool_results = summary.get("toolResults") or []
+    managed_resources = strings(requirement.get("managedResources"))
+    capability_support = support_for(managed_resources)
     generated = unique(
         [
             str(path)
@@ -55,9 +58,7 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
             ),
             "technicalDetails": {
                 "kind": str(requirement.get("kind") or ""),
-                "managedResources": strings(
-                    requirement.get("managedResources")
-                ),
+                "managedResources": managed_resources,
                 "completedSteps": [
                     str(item.get("tool"))
                     for item in tool_results
@@ -74,6 +75,12 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
                 "errors": errors,
                 "nextActions": strings(
                     summary.get("nextRecommendedActions")
+                ),
+                "capabilitySupport": capability_support,
+                "beginnerExplanation": beginner_explanation(
+                    str(requirement.get("kind") or ""),
+                    capability_support,
+                    final.get("validationResults") or {},
                 ),
             },
             "approvalRequests": approvals,
@@ -121,3 +128,24 @@ def strings(value: Any) -> list[str]:
 
 def unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def beginner_explanation(
+    kind: str,
+    support: list[dict[str, Any]],
+    validation: dict[str, Any],
+) -> list[str]:
+    lines = [
+        f"{kind or 'Custom Resource'} 변경을 감지하는 Controller를 구성했습니다."
+    ]
+    lines.extend(
+        f"{item['resource']} 관리 기능은 {item['level']} 단계입니다. {item['explanation']}"
+        for item in support
+    )
+    passed = [
+        name for name, status in validation.items() if status == "succeeded"
+    ]
+    if passed:
+        lines.append("자동 검증 완료: " + ", ".join(passed))
+    lines.append("실제 실행 전 생성 파일과 권한 범위를 검토할 수 있습니다.")
+    return lines

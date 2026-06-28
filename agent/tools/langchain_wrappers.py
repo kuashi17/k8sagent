@@ -13,6 +13,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
+
 try:  # Optional dependency for future real LangChain Agent execution.
     from langchain_core.tools import Tool
 except ImportError:  # pragma: no cover - optional dependency is not required for CLI wrapping.
@@ -153,7 +155,7 @@ def e2e_runner(
 ) -> dict[str, Any]:
     if not profile:
         raise ValueError(
-            "e2e_runner requires a profile with the job-workload-v1 contract"
+            f"e2e_runner requires a profile with the {JOB_WORKLOAD_VALIDATOR} contract"
         )
     command = ["python3", "agent/tools/e2e_runner.py"]
     if input_spec:

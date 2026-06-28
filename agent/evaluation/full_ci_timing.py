@@ -26,6 +26,7 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--token", default=os.environ.get("GH_TOKEN", ""))
     parser.add_argument("--max-job-seconds", type=float, default=600.0)
+    parser.add_argument("--max-observed-seconds", type=float, default=1200.0)
     args = parser.parse_args()
     if not args.token:
         raise SystemExit("GitHub token is required")
@@ -59,6 +60,7 @@ def main() -> int:
         job,
         regression,
         args.max_job_seconds,
+        args.max_observed_seconds,
     )
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -71,7 +73,7 @@ def main() -> int:
         encoding="utf-8",
     )
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    return 0 if report["budgetStatus"] == "passed" else 1
+    return 0 if report["overallBudgetStatus"] == "passed" else 1
 
 
 def build_timing_report(
@@ -79,6 +81,7 @@ def build_timing_report(
     job: dict[str, Any],
     regression: dict[str, Any],
     budget_seconds: float,
+    observed_budget_seconds: float = 1200.0,
 ) -> dict[str, Any]:
     queue_seconds = elapsed(run.get("created_at"), job.get("started_at"))
     job_seconds = elapsed(job.get("started_at"), job.get("completed_at"))
@@ -99,6 +102,17 @@ def build_timing_report(
         if job_seconds is not None and job_seconds <= budget_seconds
         else "failed"
     )
+    observed_seconds = (
+        round(queue_seconds + job_seconds, 3)
+        if queue_seconds is not None and job_seconds is not None
+        else None
+    )
+    observed_budget_status = (
+        "passed"
+        if observed_seconds is not None
+        and observed_seconds <= observed_budget_seconds
+        else "failed"
+    )
     return {
         "createdAt": datetime.now().astimezone().isoformat(
             timespec="seconds"
@@ -113,6 +127,15 @@ def build_timing_report(
         "workflowOverheadSeconds": overhead_seconds,
         "budgetSeconds": budget_seconds,
         "budgetStatus": budget_status,
+        "observedSeconds": observed_seconds,
+        "observedBudgetSeconds": observed_budget_seconds,
+        "observedBudgetStatus": observed_budget_status,
+        "overallBudgetStatus": (
+            "passed"
+            if budget_status == "passed"
+            and observed_budget_status == "passed"
+            else "failed"
+        ),
         "categories": categories,
         "regressionChecks": regression_checks,
         "steps": steps,
@@ -184,6 +207,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         f"- Budget: {report['budgetSeconds']} seconds",
         f"- Budget status: **{report['budgetStatus']}**",
+        f"- Integrated observation budget: {report['observedBudgetSeconds']} seconds",
+        f"- Integrated observation status: **{report['observedBudgetStatus']}**",
+        f"- Queue + full job: {report['observedSeconds']} seconds",
         f"- Queue: {report['queueSeconds']} seconds",
         f"- Full job: {report['jobSeconds']} seconds",
         f"- Regression: {report['regressionSeconds']} seconds",

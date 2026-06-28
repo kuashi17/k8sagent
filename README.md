@@ -1134,6 +1134,11 @@ RBAC 허용 목록과 wildcard 거부, 삭제 정책, finalizer, observedGenerat
 `config/legacy-path-policy.yaml`에 승인되지 않은 legacy 참조가 추가되는 것을 막고
 참조 개수를 artifact로 남깁니다.
 
+Full CI는 runtime evidence로 capability별 `stable`, `beta`, `experimental`을
+산출해 `capability-matrix.json`에 저장합니다. Web job은 별도로 제출·queue·실행·전체
+여정 시간을 `journeyTimings`에 기록합니다. 600초 핵심 job gate와 1,200초 통합
+관찰 기준의 범위는 [품질 및 시간 기준](docs/quality-thresholds.md)에 정의합니다.
+
 Self-hosted Full runner의 pinned tool과 Go build/module cache는 runner의 영속
 로컬 경로를 사용합니다. 수백 MB를 매 실행마다 Actions cache로 내려받고 다시
 압축하지 않으며, checkout workspace 밖의 `$HOME/.cache/k8sagent/tools`,

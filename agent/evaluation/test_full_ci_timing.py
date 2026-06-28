@@ -53,6 +53,8 @@ class FullCITimingTest(unittest.TestCase):
         self.assertEqual(report["regressionSeconds"], 400)
         self.assertEqual(report["workflowOverheadSeconds"], 140)
         self.assertEqual(report["budgetStatus"], "passed")
+        self.assertEqual(report["observedSeconds"], 600)
+        self.assertEqual(report["overallBudgetStatus"], "passed")
         self.assertEqual(report["categories"]["regression"], 420)
 
     def test_job_over_ten_minutes_fails_budget(self) -> None:
@@ -68,6 +70,22 @@ class FullCITimingTest(unittest.TestCase):
         )
 
         self.assertEqual(report["budgetStatus"], "failed")
+
+    def test_long_queue_fails_integrated_observation_budget(self) -> None:
+        report = build_timing_report(
+            {"created_at": "2026-06-28T00:00:00Z"},
+            {
+                "started_at": "2026-06-28T00:16:00Z",
+                "completed_at": "2026-06-28T00:21:00Z",
+                "steps": [],
+            },
+            {"checks": []},
+            600,
+            1200,
+        )
+
+        self.assertEqual(report["budgetStatus"], "passed")
+        self.assertEqual(report["observedBudgetStatus"], "failed")
 
 
 if __name__ == "__main__":

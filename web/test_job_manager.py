@@ -39,6 +39,11 @@ class JobManagerTest(unittest.TestCase):
             self.assertEqual(result["agentLogDir"], "logs/agent/test")
             self.assertIn("LLM Agent Orchestrator", result["stdoutTail"])
             self.assertTrue((root / "jobs" / job["jobId"] / "status.json").is_file())
+            self.assertTrue(result["journeyTimings"]["terminal"])
+            self.assertGreaterEqual(
+                result["journeyTimings"]["totalJourneySeconds"],
+                result["journeyTimings"]["executionSeconds"],
+            )
 
     def test_phase_inference_uses_latest_workflow_marker_priority(self) -> None:
         stdout = "LLM Agent Orchestrator\nCalling tool: spec_generator\nCalling tool: validation\n"

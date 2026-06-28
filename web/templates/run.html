@@ -51,6 +51,9 @@
     <h1>{{ result_view.title }}</h1>
     <p class="lead">{{ result_view.summary }}</p>
   </section>
+  {% if job.journeyTimings and job.journeyTimings.totalJourneySeconds is not none %}
+  <p class="muted">전체 소요 {{ job.journeyTimings.totalJourneySeconds }}초 · 실행 {{ job.journeyTimings.executionSeconds }}초{% if job.journeyTimings.queueSeconds is not none %} · 대기 {{ job.journeyTimings.queueSeconds }}초{% endif %}</p>
+  {% endif %}
 
   {% if result_view.errors %}
   <section class="alert alert-error result-alert">
@@ -90,6 +93,24 @@
       {% endif %}
     </article>
   </section>
+
+  {% if result_view.beginner_explanation %}
+  <section class="card">
+    <p class="eyebrow">쉽게 이해하기</p>
+    <h2>생성된 코드는 이렇게 동작합니다</h2>
+    <ul class="clean-list">
+      {% for item in result_view.beginner_explanation %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+    {% if result_view.capability_support %}
+    <h3>관리 기능의 검증 수준</h3>
+    <ul class="clean-list">
+      {% for item in result_view.capability_support %}
+      <li><strong>{{ item.resource }}</strong> · {{ item.level }} — {{ item.explanation }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
 
   {% if result_view.failed_steps %}
   <section class="alert alert-error result-alert">

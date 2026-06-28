@@ -104,7 +104,7 @@ class JobManager:
             return None
         agent_log_dir = str(status.get("agentLogDir") or "")
         summary = read_json(self.repo_root / agent_log_dir / "summary.json") if agent_log_dir else {}
-        return {
+        result = {
             **status,
             "agentReport": read_text(self.repo_root / agent_log_dir / "agent-report.md") if agent_log_dir else "",
             "summary": summary,
@@ -112,6 +112,8 @@ class JobManager:
             "safety": read_json(self.repo_root / agent_log_dir / "safety-evaluation.json") if agent_log_dir else {},
             "recovery": (summary.get("recovery") or {}) if isinstance(summary, dict) else {},
         }
+        result["journeyTimings"] = build_journey_timings(result, summary)
+        return result
 
     def list(self, limit: int = 20) -> list[dict[str, Any]]:
         jobs = []
@@ -364,6 +366,43 @@ def relative(path: Path, root: Path) -> str:
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def build_journey_timings(
+    job: dict[str, Any],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    now = datetime.now().astimezone()
+    created = parse_iso(job.get("createdAt"))
+    started = parse_iso(job.get("startedAt"))
+    finished = parse_iso(job.get("finishedAt"))
+    end = finished or now
+    agent_total = (summary.get("timings") or {}).get("totalSeconds")
+    return {
+        "queueSeconds": seconds_between(created, started),
+        "executionSeconds": seconds_between(started, end),
+        "totalJourneySeconds": seconds_between(created, end),
+        "agentSeconds": float(agent_total) if agent_total is not None else None,
+        "terminal": job.get("state") in TERMINAL_STATES,
+    }
+
+
+def parse_iso(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def seconds_between(
+    started: datetime | None,
+    finished: datetime | None,
+) -> float | None:
+    if not started or not finished:
+        return None
+    return round(max((finished - started).total_seconds(), 0), 3)
 
 
 def rollback_policy(

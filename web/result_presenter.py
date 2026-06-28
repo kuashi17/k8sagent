@@ -91,6 +91,10 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             strings(technical.get("nextActions"))
             or strings(summary.get("nextRecommendedActions"))
         ),
+        capability_support=list(technical.get("capabilitySupport") or []),
+        beginner_explanation=strings(
+            technical.get("beginnerExplanation")
+        ),
         can_execute=bool(
             shared.get("canExecute")
             if shared

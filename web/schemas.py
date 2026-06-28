@@ -103,6 +103,8 @@ class RunResultView(WebModel):
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
+    capability_support: list[dict[str, Any]] = Field(default_factory=list)
+    beginner_explanation: list[str] = Field(default_factory=list)
     can_execute: bool = False
     capability_proposal: str = ""
     capability_approval: str = ""

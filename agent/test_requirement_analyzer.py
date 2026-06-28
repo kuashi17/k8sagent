@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from agent.requirement_analyzer import select_profile_hint
+from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 
 
 class RequirementAnalyzerTest(unittest.TestCase):
@@ -31,7 +32,7 @@ class RequirementAnalyzerTest(unittest.TestCase):
             "profiles/trainingjob.yaml",
             {
                 "profileName": "trainingjob",
-                "e2e": {"validator": "job-workload-v1"},
+                "e2e": {"validator": JOB_WORKLOAD_VALIDATOR},
             },
             allow_auto_hint=True,
         )
@@ -42,7 +43,7 @@ class RequirementAnalyzerTest(unittest.TestCase):
         )
         self.assertEqual(
             result["selectedProfile"]["e2e"]["validator"],
-            "job-workload-v1",
+            JOB_WORKLOAD_VALIDATOR,
         )
 
 

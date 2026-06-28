@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.tools.e2e_profile_contract import (
+    JOB_WORKLOAD_VALIDATOR,
     JobWorkloadSample,
     LegacyJobE2EProfile,
 )
@@ -34,7 +35,7 @@ def main() -> int:
         "--profile",
         required=True,
         help=(
-            "Path to a profile declaring the job-workload-v1 e2e "
+            f"Path to a profile declaring the {JOB_WORKLOAD_VALIDATOR} e2e "
             "contract. Generic resources should use kind_deployment_runner."
         ),
     )
@@ -87,7 +88,7 @@ def load_profile(path: Path) -> dict[str, Any]:
         profile = LegacyJobE2EProfile.model_validate(data)
     except ValidationError as exc:
         raise SystemExit(
-            f"profile does not satisfy the job-workload-v1 contract: "
+            f"profile does not satisfy the {JOB_WORKLOAD_VALIDATOR} contract: "
             f"{validation_message(exc)}"
         ) from exc
     normalized = profile.model_dump(mode="python")
@@ -156,7 +157,7 @@ def load_sample_expectations(sample_path: Path, profile: dict[str, Any]) -> dict
         validated = JobWorkloadSample.model_validate(merged)
     except ValidationError as exc:
         raise SystemExit(
-            f"sample does not satisfy the job-workload-v1 contract: "
+            f"sample does not satisfy the {JOB_WORKLOAD_VALIDATOR} contract: "
             f"{validation_message(exc)}"
         ) from exc
     return {

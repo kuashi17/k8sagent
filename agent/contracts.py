@@ -158,6 +158,8 @@ class AgentTechnicalDetails(AgentContract):
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     nextActions: list[str] = Field(default_factory=list)
+    capabilitySupport: list[dict[str, Any]] = Field(default_factory=list)
+    beginnerExplanation: list[str] = Field(default_factory=list)
 
 
 class ApprovalRequest(AgentContract):

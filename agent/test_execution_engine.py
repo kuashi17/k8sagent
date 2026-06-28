@@ -14,6 +14,7 @@ from agent.execution_engine import (
     order_validated_tool_calls,
     execution_result,
 )
+from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 
 
 def context(target: str = "workspace/generated-operators/example") -> dict:
@@ -84,7 +85,7 @@ class ExecutionEngineTest(unittest.TestCase):
         )
 
         ctx["selectedProfile"]["e2e"] = {
-            "validator": "job-workload-v1"
+            "validator": JOB_WORKLOAD_VALIDATOR
         }
         supported = build_supported_calls(ctx, "dry-run", False)
 

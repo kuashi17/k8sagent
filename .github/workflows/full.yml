@@ -76,7 +76,8 @@ jobs:
             --repository "${{ github.repository }}" \
             --run-id "${{ github.run_id }}" \
             --output-dir evaluation/results/regression/ci-full-timing \
-            --max-job-seconds 600
+            --max-job-seconds 600 \
+            --max-observed-seconds 1200
       - name: Publish timing summary
         if: always()
         run: |

@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+JOB_WORKLOAD_VALIDATOR = "job-workload-v1"
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -67,7 +68,7 @@ class LegacyJobE2EProfile(ContractModel):
     def validate_adapter_capabilities(self) -> "LegacyJobE2EProfile":
         if "Job" not in self.managedResources:
             raise ValueError(
-                "job-workload-v1 requires Job in managedResources"
+                f"{JOB_WORKLOAD_VALIDATOR} requires Job in managedResources"
             )
         missing = {
             "Pod",
@@ -75,7 +76,7 @@ class LegacyJobE2EProfile(ContractModel):
         } - set(self.referencedResources)
         if missing:
             raise ValueError(
-                "job-workload-v1 requires referencedResources: "
+                f"{JOB_WORKLOAD_VALIDATOR} requires referencedResources: "
                 + ", ".join(sorted(missing))
             )
         return self

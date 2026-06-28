@@ -59,9 +59,22 @@ def measure_legacy_usage(
                 "rationale": str(item.get("rationale") or ""),
                 "removalCondition": str(item.get("removalCondition") or ""),
                 "referenceCount": sum(ref["count"] for ref in references),
+                "maxReferences": item.get("maxReferences"),
+                "targetReferences": item.get("targetReferences", 0),
                 "references": references,
             }
         )
+        reference_count = sum(ref["count"] for ref in references)
+        maximum = item.get("maxReferences")
+        if maximum is not None and reference_count > int(maximum):
+            violations.append(
+                {
+                    "legacyPath": item.get("id"),
+                    "reason": "reference-budget-exceeded",
+                    "referenceCount": reference_count,
+                    "maxReferences": int(maximum),
+                }
+            )
     return {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "status": "passed" if not violations else "failed",

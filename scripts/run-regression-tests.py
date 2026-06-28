@@ -212,6 +212,21 @@ def run_suite(
                     ],
                 )
             )
+            checks.append(
+                run_check(
+                    "capability-matrix",
+                    [
+                        sys.executable,
+                        "agent/evaluation/capability_matrix.py",
+                        "--compile-results",
+                        str(output_dir / "profileless-compile" / "profileless-compile-results.json"),
+                        "--kind-results",
+                        str(output_dir / "profileless-kind" / "profileless-kind-results.json"),
+                        "--output",
+                        str(output_dir / "capability-matrix.json"),
+                    ],
+                )
+            )
         finally:
             shutil.rmtree(full_work_root, ignore_errors=True)
 
