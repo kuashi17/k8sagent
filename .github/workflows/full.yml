@@ -14,21 +14,11 @@ jobs:
       GOCACHE: /tmp/k8sagent-go-build
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/cache@v5
-        with:
-          path: .tools
-          key: local-k8s-tools-${{ runner.os }}-${{ hashFiles('scripts/install-local-tools.sh') }}
       - name: Install pinned local tools
         run: |
+          export K8SAGENT_TOOLS_DIR="$HOME/.cache/k8sagent/tools"
           bash ./scripts/install-local-tools.sh
-          echo "$PWD/.tools/bin" >> "$GITHUB_PATH"
-      - uses: actions/cache@v5
-        with:
-          path: |
-            /tmp/k8sagent-go-build
-            ~/go/pkg/mod
-          key: full-go-${{ runner.os }}-${{ hashFiles('agent/tools/scaffold_runner.py', 'agent/evaluation/profileless_compile_runner.py') }}
-          restore-keys: full-go-${{ runner.os }}-
+          echo "$K8SAGENT_TOOLS_DIR/bin" >> "$GITHUB_PATH"
       - uses: actions/cache/restore@v5
         with:
           path: .ci-history/full.json

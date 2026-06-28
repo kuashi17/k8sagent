@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TOOLS_DIR="$ROOT_DIR/.tools"
+TOOLS_DIR="${K8SAGENT_TOOLS_DIR:-$ROOT_DIR/.tools}"
 BIN_DIR="$TOOLS_DIR/bin"
 TMP_DIR="$TOOLS_DIR/tmp"
 

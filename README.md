@@ -1128,6 +1128,11 @@ Profileless kind 결과의 `timings.deploymentCategories`에는 Docker build, ki
 image load, cluster 준비, install/deploy, readiness, RBAC, lifecycle 검증 시간이
 사례별·전체 합계로 기록됩니다.
 
+Self-hosted Full runner의 pinned tool과 Go build/module cache는 runner의 영속
+로컬 경로를 사용합니다. 수백 MB를 매 실행마다 Actions cache로 내려받고 다시
+압축하지 않으며, checkout workspace 밖의 `$HOME/.cache/k8sagent/tools`,
+`/tmp/k8sagent-go-build`, `~/go/pkg/mod`를 재사용합니다.
+
 각 실행은 `evaluation/results/regression/<timestamp>/regression-summary.json`과 하위 검증 결과를 남깁니다. CI와 로컬 개발의 기본 검증은 `quick`, 로컬 LLM까지 포함한 변경은 `standard`, Docker/kind가 준비된 릴리스 전 검증은 `full`을 사용합니다.
 
 각 결과 디렉터리의 `performance-trend.json`에는 검사별 실행 시간, 전체 시간, 직전 실행 비교값이 저장됩니다. `quick`에는 requirement RAG fixture의 Hit@3, Recall@3, MRR 품질 gate도 포함됩니다. `final-evaluation.json`은 요구사항 이해, RAG, artifact, validation, safety, E2E, latency를 하나의 점수로 통합합니다.
