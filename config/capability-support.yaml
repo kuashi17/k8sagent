@@ -1,7 +1,7 @@
 version: 1
 evidenceRun: 28316015141
 levels:
-  ConfigMap: stable
+  ConfigMap: experimental
   Secret: stable
   PersistentVolumeClaim: beta
   CronJob: stable
@@ -15,5 +15,5 @@ levels:
   Role: beta
   ClusterRole: beta
   HorizontalPodAutoscaler: experimental
-  Pod: beta
-  Job: beta
+  Pod: experimental
+  Job: stable

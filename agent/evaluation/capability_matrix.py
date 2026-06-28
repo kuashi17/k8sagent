@@ -25,8 +25,10 @@ def build_capability_matrix(
         str(item.get("requirement") or ""): item
         for item in compile_results.get("requirements") or []
     }
+    catalog = load_resource_catalog()
+    resources_by_name = catalog.by_name()
     observations: dict[str, list[dict[str, Any]]] = {
-        item.kind: [] for item in load_resource_catalog().resources
+        item.kind: [] for item in catalog.resources
     }
     for case in kind_results.get("results") or []:
         requirement = str(case.get("requirement") or "")
@@ -36,7 +38,10 @@ def build_capability_matrix(
             or {}
         )
         for resource in compiled.get("managedResources") or []:
-            observations.setdefault(str(resource), []).append(
+            raw_resource = str(resource)
+            definition = resources_by_name.get(raw_resource)
+            canonical = definition.kind if definition else raw_resource
+            observations.setdefault(canonical, []).append(
                 {
                     "requirement": requirement,
                     "compilePassed": bool(compiled.get("passed")),
