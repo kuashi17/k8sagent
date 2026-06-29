@@ -48,20 +48,38 @@ def evaluate_controller_quality(
     )
     controller = read_text(controller_path)
     requirement_text = read_requirement_text(spec)
+    policies = (
+        (spec.get("controller") or {}).get("resourcePolicies") or []
+    )
+    read_only_only = bool(policies) and all(
+        item.get("strategy") == "read-only"
+        for item in policies
+        if isinstance(item, dict)
+    )
+    retains_resources = any(
+        item.get("deletionPolicy") == "retain"
+        for item in policies
+        if isinstance(item, dict)
+    )
     crd = first_yaml(project_dir / "config" / "crd" / "bases")
     role = first_yaml(project_dir / "config" / "rbac", "role.yaml")
 
     criteria = {
         "crdAccuracy": evaluate_crd(crd, spec),
         "rbacAccuracy": evaluate_rbac(role, spec),
-        "reconcileBehavior": evaluate_reconcile(controller, kind),
+        "reconcileBehavior": evaluate_reconcile(
+            controller,
+            kind,
+            read_only=read_only_only,
+        ),
         "statusUpdate": criterion(
             "Status().Update" in controller
             or "Status().Patch" in controller,
             "Controller updates the Custom Resource status subresource.",
         ),
         "idempotency": criterion(
-            "CreateOrUpdate" in controller
+            (read_only_only and bool(re.search(r"\br\.Get\(", controller)))
+            or "CreateOrUpdate" in controller
             or (
                 bool(re.search(r"\br\.Get\(", controller))
                 and (
@@ -72,7 +90,8 @@ def evaluate_controller_quality(
             "Controller uses CreateOrUpdate or a Get-before-Update pattern.",
         ),
         "deletionBehavior": criterion(
-            "삭제하지 않는다" in requirement_text
+            retains_resources
+            or "삭제하지 않는다" in requirement_text
             or any(
                 marker in controller
                 for marker in (
@@ -84,8 +103,8 @@ def evaluate_controller_quality(
                 )
             ),
             (
-                "Requirement explicitly preserves the managed resource on deletion."
-                if "삭제하지 않는다" in requirement_text
+                "Requirement explicitly preserves the observed or managed resource on deletion."
+                if retains_resources or "삭제하지 않는다" in requirement_text
                 else "Controller declares owner-reference or finalizer deletion behavior."
             ),
         ),
@@ -163,7 +182,12 @@ def evaluate_rbac(role: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def evaluate_reconcile(controller: str, kind: str) -> dict[str, Any]:
+def evaluate_reconcile(
+    controller: str,
+    kind: str,
+    *,
+    read_only: bool = False,
+) -> dict[str, Any]:
     has_reconcile = bool(
         re.search(
             rf"func \(r \*{re.escape(kind)}Reconciler\) Reconcile\(",
@@ -179,6 +203,8 @@ def evaluate_reconcile(controller: str, kind: str) -> dict[str, Any]:
             "r.Patch(",
         )
     )
+    if read_only:
+        has_behavior = bool(re.search(r"\br\.Get\(", controller))
     placeholder = "TODO(user): Modify the Reconcile function" in controller
     return criterion(
         has_reconcile and has_behavior and not placeholder,
@@ -211,6 +237,14 @@ def collect_behavior_evidence(
         )
         if item
     ]
+    observed = [
+        str(item)
+        for item in (spec.get("controller") or {}).get(
+            "observedResources",
+            [],
+        )
+        if item
+    ]
     watched = [
         item
         for item in managed
@@ -238,6 +272,7 @@ def collect_behavior_evidence(
     ]
     return {
         "managedResources": managed,
+        "observedResources": observed,
         "watchRegistrations": watched,
         "statusFields": status_fields,
         "assignedStatusFields": assigned_status,

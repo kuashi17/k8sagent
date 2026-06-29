@@ -84,16 +84,31 @@ def summarize_requirement(text: str) -> dict[str, Any]:
     group = api["group"]
     version = api["version"]
     managed = controller.get("managedResources") or infer_managed_resources(text)
-    spec_fields = [item["name"] for item in parse_fields(text, "spec", [])]
-    status_fields = [item["name"] for item in parse_fields(text, "status", [])]
+    observed = controller.get("observedResources") or []
+    parsed_spec = parse_fields(text, "spec", [])
+    parsed_status = parse_fields(text, "status", [])
+    spec_fields = [item["name"] for item in parsed_spec]
+    status_fields = [item["name"] for item in parsed_status]
+    ambiguous_types = [
+        f"{section}.{item['name']}"
+        for section, fields in (
+            ("spec", parsed_spec),
+            ("status", parsed_status),
+        )
+        for item in fields
+        if item.get("needsConfirmation")
+    ]
     return {
         "kind": kind,
         "domain": domain,
         "group": group,
         "version": version,
         "managedResources": managed,
+        "observedResources": observed,
+        "resourcePolicies": controller.get("resourcePolicies") or [],
         "specFields": spec_fields,
         "statusFields": status_fields,
+        "ambiguousFieldTypes": ambiguous_types,
         "shortSummary": (
             f"{kind or 'Unknown'} Operator 요구사항: "
             f"{', '.join(managed) or '관리 리소스 미확인'} 관리 흐름."
@@ -109,9 +124,17 @@ def missing_information(summary: dict[str, Any], text: str) -> list[str]:
         "version": summary.get("version"),
         "spec fields": summary.get("specFields"),
         "status fields": summary.get("statusFields"),
-        "managed Kubernetes resource": summary.get("managedResources"),
+        "managed or observed Kubernetes resource": (
+            summary.get("managedResources")
+            or summary.get("observedResources")
+        ),
     }
-    return [name for name, value in checks.items() if not value]
+    missing = [name for name, value in checks.items() if not value]
+    missing.extend(
+        f"field type: {item}"
+        for item in summary.get("ambiguousFieldTypes") or []
+    )
+    return missing
 
 
 def clarifying_questions(
@@ -129,9 +152,17 @@ def clarifying_questions(
             "Controller가 생성하거나 관리할 Kubernetes 리소스는 무엇인가요? "
             "예: ConfigMap, Secret, Deployment, Job"
         ),
+        "managed or observed Kubernetes resource": (
+            "Controller가 생성·관리하거나 조회할 Kubernetes 리소스는 무엇인가요?"
+        ),
         "validation commands": "검증 명령은 make generate, make manifests, make test를 사용해도 될까요?",
     }
     questions = [question_map[item] for item in missing if item in question_map]
+    questions.extend(
+        f"{item.removeprefix('field type: ')} 필드 타입을 확인해 주세요."
+        for item in missing
+        if item.startswith("field type: ")
+    )
     managed = summary.get("managedResources") or []
     if managed and "status fields" in missing:
         questions.append(f"{', '.join(managed)} 상태 중 어떤 값을 status에 반영할까요?")

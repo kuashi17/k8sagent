@@ -30,6 +30,7 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
         f"- Kind: `{requirement.get('kind') or 'unknown'}`",
         f"- API: `{requirement.get('group') or 'unknown'}/{requirement.get('version') or 'unknown'}`",
         f"- Managed resources: `{', '.join(requirement.get('managedResources') or []) or 'unknown'}`",
+        f"- Observed resources: `{', '.join(requirement.get('observedResources') or []) or 'none'}`",
         f"- Spec fields: `{', '.join(requirement.get('specFields') or []) or 'none'}`",
         f"- Status fields: `{', '.join(requirement.get('statusFields') or []) or 'none'}`",
         "",

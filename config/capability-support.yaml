@@ -4,7 +4,9 @@ lastValidatedAt: '2026-06-28T21:24:24+09:00'
 evidenceSource: full-ci-runtime-evidence
 limitations:
   ConfigMap: [No profileless kind evidence is recorded.]
-  PersistentVolumeClaim: [Safe mutable drift evidence is not available.]
+  PersistentVolumeClaim:
+    - Safe mutable drift evidence is not available.
+    - storageClassName and access modes are immutable; changing them requires an explicit recreate or retain decision.
   NetworkPolicy: [No profileless kind evidence is recorded.]
   ServiceAccount: [Drift recovery evidence is shared at scenario level.]
   Role: [Drift recovery evidence is shared at scenario level.]

@@ -257,8 +257,12 @@ def build_supported_calls(
 
 
 def requires_capability_approval(context: dict[str, Any]) -> bool:
+    summary = context.get("requirementSummary", {})
     requested = set(
-        context.get("requirementSummary", {}).get("managedResources") or []
+        [
+            *(summary.get("managedResources") or []),
+            *(summary.get("observedResources") or []),
+        ]
     )
     if not requested:
         return False

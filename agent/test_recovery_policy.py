@@ -15,6 +15,28 @@ from agent.recovery_policy import (
 
 
 class RecoveryPolicyTest(unittest.TestCase):
+    def test_unknown_failure_without_validated_tool_is_not_approval_waiting(
+        self,
+    ) -> None:
+        policy = validate_recovery_plan(
+            {
+                "rootCause": "undefined: notatype",
+                "recoveryToolCalls": [],
+            },
+            {
+                "failedTool": "spec_generator",
+                "failedStep": "spec_generator",
+                "stderrTail": "Field type requires confirmation: options",
+            },
+            {"generatedFiles": {"operatorSpec": "missing.yaml"}},
+        )
+
+        plan = policy["validatedRecoveryPlan"]
+        self.assertEqual(plan["status"], "manual-correction-required")
+        self.assertEqual(plan["validatedRecoveryToolCalls"], [])
+        self.assertNotIn("undefined: notatype", plan["rootCause"])
+        self.assertIn("Field type requires confirmation", plan["rootCause"])
+
     def test_docker_failure_is_deterministic(self) -> None:
         classification = deterministic_recovery_classification(
             {

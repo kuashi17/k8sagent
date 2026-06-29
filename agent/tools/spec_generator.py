@@ -76,6 +76,18 @@ SUPPORTED_FIELD_TYPES = {
     "[]metav1.Condition",
 }
 
+NATURAL_FIELD_CONCEPTS = {
+    "spec": (
+        ("image", "string", ("컨테이너 이미지", "이미지")),
+        ("replicas", "int32", ("실행할 개수", "실행 개수", "replicas 값")),
+    ),
+    "status": (
+        ("readyReplicas", "int32", ("준비된 pod 개수", "준비된 replicas 수", "준비된 replica 수")),
+        ("phase", "string", ("처리 상태", "현재 상태")),
+        ("message", "string", ("오류 메시지", "상태 메시지", "처리 결과")),
+    ),
+}
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate an operator-spec.yaml from a requirement file.")
@@ -246,6 +258,16 @@ def parse_api(text: str, warnings: list[str]) -> dict[str, str]:
         )
     if not kind:
         kind = find_value(text, r"([A-Z][A-Za-z0-9]*)\s*라는\s+Kubernetes Custom Resource")
+    if not kind:
+        kind = find_value(
+            text,
+            r"([A-Z][A-Za-z0-9]*)\s*(?:라는|이라는)\s+Custom Resource",
+        )
+    if not kind:
+        kind = find_value(
+            text,
+            r"([A-Z][A-Za-z0-9]*)\s+Operator(?:를|을)?\s*(?:만들|생성)",
+        )
 
     for field_name, value in {
         "api.domain": domain,
@@ -264,12 +286,13 @@ def parse_api(text: str, warnings: list[str]) -> dict[str, str]:
     }
 
 
-def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str, str]]:
+def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str, Any]]:
     block = find_section_block(text, section)
-    fields: list[dict[str, str]] = []
+    fields: list[dict[str, Any]] = []
+    uncertain: list[str] = []
     for line in block.splitlines():
         match = re.match(
-            r"\s*[-*+]\s*([a-z][A-Za-z0-9]*)\s*:\s*(.+?)\s*$",
+            r"\s*(?:[-*+]\s*)?([a-z][A-Za-z0-9]*)\s*:\s*(.+?)\s*$",
             line,
         )
         if not match:
@@ -280,14 +303,23 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
         if candidate in SUPPORTED_FIELD_TYPES:
             field_type = candidate
             description = explicit.group(2) or ""
+            needs_confirmation = False
+        elif "타입" in remainder or "type" in remainder.lower():
+            field_type = ""
+            description = remainder
+            needs_confirmation = True
+            uncertain.append(name)
         else:
             field_type = infer_field_type(name, remainder)
             description = remainder
+            needs_confirmation = False
         fields.append(
             {
                 "name": name,
                 "type": normalize_type(field_type),
                 "description": (description or "").strip(),
+                "typeInferred": candidate not in SUPPORTED_FIELD_TYPES,
+                "needsConfirmation": needs_confirmation,
             }
         )
 
@@ -304,8 +336,22 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
                     "name": name,
                     "type": normalize_type(field_type),
                     "description": "",
+                    "typeInferred": False,
+                    "needsConfirmation": False,
                 }
             )
+
+    if not fields:
+        fields.extend(infer_named_fields(text, section, uncertain))
+
+    if not fields:
+        fields.extend(infer_natural_fields(text, section))
+
+    if uncertain:
+        warnings.append(
+            f"{section} field types require confirmation: "
+            + ", ".join(unique(uncertain))
+        )
 
     if not fields:
         warnings.append(f"{section} fields were not found or did not match '- name:type - description'.")
@@ -315,6 +361,9 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
 def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
     responsibilities: list[str] = []
     managed_resources: list[str] = []
+    observed_resources: list[str] = []
+    denied_mutations: list[str] = []
+    retained_resources: list[str] = []
     field_mappings: list[dict[str, str]] = []
     status_rules: list[str] = []
 
@@ -331,6 +380,19 @@ def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
         item = line[2:].strip() if line.startswith("- ") else line
         if not item:
             continue
+        resources = extract_k8s_resources(item)
+        line_managed, line_observed, line_denied = resource_roles_for_line(
+            item
+        )
+        managed_resources.extend(line_managed)
+        observed_resources.extend(line_observed)
+        denied_mutations.extend(line_denied)
+        if line_managed or line_observed or line_denied:
+            responsibilities.append(item)
+
+        if resources and requests_retention(item):
+            retained_resources.extend(resources)
+
         if "->" in item and "spec." in item:
             source, target = [part.strip() for part in item.split("->", 1)]
             field_mappings.append({"from": source, "to": target})
@@ -342,29 +404,51 @@ def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
             token in item for token in ("갱신", "기준", "기록", "반영")
         ):
             status_rules.append(item)
-            managed_resources.extend(extract_k8s_resources(item))
         elif item.startswith("Controller는"):
-            responsibilities.append(item)
-            managed_resources.extend(extract_k8s_resources(item))
             if "status" in item:
                 status_rules.append(item)
-        else:
-            resources = extract_k8s_resources(item)
-            if resources and any(
-                verb in item
-                for verb in ("생성", "관리", "조회", "변경", "수정", "복구", "삭제")
-            ):
-                responsibilities.append(item)
-                managed_resources.extend(resources)
 
-    managed_resources = unique(managed_resources)
-    enabled = bool(responsibilities or managed_resources or field_mappings or status_rules)
+    denied = set(denied_mutations)
+    managed_resources = [
+        item for item in unique(managed_resources) if item not in denied
+    ]
+    observed_resources = [
+        item
+        for item in unique(observed_resources)
+        if item not in managed_resources
+    ]
+    resource_policies = [
+        {
+            "kind": item,
+            "strategy": "create-or-update",
+            "ownership": "none" if item in retained_resources else "ownerReference",
+            "deletionPolicy": "retain" if item in retained_resources else "garbage-collect",
+        }
+        for item in managed_resources
+    ] + [
+        {
+            "kind": item,
+            "strategy": "read-only",
+            "ownership": "none",
+            "deletionPolicy": "retain",
+        }
+        for item in observed_resources
+    ]
+    enabled = bool(
+        responsibilities
+        or managed_resources
+        or observed_resources
+        or field_mappings
+        or status_rules
+    )
     if not enabled:
         warnings.append("controller responsibilities were not found.")
 
     return {
         "enabled": enabled,
         "managedResources": managed_resources,
+        "observedResources": observed_resources,
+        "resourcePolicies": resource_policies,
         "responsibilities": unique(responsibilities),
         "fieldMappings": field_mappings,
         "statusRules": unique(status_rules),
@@ -411,6 +495,27 @@ def parse_rbac(text: str, api: dict[str, str], controller: dict[str, Any], warni
             }
         )
 
+    for resource in controller.get("observedResources", []):
+        canonical = RESOURCE_ALIASES.get(resource.lower())
+        if not canonical:
+            continue
+        resources.append(
+            {
+                "apiGroup": RESOURCE_API_GROUPS[canonical],
+                "resource": canonical,
+                "verbs": ["get", "list", "watch"],
+            }
+        )
+
+    if re.search(
+        r"(?:모든|전체|\*)\s*(?:API\s*Group|API\s*그룹|Resource|리소스|권한)",
+        text,
+        re.I,
+    ):
+        warnings.append(
+            "Wildcard RBAC request was rejected; least-privilege rules were generated instead."
+        )
+
     resources = unique_resources(resources)
     if not resources:
         warnings.append("rbac.resources could not be inferred.")
@@ -455,6 +560,12 @@ def validate_spec(spec: dict[str, Any]) -> None:
         errors.append("Missing required field: specFields")
     if not spec["statusFields"]:
         errors.append("Missing required field: statusFields")
+    for section in ("specFields", "statusFields"):
+        for field in spec.get(section) or []:
+            if not field.get("type"):
+                errors.append(
+                    f"Field type requires confirmation: {section}.{field.get('name')}"
+                )
 
 
 def default_output_path(output_dir: str, spec: dict[str, Any]) -> Path:
@@ -471,7 +582,7 @@ def find_section_block(text: str, section: str) -> str:
     match = re.search(rf"{section}\s*에는\s*다음\s*필드를\s*포함한다\.\s*(.*?)(?:\n\s*\n|$)", text, re.S | re.I)
     if match:
         return match.group(1)
-    structured = find_heading_block(text, (f"{section} Fields",))
+    structured = find_heading_block(text, (f"{section} Fields", section))
     if structured:
         return structured
     lines = text.splitlines()
@@ -486,7 +597,10 @@ def find_section_block(text: str, section: str) -> str:
         selected: list[str] = []
         started = False
         for candidate in lines[index + 1 :]:
-            if re.match(r"\s*[-*+]\s+", candidate):
+            if re.match(
+                r"\s*(?:[-*+]\s+)?[a-z][A-Za-z0-9]*\s*:",
+                candidate,
+            ):
                 selected.append(candidate)
                 started = True
                 continue
@@ -497,6 +611,110 @@ def find_section_block(text: str, section: str) -> str:
         if selected:
             return "\n".join(selected)
     return ""
+
+
+def infer_named_fields(
+    text: str,
+    section: str,
+    uncertain: list[str],
+) -> list[dict[str, Any]]:
+    patterns = [
+        rf"{section}\s*에는\s+(.+?)(?:을|를)\s*(?:입력|표시)",
+        rf"{section}[^\n.]*?(.+?)(?:을|를)\s*(?:확인|보고)",
+    ]
+    if section == "spec":
+        patterns.append(
+            r"(?:사용자(?:는|가))\s+(.+?)(?:을|를)\s*입력"
+        )
+    values = ""
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I | re.S)
+        if match:
+            values = match.group(1)
+            break
+    if not values:
+        return []
+    names = unique(
+        re.findall(r"(?<![A-Za-z])[a-z][A-Za-z0-9]*(?![A-Za-z])", values)
+    )
+    ignored = {
+        "spec",
+        "status",
+        "string",
+        "int",
+        "int32",
+        "int64",
+        "bool",
+        "worker",
+    }
+    result = []
+    for name in names:
+        if name in ignored:
+            continue
+        if (
+            section == "status"
+            and name == "replicas"
+            and "준비된" in values
+        ):
+            result.append(
+                {
+                    "name": "readyReplicas",
+                    "type": "int32",
+                    "description": "준비된 replica 수에서 제안한 표준 필드입니다.",
+                    "typeInferred": True,
+                    "needsConfirmation": False,
+                }
+            )
+            continue
+        if name in {
+            "image",
+            "replicas",
+            "schedule",
+            "retentionDays",
+            "phase",
+            "message",
+            "readyReplicas",
+        }:
+            result.append(
+                {
+                    "name": name,
+                    "type": infer_field_type(name, ""),
+                    "description": "표준 필드 이름에서 타입을 제안했습니다.",
+                    "typeInferred": True,
+                    "needsConfirmation": False,
+                }
+            )
+            continue
+        uncertain.append(name)
+        result.append(
+            {
+                "name": name,
+                "type": infer_field_type(name, ""),
+                "description": "자연어에서 추론한 필드이며 타입 확인이 필요합니다.",
+                "typeInferred": True,
+                "needsConfirmation": True,
+            }
+        )
+    return result
+
+
+def infer_natural_fields(text: str, section: str) -> list[dict[str, Any]]:
+    lowered = text.casefold()
+    if section == "status" and "status" not in lowered:
+        return []
+    result = []
+    for name, field_type, phrases in NATURAL_FIELD_CONCEPTS[section]:
+        if any(phrase.casefold() in lowered for phrase in phrases):
+            result.append(
+                {
+                    "name": name,
+                    "type": field_type,
+                    "description": "자연어 표현에서 제안한 표준 필드입니다.",
+                    "typeInferred": True,
+                    "needsConfirmation": False,
+                }
+            )
+    return result
 
 
 def find_heading_block(text: str, headings: tuple[str, ...]) -> str:
@@ -523,13 +741,119 @@ def find_heading_block(text: str, headings: tuple[str, ...]) -> str:
 
 def infer_field_type(name: str, description: str) -> str:
     lowered = f"{name} {description}".lower()
-    if name in {"replicas", "readyReplicas", "port", "containerPort", "gpuCount", "size", "count"}:
+    if name in {
+        "replicas",
+        "readyReplicas",
+        "desiredReplicas",
+        "port",
+        "containerPort",
+        "servicePort",
+        "gpuCount",
+        "workerCount",
+        "retentionDays",
+        "size",
+        "count",
+        "workers",
+    }:
         return "int32"
     if any(token in lowered for token in ("개수", "수량", "replica 수", "포트 번호")):
         return "int32"
     if name in {"enabled", "suspend", "paused"} or "여부" in description:
         return "bool"
     return "string"
+
+
+def has_mutation_intent(line: str) -> bool:
+    return any(
+        token in line
+        for token in (
+            "생성",
+            "관리",
+            "갱신",
+            "변경",
+            "수정",
+            "복구",
+            "반영",
+            "기록",
+            "저장",
+            "삭제",
+            "노출",
+        )
+    )
+
+
+def has_resource_mutation_intent(line: str) -> bool:
+    return any(
+        token in line
+        for token in (
+            "생성",
+            "관리",
+            "갱신",
+            "변경",
+            "수정",
+            "복구",
+            "반영",
+            "기록",
+            "저장",
+            "노출",
+            "patch",
+        )
+    )
+
+
+def has_read_intent(line: str) -> bool:
+    return any(
+        token in line
+        for token in ("조회", "읽", "상태를 확인", "상태 확인", "관찰")
+    )
+
+
+def is_negative_mutation(line: str) -> bool:
+    return has_resource_mutation_intent(line) and any(
+        token in line
+        for token in ("않습니다", "않는다", "안 됩니다", "안 됩니다", "하지 마", "하면 안")
+    )
+
+
+def resource_roles_for_line(
+    line: str,
+) -> tuple[list[str], list[str], list[str]]:
+    managed: list[str] = []
+    observed: list[str] = []
+    denied: list[str] = []
+    for clause in re.split(r"\s*,\s*", line):
+        resources = extract_k8s_resources(clause)
+        if not resources:
+            continue
+        if is_negative_mutation(clause):
+            denied.extend(resources)
+            if has_read_intent(clause):
+                observed.extend(resources)
+            continue
+        if has_read_intent(clause):
+            observed.extend(resources)
+            continue
+        if not has_resource_mutation_intent(clause):
+            continue
+        for resource in resources:
+            if (
+                resource == "Pod"
+                and "선택" in clause
+                and not re.search(
+                    r"Pod(?:를|을)?[^,.]*(?:생성|관리|수정|삭제)",
+                    clause,
+                )
+            ):
+                continue
+            managed.append(resource)
+    return unique(managed), unique(observed), unique(denied)
+
+
+def requests_retention(line: str) -> bool:
+    return "삭제" in line and any(
+        token in line
+        for token in ("않습니다", "않는다", "하지 마", "하면 안", "유지", "보호", "retain")
+    )
 
 
 def find_after_heading(text: str, heading: str) -> str:
@@ -547,6 +871,14 @@ def extract_k8s_resources(line: str) -> list[str]:
         pattern = rf"(?<![A-Za-z0-9]){re.escape(alias)}(?:과|와|를|을|는|은|의|에|,|\s|$)"
         if re.search(pattern, line, re.I):
             resources.append(resource_kind(canonical))
+    resources.extend(
+        match.group(1)
+        for match in re.finditer(
+            r"[a-z0-9.-]+/v[0-9]+(?:alpha[0-9]+|beta[0-9]+)?(?:의|\s+)"
+            r"\s*([A-Z][A-Za-z0-9]*)\s*리소스",
+            line,
+        )
+    )
     return unique(resources)
 
 

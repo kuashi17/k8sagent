@@ -152,6 +152,7 @@ class AgentSummary(AgentContract):
 class AgentTechnicalDetails(AgentContract):
     kind: str = ""
     managedResources: list[str] = Field(default_factory=list)
+    observedResources: list[str] = Field(default_factory=list)
     completedSteps: list[str] = Field(default_factory=list)
     failedSteps: list[str] = Field(default_factory=list)
     generatedArtifacts: list[str] = Field(default_factory=list)

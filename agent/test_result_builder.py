@@ -9,6 +9,48 @@ from agent.result_builder import build_agent_result
 
 
 class AgentResultBuilderTest(unittest.TestCase):
+    def test_read_only_capability_explains_restricted_permissions(self) -> None:
+        result = build_agent_result(
+            {
+                "agentMode": "dry-run",
+                "requirementSummary": {
+                    "kind": "DeploymentHealth",
+                    "managedResources": [],
+                    "observedResources": ["Deployment"],
+                    "resourcePolicies": [
+                        {
+                            "kind": "Deployment",
+                            "strategy": "read-only",
+                            "ownership": "none",
+                            "deletionPolicy": "retain",
+                        }
+                    ],
+                },
+                "generatedFiles": {},
+                "toolResults": [],
+                "finalLLM": {"output": {}},
+                "warnings": [],
+                "errors": [],
+                "nextRecommendedActions": [],
+                "recovery": {},
+            }
+        )
+
+        details = result["technicalDetails"]
+        self.assertEqual(details["observedResources"], ["Deployment"])
+        self.assertEqual(
+            details["capabilitySupport"][0]["accessMode"],
+            "read-only",
+        )
+        self.assertIn(
+            "get/list/watch",
+            details["codeExplanation"]["rbacReasons"][0],
+        )
+        self.assertIn(
+            "deletion=retain",
+            details["codeExplanation"]["deletionBehavior"][0],
+        )
+
     def test_builds_single_presentation_contract(self) -> None:
         result = build_agent_result(
             {

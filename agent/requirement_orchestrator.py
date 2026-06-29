@@ -11,6 +11,7 @@ from typing import Any
 from agent import report_renderer
 from agent.context_builder import (
     build_requirement_context,
+    clarifying_questions,
     extract_tool_call_plan,
 )
 from agent.evidence_builder import (
@@ -90,6 +91,14 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     )
     print("Default safety mode: dry-run")
     print(f"Run level: {args.run_level}")
+
+    if context["missingInformation"]:
+        return finish_clarification_required(
+            args,
+            context,
+            log_dir,
+            total_started,
+        )
 
     planner_started = time.perf_counter()
     planner_result = call_requirement_planner(
@@ -212,6 +221,100 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     print(report)
     print(f"\nAgent logs: {log_dir}")
     return 0 if not summary["errors"] else 1
+
+
+def finish_clarification_required(
+    args: argparse.Namespace,
+    context: dict[str, Any],
+    log_dir: Path,
+    total_started: float,
+) -> int:
+    questions = clarifying_questions(
+        context["missingInformation"],
+        context["requirementSummary"],
+    )
+    planner_result = llm_result(
+        False,
+        {
+            "mode": "requirement-clarification",
+            "reason": "Required information is missing or ambiguous.",
+        },
+        {
+            "requirementSummary": context["requirementSummary"].get(
+                "shortSummary", ""
+            ),
+            "missingInformation": context["missingInformation"],
+            "recommendedProfile": "",
+            "plannedSteps": [],
+            "toolCalls": [],
+            "risks": [],
+            "nextActions": questions,
+        },
+        "",
+    )
+    execution = {
+        "validatedToolCalls": [],
+        "rejectedToolCalls": [],
+        "deferredToolCalls": [],
+        "toolResults": [],
+        "timings": {
+            "toolValidationSeconds": 0.0,
+            "toolExecutionSeconds": 0.0,
+        },
+    }
+    final_result = {
+        **empty_final_result(""),
+        "llmOutput": {
+            "executionDecision": "clarification-required",
+            "completedSteps": [],
+            "failedSteps": [],
+            "generatedArtifacts": [],
+            "validationResults": {},
+            "evidence": [
+                "No Tool was executed because required information is incomplete."
+            ],
+            "warnings": [],
+            "recommendedNextActions": questions,
+            "beginnerSummary": (
+                "코드를 생성하기 전에 몇 가지 정보를 확인해야 합니다."
+            ),
+        },
+    }
+    context["timings"].update(execution["timings"])
+    summary = build_requirement_summary(
+        args,
+        context,
+        planner_result,
+        execution,
+        final_result,
+    )
+    summary["runStatus"] = "clarification-required"
+    summary["timings"] = finalize_timings(
+        context,
+        execution,
+        total_started,
+    )
+    summary["safetyEvaluation"] = build_requirement_safety_evaluation(
+        args,
+        context,
+        execution,
+        planner_result,
+        None,
+    )
+    summary["evidenceTrace"] = build_requirement_evidence_trace(summary)
+    write_agent_artifacts(
+        log_dir,
+        summary,
+        planner_result,
+        context["retrievedKnowledge"],
+        execution,
+        final_result,
+    )
+    report = report_renderer.render_requirement_report(summary)
+    (log_dir / "agent-report.md").write_text(report, encoding="utf-8")
+    print(report)
+    print(f"\nAgent logs: {log_dir}")
+    return 0
 
 
 def finish_planner_failure(

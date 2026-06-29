@@ -45,6 +45,38 @@ def model(resources, spec_fields, status_fields):
 
 
 class ControllerRendererTest(unittest.TestCase):
+    def test_read_only_resource_uses_get_without_mutation(self) -> None:
+        value = model(
+            [],
+            ["deploymentName"],
+            ["phase", "desiredReplicas", "readyReplicas", "message"],
+        )
+        value["controller"] = {
+            "managedResources": [],
+            "observedResources": ["Deployment"],
+            "resourcePolicies": [
+                {
+                    "kind": "Deployment",
+                    "strategy": "read-only",
+                    "ownership": "none",
+                    "deletionPolicy": "retain",
+                }
+            ],
+        }
+
+        rendered = render_controller(value)
+        function = rendered.split(
+            "func (r *ExampleReconciler) reconcileDeployment",
+            1,
+        )[1].split("func ", 1)[0]
+
+        self.assertIn("get read-only Deployment", function)
+        self.assertIn("r.Get(", function)
+        self.assertNotIn("CreateOrUpdate", function)
+        self.assertNotIn("r.Update(", function)
+        self.assertIn('"NotFound"', rendered)
+        self.assertIn("instance.Status.DesiredReplicas", rendered)
+
     def test_state_machine_status_and_requeue_are_rendered(self) -> None:
         rendered = render_controller(
             model(

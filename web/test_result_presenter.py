@@ -16,6 +16,25 @@ from web.result_presenter import present_run_result
 
 
 class ResultPresenterTest(unittest.TestCase):
+    def test_read_only_resource_is_presented_separately(self) -> None:
+        result = present_run_result(
+            {
+                "state": "succeeded",
+                "jobType": "requirement",
+                "summary": {
+                    "agentMode": "dry-run",
+                    "requirementSummary": {
+                        "kind": "DeploymentHealth",
+                        "managedResources": [],
+                        "observedResources": ["Deployment"],
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(result.managed_resources, [])
+        self.assertEqual(result.observed_resources, ["Deployment"])
+
     def test_legacy_english_actions_are_presented_in_korean(self) -> None:
         result = present_run_result(
             {

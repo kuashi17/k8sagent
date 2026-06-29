@@ -177,6 +177,7 @@ resources:
       - {source: containerPort, target: "spec.template.spec.containers[0].ports[0].containerPort", transform: int64}
     statusMappings:
       - {field: deploymentName, source: metadata.name, resourceName: true}
+      - {field: desiredReplicas, source: spec.replicas}
       - {field: readyReplicas, source: status.readyReplicas}
 
   - kind: StatefulSet
@@ -398,6 +399,29 @@ resources:
   - kind: Job
     apiVersion: batch/v1
     suffix: job
-    strategy: read-only
-    ownership: none
-    deletionPolicy: retain
+    behaviorBindings:
+      - primitive: container-env
+        paths:
+          container: spec.template.spec.containers[0]
+          podSpec: spec.template.spec
+      - primitive: resource-limits
+        paths:
+          container: spec.template.spec.containers[0]
+          podSpec: spec.template.spec
+      - primitive: pvc-volume
+        paths:
+          container: spec.template.spec.containers[0]
+          podSpec: spec.template.spec
+    baseObject:
+      spec:
+        template:
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: job
+                image: busybox:latest
+    fieldMappings:
+      - {source: image, target: "spec.template.spec.containers[0].image"}
+      - {source: command, target: "spec.template.spec.containers[0].command", transform: string-slice}
+    statusMappings:
+      - {field: jobName, source: metadata.name, resourceName: true}

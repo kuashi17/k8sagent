@@ -80,8 +80,14 @@
       <div class="tag-list">
         {% for resource in result_view.managed_resources %}<span>{{ resource }}</span>{% endfor %}
       </div>
-      {% else %}
+      {% elif not result_view.observed_resources %}
       <p class="muted">관리 리소스를 확인하지 못했습니다.</p>
+      {% endif %}
+      {% if result_view.observed_resources %}
+      <p class="eyebrow">조회 대상</p>
+      <div class="tag-list">
+        {% for resource in result_view.observed_resources %}<span>{{ resource }} · 읽기 전용</span>{% endfor %}
+      </div>
       {% endif %}
     </article>
     <article class="card result-card">
@@ -120,6 +126,10 @@
     <ul class="clean-list">{% for item in result_view.code_explanation.rbacReasons %}<li>{{ item }}</li>{% endfor %}</ul>
     <h3>삭제하면 어떻게 되나요?</h3>
     <ul class="clean-list">{% for item in result_view.code_explanation.deletionBehavior %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% if result_view.code_explanation.relationships %}
+    <h3>리소스는 어떻게 연결되나요?</h3>
+    <ul class="clean-list">{% for item in result_view.code_explanation.relationships %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% endif %}
     <h3>먼저 볼 파일</h3>
     <ol>{% for item in result_view.code_explanation.firstFiles %}<li><code>{{ item }}</code></li>{% endfor %}</ol>
     {% endif %}

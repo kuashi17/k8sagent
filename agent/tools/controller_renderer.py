@@ -26,7 +26,7 @@ def render_controller(ir: ControllerGenerationIR) -> str:
         )
     kind = ir.kind
     alias = api_alias(ir.api_group, ir.api_version)
-    resources = ir.renderable_resources()
+    resources = ir.managed_resources
     state = ir.state_machine
     if not resources:
         raise SystemExit(
@@ -43,6 +43,10 @@ def render_controller(ir: ControllerGenerationIR) -> str:
             f"r.reconcile{go_name(resource.resource_id)}"
             f"(ctx, &instance)\n"
             "\tif err != nil {\n"
+            "\t\tif apierrors.IsNotFound(err) {\n"
+            f'\t\t\t_ = r.updateStatus(ctx, &instance, "NotFound", err.Error(), names)\n'
+            f"\t\t\treturn ctrl.Result{{RequeueAfter: {state.success_requeue_seconds} * time.Second}}, nil\n"
+            "\t\t}\n"
             "\t\tif errors.Is(err, errRecreationPending) {\n"
             f'\t\t\t_ = r.updateStatus(ctx, &instance, "Recreating", err.Error(), names)\n'
             f"\t\t\treturn ctrl.Result{{RequeueAfter: {state.recreation_requeue_seconds} * time.Second}}, nil\n"
@@ -333,6 +337,18 @@ def render_resource_function(
             namespace,
             mutations,
         )
+    if resource.strategy == ReconcileStrategy.READ_ONLY:
+        return render_read_only_function(
+            resource,
+            ir,
+            alias,
+            group,
+            version,
+            function_name,
+            name_expression,
+            suffix,
+            namespace,
+        )
     return f'''func (r *{kind}Reconciler) reconcile{function_name}(ctx context.Context, instance *{alias}.{kind}) (string, error) {{
 \tname := {name_expression}
 \tif name == "" {{
@@ -354,6 +370,31 @@ def render_resource_function(
 {final_return}\t}})
 \tif err != nil {{
 \t\treturn name, fmt.Errorf("reconcile {resource.kind}: %w", err)
+\t}}
+\treturn name, nil
+}}
+'''
+
+
+def render_read_only_function(
+    resource: ManagedResourceSpec,
+    ir: ControllerGenerationIR,
+    alias: str,
+    group: str,
+    version: str,
+    function_name: str,
+    name_expression: str,
+    suffix: str,
+    namespace: str,
+) -> str:
+    return f'''func (r *{ir.kind}Reconciler) reconcile{function_name}(ctx context.Context, instance *{alias}.{ir.kind}) (string, error) {{
+\tname := {name_expression}
+\tif name == "" {{
+\t\tname = instance.Name + "-{suffix}"
+\t}}
+\tobject := managedObject("{group}", "{version}", "{resource.kind}", {namespace}, name)
+\tif err := r.Get(ctx, client.ObjectKey{{Namespace: {namespace}, Name: name}}, object); err != nil {{
+\t\treturn name, fmt.Errorf("get read-only {resource.kind}: %w", err)
 \t}}
 \treturn name, nil
 }}

@@ -156,11 +156,13 @@ def draft_capabilities(
 ) -> ProposalModel:
     spec = read_mapping(spec_path)
     catalog = load_combined_catalog(catalog_path, override_path)
+    controller = spec.get("controller") or {}
     requested = [
         str(item)
-        for item in (spec.get("controller") or {}).get(
-            "managedResources", []
-        )
+        for item in [
+            *controller.get("managedResources", []),
+            *controller.get("observedResources", []),
+        ]
     ]
     supported = catalog.by_name()
     unsupported = [item for item in requested if item not in supported]

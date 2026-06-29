@@ -138,8 +138,13 @@ def recovery_summary(
     failure_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
     recovery = recovery_result or {}
+    plan = recovery.get("llmOutput") or {}
     return {
-        "waitingForUserApproval": bool(failure_context),
+        "waitingForUserApproval": bool(
+            failure_context
+            and plan.get("status") == "waiting-for-user-approval"
+            and plan.get("validatedRecoveryToolCalls")
+        ),
         "llmPlannerUsed": recovery.get("llmPlannerUsed"),
         "localLLM": recovery.get("localLLM") or {},
         "error": recovery.get("error") or "",

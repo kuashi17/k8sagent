@@ -124,7 +124,13 @@ class SummaryBuilderTest(unittest.TestCase):
                 "llmOutput": {},
             },
             {
-                "llmOutput": {"classification": "docker-kind-connection"},
+                "llmOutput": {
+                    "classification": "docker-kind-connection",
+                    "status": "waiting-for-user-approval",
+                    "validatedRecoveryToolCalls": [
+                        {"tool": "kind_deployment"}
+                    ],
+                },
                 "policyEvaluation": {},
             },
             {"failedTool": "kind_deployment"},

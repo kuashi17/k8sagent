@@ -91,21 +91,41 @@ def validate_recovery_plan(
         rerun_from = "manual review"
     else:
         validated_calls = generic_validated_recovery_calls(classification, failure_context)
-        root_cause = raw_plan.get("rootCause") or failure_context.get("stderrTail") or "Recovery requires manual review."
+        actual_failure = (
+            failure_context.get("stderrTail")
+            or failure_context.get("stdoutTail")
+            or "Recovery requires manual review."
+        )
+        root_cause = (
+            actual_failure
+            if classification == "unknown"
+            else raw_plan.get("rootCause") or actual_failure
+        )
         proposed = (
-            raw_plan.get("proposedFixes")
+            [
+                "실제 stdout/stderr와 요구사항을 확인하고 불명확한 필드 또는 설정을 수정합니다."
+            ]
+            if classification == "unknown"
+            else raw_plan.get("proposedFixes")
             if isinstance(raw_plan.get("proposedFixes"), list)
             else ["Review failure-context.json and approve the smallest safe recovery step."]
         )
         rerun_from = str(failure_context.get("failedTool") or "failed step")
 
+    approval_required = bool(validated_calls)
+    recovery_status = (
+        "waiting-for-user-approval"
+        if approval_required
+        else "manual-correction-required"
+    )
     validated_plan = {
         "decision": "manual-review-required" if classification in {"unknown", "image-pull"} else "recovery-required",
         "classification": classification,
         "rootCause": root_cause,
         "evidence": (
             raw_plan.get("evidence")
-            if isinstance(raw_plan.get("evidence"), list)
+            if classification != "unknown"
+            and isinstance(raw_plan.get("evidence"), list)
             else default_recovery_evidence(failure_context, unsupported)
         ),
         "proposedFixes": proposed,
@@ -123,8 +143,12 @@ def validate_recovery_plan(
             else ["Recovery calls require user approval before execution."]
         ),
         "beginnerSummary": raw_plan.get("beginnerSummary")
-        or "Agent validated the LLM recovery proposal against local policy and is waiting for user approval.",
-        "status": "waiting-for-user-approval",
+        or (
+            "검증된 복구 작업이 있어 사용자 승인을 기다립니다."
+            if approval_required
+            else "자동 복구 근거가 부족합니다. 실제 오류와 요구사항을 확인해 직접 수정해 주세요."
+        ),
+        "status": recovery_status,
     }
     validated_plan = RecoveryPlan.model_validate(validated_plan).to_dict()
     return {
@@ -137,7 +161,7 @@ def validate_recovery_plan(
             "rawRecoveryToolCalls": raw_plan.get("recoveryToolCalls") or [],
             "validatedRecoveryToolCalls": validated_calls,
             "rejectedRecoveryToolCalls": rejected,
-            "status": "waiting-for-user-approval",
+            "status": recovery_status,
         },
     }
 

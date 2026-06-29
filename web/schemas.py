@@ -108,6 +108,7 @@ class RunResultView(WebModel):
     summary: str
     kind: str = ""
     managed_resources: list[str] = Field(default_factory=list)
+    observed_resources: list[str] = Field(default_factory=list)
     completed_steps: list[str] = Field(default_factory=list)
     failed_steps: list[str] = Field(default_factory=list)
     generated_artifacts: list[str] = Field(default_factory=list)

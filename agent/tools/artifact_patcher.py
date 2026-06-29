@@ -351,9 +351,7 @@ def print_patch_context(model: dict[str, Any]) -> None:
         print(f"- profile sample defaults: {', '.join(sample_defaults.keys())}")
     else:
         print("- profile sample defaults: none")
-    if not profile.get("path") and (
-        model.get("controller") or {}
-    ).get("managedResources"):
+    if not profile.get("path") and controller_resources(model):
         ir = build_controller_ir(model)
         print(
             "- controller IR: "
@@ -436,7 +434,7 @@ def patch_controller(text: str, model: dict[str, Any]) -> str:
     if (
         not (model.get("profile") or {}).get("path")
         and model.get("project")
-        and (model.get("controller") or {}).get("managedResources")
+        and controller_resources(model)
     ):
         _, rendered = generate_controller(model)
         validate_controller_markers(rendered, model)
@@ -504,18 +502,27 @@ def validate_controller_behavior(
     text: str,
     model: dict[str, Any],
 ) -> None:
-    managed = (model.get("controller") or {}).get(
-        "managedResources",
-        [],
-    )
-    if not managed:
+    resources = controller_resources(model)
+    if not resources:
         return
     if "TODO(user): your logic here" in text:
         raise SystemExit(
             "controller behavior validation failed: scaffold TODO remains "
-            "for managed resources "
-            + ", ".join(str(item) for item in managed)
+            "for managed or observed resources "
+            + ", ".join(str(item) for item in resources)
         )
+
+
+def controller_resources(model: dict[str, Any]) -> list[Any]:
+    controller = model.get("controller") or {}
+    return list(
+        dict.fromkeys(
+            [
+                *controller.get("managedResources", []),
+                *controller.get("observedResources", []),
+            ]
+        )
+    )
 
 
 def render_rbac_marker(item: dict[str, Any]) -> str:
@@ -546,9 +553,9 @@ def execute_patch(spec_path: Path, project_dir: Path, model: dict[str, Any], cha
     log_dir = Path("logs") / "patch" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "diff.patch").write_text(diff_text, encoding="utf-8")
-    if not (model.get("profile") or {}).get("path") and (
-        model.get("controller") or {}
-    ).get("managedResources"):
+    if not (model.get("profile") or {}).get("path") and controller_resources(
+        model
+    ):
         (log_dir / "controller-ir.json").write_text(
             json.dumps(
                 build_controller_ir(model).to_dict(),

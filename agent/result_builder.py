@@ -16,7 +16,11 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
     warnings = strings(summary.get("warnings"))
     tool_results = summary.get("toolResults") or []
     managed_resources = strings(requirement.get("managedResources"))
-    capability_support = support_for(managed_resources)
+    observed_resources = strings(requirement.get("observedResources"))
+    capability_support = role_aware_support(
+        managed_resources,
+        observed_resources,
+    )
     generated = unique(
         [
             str(path)
@@ -60,6 +64,7 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
             "technicalDetails": {
                 "kind": str(requirement.get("kind") or ""),
                 "managedResources": managed_resources,
+                "observedResources": observed_resources,
                 "completedSteps": [
                     str(item.get("tool"))
                     for item in tool_results
@@ -92,8 +97,7 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
             "validationResults": final.get("validationResults") or {},
             "recoveryState": recovery,
             "canExecute": bool(
-                not errors
-                and summary.get("agentMode") == "dry-run"
+                status == "planned"
                 and not approvals
             ),
         }
@@ -108,6 +112,8 @@ def result_status(
 ) -> str:
     if errors:
         return "failed"
+    if summary.get("runStatus") == "clarification-required":
+        return "clarification-required"
     if summary.get("runStatus") == "recovery-planning":
         return "recovery-planning"
     if any(item["type"] == "recovery" for item in approvals):
@@ -133,6 +139,23 @@ def strings(value: Any) -> list[str]:
 
 def unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def role_aware_support(
+    managed_resources: list[str],
+    observed_resources: list[str],
+) -> list[dict[str, Any]]:
+    support = support_for(unique(managed_resources + observed_resources))
+    observed = set(observed_resources)
+    for item in support:
+        read_only = item["resource"] in observed
+        item["accessMode"] = "read-only" if read_only else "managed"
+        if read_only:
+            item["explanation"] = (
+                "조회 전용으로 사용합니다. 생성·수정·삭제 권한은 부여하지 않습니다. "
+                + item["explanation"]
+            )
+    return support
 
 
 def beginner_explanation(

@@ -95,6 +95,12 @@ controller:
   managedResources:
     - StatefulSet
     - Service
+  observedResources: []
+  resourcePolicies:
+    - kind: StatefulSet
+      strategy: create-or-update
+      ownership: ownerReference
+      deletionPolicy: garbage-collect
   responsibilities:
     - Controller는 RedisCache 변경을 감지한다
     - Controller는 StatefulSet, Service, PVC를 생성/수정/삭제한다
@@ -106,6 +112,10 @@ controller:
 ```
 
 `controller.responsibilities`와 `controller.fieldMappings`는 이후 Controller/Reconcile 코드 생성 단계의 입력입니다.
+
+`managedResources`는 Controller가 생성하거나 변경하는 리소스입니다. `observedResources`는 상태만 조회하는 리소스이며 RBAC은 `get`, `list`, `watch`로 제한됩니다. `resourcePolicies`는 요구사항별로 `create-or-update`/`read-only`, `ownerReference`/`none`, `garbage-collect`/`retain`을 명시합니다. 리소스 이름이 같더라도 요구사항에 따라 조회 전용 또는 보존 정책을 선택할 수 있습니다.
+
+필드 타입이 자연어에서 제안된 경우 `typeInferred: true`가 기록됩니다. 타입을 안전하게 확정할 수 없으면 `needsConfirmation: true`와 빈 `type`을 기록하고, Agent는 Tool을 실행하기 전에 사용자에게 타입을 질문합니다.
 
 ## RBAC
 

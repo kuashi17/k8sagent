@@ -71,8 +71,11 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         discovery,
         discovery_errors,
     ) = capability_review(summary)
+    result_status = str(shared.get("status") or "")
     title = (
-        f"{kind or 'Operator'} 계획이 준비됐습니다."
+        "추가 정보가 필요합니다."
+        if result_status == "clarification-required"
+        else f"{kind or 'Operator'} 계획이 준비됐습니다."
         if succeeded and (summary.get("agentMode") == "dry-run")
         else (
             f"{kind or 'Operator'} 작업이 완료됐습니다."
@@ -99,6 +102,10 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         managed_resources=(
             strings(technical.get("managedResources"))
             or strings(requirement.get("managedResources"))
+        ),
+        observed_resources=(
+            strings(technical.get("observedResources"))
+            or strings(requirement.get("observedResources"))
         ),
         completed_steps=completed,
         failed_steps=failed,

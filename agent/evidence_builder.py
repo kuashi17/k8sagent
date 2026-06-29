@@ -35,9 +35,19 @@ def build_requirement_safety_evaluation(
         and item.get("effectiveMode") == "dry-run"
         and not item.get("executeAllowed")
     ]
+    clarification_only = (
+        (planner_result.get("llmInput") or {}).get("mode")
+        == "requirement-clarification"
+    )
     return {
         "llmProviderPolicy": {
-            "status": "passed" if planner_result.get("llmPlannerUsed") else "failed",
+            "status": (
+                "not-needed"
+                if clarification_only
+                else "passed"
+                if planner_result.get("llmPlannerUsed")
+                else "failed"
+            ),
             "rule": "Only Ollama local LLM planner is supported; mock/OpenAI fallback is not used.",
             "model": (planner_result.get("localLLM") or {}).get("model"),
             "baseUrl": (planner_result.get("localLLM") or {}).get("baseUrl"),

@@ -42,12 +42,20 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
     explicit_mappings = parse_explicit_mappings(
         (model.get("controller") or {}).get("fieldMappings") or []
     )
+    controller = model.get("controller") or {}
+    policies = {
+        str(item.get("kind")): item
+        for item in controller.get("resourcePolicies") or []
+        if isinstance(item, dict) and item.get("kind")
+    }
+    requested_resources = [
+        *controller.get("managedResources", []),
+        *controller.get("observedResources", []),
+    ]
     resources = []
     seen = set()
     unsupported = []
-    for raw_kind in (
-        (model.get("controller") or {}).get("managedResources") or []
-    ):
+    for raw_kind in requested_resources:
         defaults = resources_by_name.get(str(raw_kind))
         if not defaults:
             unsupported.append(str(raw_kind))
@@ -55,8 +63,7 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
         if defaults.kind in seen:
             continue
         seen.add(defaults.kind)
-        resources.append(
-            build_managed_resource(
+        resource = build_managed_resource(
                 defaults,
                 fields,
                 status_fields,
@@ -64,7 +71,7 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
                 explicit_mappings,
                 catalog.primitives_by_name(),
             )
-        )
+        resources.append(apply_resource_policy(resource, policies.get(str(raw_kind))))
     if unsupported:
         supported = ", ".join(
             sorted(item.kind for item in catalog.resources)
@@ -117,6 +124,53 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
     )
 
 
+def apply_resource_policy(
+    resource: ManagedResourceSpec,
+    policy: dict[str, Any] | None,
+) -> ManagedResourceSpec:
+    if not policy:
+        return resource
+    strategy = ReconcileStrategy(
+        str(policy.get("strategy") or resource.strategy.value)
+    )
+    ownership = OwnershipPolicy(
+        str(policy.get("ownership") or resource.ownership.value)
+    )
+    deletion = DeletionPolicy(
+        str(
+            policy.get("deletionPolicy")
+            or resource.deletion_policy.value
+        )
+    )
+    if strategy == ReconcileStrategy.READ_ONLY:
+        return resource.model_copy(
+            update={
+                "strategy": strategy,
+                "capabilities": [
+                    ResourceCapability.WATCH,
+                    ResourceCapability.STATUS_SOURCE,
+                ],
+                "ownership": OwnershipPolicy.NONE,
+                "deletion_policy": DeletionPolicy.RETAIN,
+                "update_policy": UpdatePolicy.NONE,
+                "watch": True,
+                "field_mappings": [],
+                "static_mutations": [],
+                "active_behaviors": [],
+                "base_object": {},
+                "label_paths": [],
+                "dependency_kind": "",
+                "dependency_variable": "",
+                "dependency_target_path": "",
+            }
+        )
+    return resource.model_copy(
+        update={
+            "strategy": strategy,
+            "ownership": ownership,
+            "deletion_policy": deletion,
+        }
+    )
 def build_managed_resource(
     defaults: ResourceCapabilityDefinition,
     fields: set[str],

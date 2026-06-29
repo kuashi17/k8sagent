@@ -53,6 +53,52 @@ def model(resources, spec_fields, status_fields, field_mappings=None):
 
 
 class ControllerIRBuilderTest(unittest.TestCase):
+    def test_requirement_policy_can_make_deployment_read_only(self) -> None:
+        value = model(
+            [],
+            ["deploymentName"],
+            ["readyReplicas"],
+        )
+        value["controller"].update(
+            {
+                "observedResources": ["Deployment"],
+                "resourcePolicies": [
+                    {
+                        "kind": "Deployment",
+                        "strategy": "read-only",
+                        "ownership": "none",
+                        "deletionPolicy": "retain",
+                    }
+                ],
+            }
+        )
+
+        deployment = build_controller_ir(value).resource("Deployment")
+
+        self.assertEqual(deployment.strategy, ReconcileStrategy.READ_ONLY)
+        self.assertEqual(deployment.ownership, OwnershipPolicy.NONE)
+        self.assertEqual(deployment.deletion_policy, DeletionPolicy.RETAIN)
+        self.assertEqual(deployment.field_mappings, [])
+        self.assertEqual(deployment.update_policy, UpdatePolicy.NONE)
+
+    def test_requirement_policy_can_retain_managed_pvc(self) -> None:
+        value = model(["PVC"], ["size"], ["pvcName"])
+        value["controller"]["resourcePolicies"] = [
+            {
+                "kind": "PVC",
+                "strategy": "create-or-update",
+                "ownership": "none",
+                "deletionPolicy": "retain",
+            }
+        ]
+
+        claim = build_controller_ir(value).resource(
+            "PersistentVolumeClaim"
+        )
+
+        self.assertEqual(claim.ownership, OwnershipPolicy.NONE)
+        self.assertEqual(claim.deletion_policy, DeletionPolicy.RETAIN)
+
     def test_create_or_update_resource_has_behavior_contract(self) -> None:
         ir = build_controller_ir(
             model(
