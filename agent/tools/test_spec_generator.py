@@ -15,6 +15,68 @@ from agent.tools.spec_generator import (
 
 
 class SpecGeneratorTest(unittest.TestCase):
+    def test_structured_english_headings_are_fully_parsed(self) -> None:
+        spec = generate_spec(
+            """
+Operator Kind: AppService
+API Domain: sample.io
+API Group: apps
+API Version: v1alpha1
+
+Spec Fields:
+- image: string
+- replicas: int32
+- port: int32
+
+Status Fields:
+- phase: string
+- readyReplicas: int32
+- message: string
+
+Managed Resources:
+- Deployment
+
+Controller Responsibilities:
+- AppService 생성 및 변경을 감지한다.
+- Deployment를 생성하고 갱신한다.
+- spec.image를 Deployment의 컨테이너 이미지에 반영한다.
+- spec.replicas를 Deployment의 replicas에 반영한다.
+- Deployment가 외부에서 변경되면 AppService spec 기준으로 복구한다.
+- 실제 readyReplicas를 status.readyReplicas에 기록한다.
+- AppService가 삭제되면 Deployment도 삭제한다.
+
+Validation:
+- make generate
+- make manifests
+- make test
+""",
+            Path("requirements/appservice-structured.txt"),
+        )
+
+        self.assertEqual(
+            spec["api"],
+            {
+                "domain": "sample.io",
+                "group": "apps",
+                "version": "v1alpha1",
+                "kind": "AppService",
+            },
+        )
+        self.assertEqual(
+            [(item["name"], item["type"]) for item in spec["specFields"]],
+            [("image", "string"), ("replicas", "int32"), ("port", "int32")],
+        )
+        self.assertEqual(
+            [(item["name"], item["type"]) for item in spec["statusFields"]],
+            [("phase", "string"), ("readyReplicas", "int32"), ("message", "string")],
+        )
+        self.assertEqual(spec["controller"]["managedResources"], ["Deployment"])
+        self.assertEqual(
+            spec["validation"]["commands"],
+            ["make generate", "make manifests", "make test"],
+        )
+        self.assertEqual(spec["errors"], [])
+
     def test_beginner_appservice_format_is_fully_parsed(self) -> None:
         spec = generate_spec(
             """

@@ -318,6 +318,14 @@ def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
     field_mappings: list[dict[str, str]] = []
     status_rules: list[str] = []
 
+    managed_block = find_heading_block(
+        text,
+        ("Managed Resources", "관리 리소스"),
+    )
+    for raw_line in managed_block.splitlines():
+        item = re.sub(r"^\s*[-*+]\s*", "", raw_line).strip()
+        managed_resources.extend(extract_k8s_resources(item))
+
     for raw_line in text.splitlines():
         line = raw_line.strip().strip(".")
         item = line[2:].strip() if line.startswith("- ") else line
@@ -330,7 +338,9 @@ def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
             target_kind = mapping_target_kind(target)
             if target_kind:
                 managed_resources.append(target_kind)
-        elif "status." in item and ("갱신" in item or "기준" in item):
+        elif "status." in item and any(
+            token in item for token in ("갱신", "기준", "기록", "반영")
+        ):
             status_rules.append(item)
             managed_resources.extend(extract_k8s_resources(item))
         elif item.startswith("Controller는"):
@@ -408,7 +418,9 @@ def parse_rbac(text: str, api: dict[str, str], controller: dict[str, Any], warni
 
 
 def parse_validation(text: str, warnings: list[str]) -> dict[str, list[str]]:
-    block = find_after_heading(text, "검증 명령")
+    block = find_heading_block(text, ("Validation", "검증 명령"))
+    if not block:
+        block = find_after_heading(text, "검증 명령")
     commands = []
     for line in block.splitlines():
         match = re.match(r"\s*-\s*(.+)", line)
@@ -459,6 +471,9 @@ def find_section_block(text: str, section: str) -> str:
     match = re.search(rf"{section}\s*에는\s*다음\s*필드를\s*포함한다\.\s*(.*?)(?:\n\s*\n|$)", text, re.S | re.I)
     if match:
         return match.group(1)
+    structured = find_heading_block(text, (f"{section} Fields",))
+    if structured:
+        return structured
     lines = text.splitlines()
     for index, line in enumerate(lines):
         lowered = line.lower()
@@ -481,6 +496,28 @@ def find_section_block(text: str, section: str) -> str:
                 break
         if selected:
             return "\n".join(selected)
+    return ""
+
+
+def find_heading_block(text: str, headings: tuple[str, ...]) -> str:
+    """Return lines below an exact Markdown-style heading until the next section."""
+    expected = {heading.strip().rstrip(":").casefold() for heading in headings}
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        normalized = line.strip().rstrip(":").strip().casefold()
+        if normalized not in expected:
+            continue
+        selected: list[str] = []
+        for candidate in lines[index + 1 :]:
+            stripped = candidate.strip()
+            if not stripped:
+                if selected:
+                    break
+                continue
+            if not re.match(r"[-*+]\s+", stripped) and stripped.endswith(":"):
+                break
+            selected.append(candidate)
+        return "\n".join(selected)
     return ""
 
 
