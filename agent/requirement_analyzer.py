@@ -10,19 +10,6 @@ from typing import Any
 import yaml
 
 
-KNOWN_WORKLOADS = {
-    "ConfigMap": ["configmap", "config map", "설정"],
-    "Secret": ["secret", "비밀", "credential", "password"],
-    "Deployment": ["deployment", "deploy", "배포"],
-    "StatefulSet": ["statefulset", "stateful", "상태저장"],
-    "Service": ["service", "svc", "서비스"],
-    "Job": ["job", "batch", "학습", "training", "작업"],
-    "CronJob": ["cronjob", "schedule", "스케줄"],
-    "Pod": ["pod"],
-    "PersistentVolumeClaim": ["persistentvolumeclaim", "pvc", "volume", "스토리지"],
-}
-
-
 INTENT_PATTERNS = [
     (
         "operator_generation",
@@ -67,14 +54,16 @@ def analyze_requirement_intent(requirement_text: str) -> dict[str, Any]:
 
 
 def infer_managed_resources(requirement_text: str) -> list[str]:
-    text = requirement_text.lower()
-    resources = set()
-    for resource, keywords in KNOWN_WORKLOADS.items():
-        if resource.lower() in text or any(keyword.lower() in text for keyword in keywords):
-            resources.add(resource)
-    resources.update(re.findall(r"\b(ConfigMap|Secret|Deployment|StatefulSet|Service|Job|CronJob|Pod|PersistentVolumeClaim|PVC)\b", requirement_text))
+    from agent.tools.spec_generator import parse_controller
+
+    controller = parse_controller(requirement_text, [])
     normalized = {"PVC": "PersistentVolumeClaim"}.get
-    return sorted({normalized(item, item) for item in resources})
+    return sorted(
+        {
+            normalized(str(item), str(item))
+            for item in controller.get("managedResources") or []
+        }
+    )
 
 
 def select_profile_hint(

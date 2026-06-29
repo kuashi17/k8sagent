@@ -33,6 +33,36 @@ Controller는 Deployment와 Service를 관리한다.
 
 
 class ContextBuilderTest(unittest.TestCase):
+    def test_parses_natural_appservice_api_and_star_bullets(self) -> None:
+        text = """
+Custom Resource 이름은 AppService로 하고, API는 apps.sample.io/v1alpha1을 사용합니다.
+사용자가 spec에 다음 값을 입력할 수 있어야 합니다.
+* image: 실행할 컨테이너 이미지
+* replicas: 실행할 Pod 개수
+* port: 컨테이너가 사용하는 포트
+
+Controller는 AppService 리소스를 감지해서 Deployment를 생성하고 관리해야 합니다.
+
+AppService의 status에는 다음 값을 표시해주세요.
+* phase: 현재 처리 상태
+* readyReplicas: 실제 준비된 Pod 개수
+* message: 처리 결과 또는 오류 설명
+"""
+
+        summary = summarize_requirement(text)
+
+        self.assertEqual(summary["kind"], "AppService")
+        self.assertEqual(summary["domain"], "sample.io")
+        self.assertEqual(summary["group"], "apps")
+        self.assertEqual(summary["version"], "v1alpha1")
+        self.assertEqual(summary["managedResources"], ["Deployment"])
+        self.assertEqual(summary["specFields"], ["image", "replicas", "port"])
+        self.assertEqual(
+            summary["statusFields"],
+            ["phase", "readyReplicas", "message"],
+        )
+        self.assertEqual(missing_information(summary, text), [])
+
     def test_parses_generic_requirement(self) -> None:
         summary = summarize_requirement(REQUIREMENT)
         self.assertEqual(summary["kind"], "WebService")

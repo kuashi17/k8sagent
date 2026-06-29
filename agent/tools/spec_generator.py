@@ -63,6 +63,19 @@ RESOURCE_ALIASES = {
     "statefulsets": "statefulsets",
 }
 
+SUPPORTED_FIELD_TYPES = {
+    "string",
+    "int",
+    "int32",
+    "int64",
+    "bool",
+    "boolean",
+    "[]string",
+    "map[string]string",
+    "metav1.Time",
+    "[]metav1.Condition",
+}
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate an operator-spec.yaml from a requirement file.")
@@ -84,6 +97,8 @@ def main() -> int:
         print(f"Warnings: {len(spec['warnings'])}")
     if spec["errors"]:
         print(f"Errors: {len(spec['errors'])}")
+        for error in spec["errors"]:
+            print(f"Error: {error}")
         return 2
     return 0
 
@@ -210,6 +225,25 @@ def parse_api(text: str, warnings: list[str]) -> dict[str, str]:
     group = find_value(text, r"group\s*(?:은|는|:|=)\s*([a-z][a-z0-9-]*)")
     version = find_value(text, r"version\s*(?:은|는|:|=)\s*(v[0-9]+(?:alpha[0-9]+|beta[0-9]+)?)")
     kind = find_value(text, r"kind\s*(?:은|는|:|=)\s*([A-Z][A-Za-z0-9]*)")
+    full_api = re.search(
+        r"API\s*(?:은|는|:|=)\s*([a-z][a-z0-9.-]*)/(v[0-9]+(?:alpha[0-9]+|beta[0-9]+)?)",
+        text,
+        re.I,
+    )
+    if full_api:
+        api_group, api_version = full_api.groups()
+        labels = api_group.split(".")
+        if not group and labels:
+            group = labels[0]
+        if not domain and len(labels) > 1:
+            domain = ".".join(labels[1:])
+        if not version:
+            version = api_version
+    if not kind:
+        kind = find_value(
+            text,
+            r"Custom\s+Resource\s+(?:이름|명)\s*(?:은|는|:|=)\s*([A-Z][A-Za-z0-9]*)",
+        )
     if not kind:
         kind = find_value(text, r"([A-Z][A-Za-z0-9]*)\s*라는\s+Kubernetes Custom Resource")
 
@@ -234,10 +268,21 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
     block = find_section_block(text, section)
     fields: list[dict[str, str]] = []
     for line in block.splitlines():
-        match = re.match(r"\s*-\s*([a-z][A-Za-z0-9]*)\s*:\s*([^\s-]+)\s*(?:-\s*(.+))?\s*$", line)
+        match = re.match(
+            r"\s*[-*+]\s*([a-z][A-Za-z0-9]*)\s*:\s*(.+?)\s*$",
+            line,
+        )
         if not match:
             continue
-        name, field_type, description = match.groups()
+        name, remainder = match.groups()
+        explicit = re.match(r"([^\s-]+)\s*(?:-\s*(.+))?$", remainder)
+        candidate = explicit.group(1) if explicit else ""
+        if candidate in SUPPORTED_FIELD_TYPES:
+            field_type = candidate
+            description = explicit.group(2) or ""
+        else:
+            field_type = infer_field_type(name, remainder)
+            description = remainder
         fields.append(
             {
                 "name": name,
@@ -295,7 +340,10 @@ def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
                 status_rules.append(item)
         else:
             resources = extract_k8s_resources(item)
-            if resources and ("생성" in item or "관리" in item or "조회" in item):
+            if resources and any(
+                verb in item
+                for verb in ("생성", "관리", "조회", "변경", "수정", "복구", "삭제")
+            ):
                 responsibilities.append(item)
                 managed_resources.extend(resources)
 
@@ -409,7 +457,42 @@ def find_value(text: str, pattern: str) -> str:
 
 def find_section_block(text: str, section: str) -> str:
     match = re.search(rf"{section}\s*에는\s*다음\s*필드를\s*포함한다\.\s*(.*?)(?:\n\s*\n|$)", text, re.S | re.I)
-    return match.group(1) if match else ""
+    if match:
+        return match.group(1)
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        lowered = line.lower()
+        if (
+            section.lower() not in lowered
+            or "다음" not in line
+            or not any(token in line for token in ("값", "필드"))
+        ):
+            continue
+        selected: list[str] = []
+        started = False
+        for candidate in lines[index + 1 :]:
+            if re.match(r"\s*[-*+]\s+", candidate):
+                selected.append(candidate)
+                started = True
+                continue
+            if not candidate.strip() and not started:
+                continue
+            if started:
+                break
+        if selected:
+            return "\n".join(selected)
+    return ""
+
+
+def infer_field_type(name: str, description: str) -> str:
+    lowered = f"{name} {description}".lower()
+    if name in {"replicas", "readyReplicas", "port", "containerPort", "gpuCount", "size", "count"}:
+        return "int32"
+    if any(token in lowered for token in ("개수", "수량", "replica 수", "포트 번호")):
+        return "int32"
+    if name in {"enabled", "suspend", "paused"} or "여부" in description:
+        return "bool"
+    return "string"
 
 
 def find_after_heading(text: str, heading: str) -> str:

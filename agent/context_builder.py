@@ -14,6 +14,7 @@ from agent.requirement_analyzer import (
     infer_managed_resources,
     select_profile_hint,
 )
+from agent.tools.spec_generator import parse_api, parse_controller, parse_fields
 
 
 RetrievalFunction = Callable[[str, int, str], dict[str, Any]]
@@ -76,16 +77,15 @@ def build_requirement_context(
 
 
 def summarize_requirement(text: str) -> dict[str, Any]:
-    kind = find_value(text, r"kind\s*(?:은|는|:|=)\s*([A-Z][A-Za-z0-9]*)") or find_value(
-        text,
-        r"([A-Z][A-Za-z0-9]*)\s*라는\s+Kubernetes Custom Resource",
-    )
-    domain = find_value(text, r"domain\s*(?:은|는|:|=)\s*([a-z0-9.-]+\.[a-z0-9.-]+)")
-    group = find_value(text, r"group\s*(?:은|는|:|=)\s*([a-z][a-z0-9-]*)")
-    version = find_value(text, r"version\s*(?:은|는|:|=)\s*(v[0-9]+(?:alpha[0-9]+|beta[0-9]+)?)")
-    managed = infer_managed_resources(text)
-    spec_fields = parse_field_names(text, "spec")
-    status_fields = parse_field_names(text, "status")
+    api = parse_api(text, [])
+    controller = parse_controller(text, [])
+    kind = api["kind"]
+    domain = api["domain"]
+    group = api["group"]
+    version = api["version"]
+    managed = controller.get("managedResources") or infer_managed_resources(text)
+    spec_fields = [item["name"] for item in parse_fields(text, "spec", [])]
+    status_fields = [item["name"] for item in parse_fields(text, "status", [])]
     return {
         "kind": kind,
         "domain": domain,
@@ -138,39 +138,6 @@ def clarifying_questions(
     return questions
 
 
-def parse_field_names(text: str, section: str) -> list[str]:
-    match = re.search(
-        rf"{section}\s*에는.*?(?=\n\n|status에는|Controller는|검증 명령|$)",
-        text,
-        flags=re.DOTALL,
-    )
-    block = match.group(0) if match else ""
-    listed = re.findall(
-        r"^\s*-\s*([a-z][A-Za-z0-9]*)\s*:",
-        block,
-        flags=re.MULTILINE,
-    )
-    if listed:
-        return listed
-    inline = re.search(
-        rf"{section}\s*에는\s+(.+?)을\s*포함한다",
-        text,
-        flags=re.DOTALL,
-    )
-    if not inline:
-        return []
-    return [
-        match.group(1)
-        for item in re.split(r"\s*,\s*", inline.group(1))
-        if (
-            match := re.match(
-                r"\s*([a-z][A-Za-z0-9]*)\s*:",
-                item,
-            )
-        )
-    ]
-
-
 def target_project_dir(
     workspace: str,
     kind: str,
@@ -188,11 +155,6 @@ def target_project_dir(
             f"generated/{kind_slug}-operator-spec.yaml",
         )
     )
-
-
-def find_value(text: str, pattern: str) -> str:
-    match = re.search(pattern, text)
-    return match.group(1).strip() if match else ""
 
 
 def infer_project_name(kind: str, spec_path: str) -> str:
