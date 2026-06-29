@@ -11,6 +11,24 @@ from web.schemas import RunResultView
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+BEGINNER_TEXT = {
+    "Review validated Tool calls and generated artifacts.": (
+        "생성 계획과 안전 검사 결과를 확인합니다."
+    ),
+    "Use execute mode only after reviewing safety-evaluation.json.": (
+        "문제가 없으면 화면에서 실제 생성을 승인해 코드 생성과 검증을 진행합니다."
+    ),
+    "Review generated artifacts and validated Tool evidence.": (
+        "생성된 파일과 검증된 실행 근거를 확인합니다."
+    ),
+    "A deterministic summary was built from validated Tool exit codes.": (
+        "검증된 작업 결과를 바탕으로 실행 요약을 만들었습니다."
+    ),
+    "Final LLM evaluation skipped by fast mode.": (
+        "빠른 계획 모드에서는 최종 LLM 평가를 생략했습니다."
+    ),
+}
+
 
 def present_run_result(job: dict[str, Any]) -> RunResultView:
     summary = job.get("summary") or {}
@@ -19,7 +37,7 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
     requirement = summary.get("requirementSummary") or {}
     final = (summary.get("finalLLM") or {}).get("output") or {}
     errors = strings(technical.get("errors") or summary.get("errors"))
-    warnings = strings(
+    warnings = beginner_strings(
         technical.get("warnings") or summary.get("warnings")
     )
     tool_results = summary.get("toolResults") or []
@@ -62,7 +80,7 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             else "작업을 완료하지 못했습니다."
         )
     )
-    beginner_summary = str(
+    beginner_summary = beginner_text(str(
         shared.get("beginnerSummary")
         or final.get("beginnerSummary")
         or requirement.get("shortSummary")
@@ -71,7 +89,7 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             if succeeded
             else "실패한 단계와 다음 조치를 확인해 주세요."
         )
-    )
+    ))
     return RunResultView(
         state=state,
         succeeded=succeeded,
@@ -88,8 +106,8 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         warnings=warnings,
         errors=errors,
         next_actions=(
-            strings(technical.get("nextActions"))
-            or strings(summary.get("nextRecommendedActions"))
+            beginner_strings(technical.get("nextActions"))
+            or beginner_strings(summary.get("nextRecommendedActions"))
         ),
         capability_support=list(technical.get("capabilitySupport") or []),
         beginner_explanation=strings(
@@ -111,6 +129,14 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         capability_discovery=discovery,
         capability_discovery_errors=discovery_errors,
     )
+
+
+def beginner_text(value: str) -> str:
+    return BEGINNER_TEXT.get(value, value)
+
+
+def beginner_strings(value: Any) -> list[str]:
+    return [beginner_text(item) for item in strings(value)]
 
 
 def capability_review(

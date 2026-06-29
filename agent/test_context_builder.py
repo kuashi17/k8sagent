@@ -175,7 +175,7 @@ AppService의 status에는 다음 값을 표시해주세요.
         self.assertEqual(plan["risks"], ["Docker may be unavailable"])
         self.assertEqual(
             plan["nextActions"],
-            ["Review generated artifacts and validated Tool evidence."],
+            ["생성된 파일과 검증된 실행 근거를 확인합니다."],
         )
 
 

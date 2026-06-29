@@ -16,6 +16,47 @@ from web.result_presenter import present_run_result
 
 
 class ResultPresenterTest(unittest.TestCase):
+    def test_legacy_english_actions_are_presented_in_korean(self) -> None:
+        result = present_run_result(
+            {
+                "state": "succeeded",
+                "jobType": "requirement",
+                "summary": {
+                    "agentMode": "dry-run",
+                    "agentResult": {
+                        "beginnerSummary": (
+                            "A deterministic summary was built from validated Tool exit codes."
+                        ),
+                        "technicalDetails": {
+                            "warnings": [
+                                "Final LLM evaluation skipped by fast mode."
+                            ],
+                            "nextActions": [
+                                "Review validated Tool calls and generated artifacts.",
+                                "Use execute mode only after reviewing safety-evaluation.json.",
+                            ],
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(
+            result.summary,
+            "검증된 작업 결과를 바탕으로 실행 요약을 만들었습니다.",
+        )
+        self.assertEqual(
+            result.next_actions,
+            [
+                "생성 계획과 안전 검사 결과를 확인합니다.",
+                "문제가 없으면 화면에서 실제 생성을 승인해 코드 생성과 검증을 진행합니다.",
+            ],
+        )
+        self.assertEqual(
+            result.warnings,
+            ["빠른 계획 모드에서는 최종 LLM 평가를 생략했습니다."],
+        )
+
     def test_dry_run_exposes_review_then_execute_action(self) -> None:
         result = present_run_result(
             {

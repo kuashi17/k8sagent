@@ -464,7 +464,7 @@ def reconcile_plan_with_context(
         and "누락" not in str(item)
     ]
     normalized["nextActions"] = [
-        "Review generated artifacts and validated Tool evidence."
+        "생성된 파일과 검증된 실행 근거를 확인합니다."
     ]
     return normalized
 
