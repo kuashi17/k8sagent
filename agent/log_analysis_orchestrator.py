@@ -14,6 +14,7 @@ from agent.evidence_builder import (
     build_log_analysis_safety_evaluation,
 )
 from agent.llm.client import LLMUnavailable
+from agent.llm.client import config_from_env
 from agent.llm.planner import LLMOutputParseError, analyze_log_with_llm
 from agent.orchestration_common import (
     llm_result,
@@ -149,6 +150,7 @@ def call_log_planner(
             source_summary,
             analysis_text,
             retrieved,
+            config=config_from_env(purpose="log-analysis"),
         )
         validate_llm_output_schema("log-analysis", output, raw)
         return llm_result(True, exact_input, output, raw)

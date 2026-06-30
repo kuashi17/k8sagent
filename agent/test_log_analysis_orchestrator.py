@@ -9,6 +9,31 @@ from agent.log_analysis_orchestrator import call_log_planner
 
 
 class LogAnalysisOrchestratorTest(unittest.TestCase):
+    def test_unknown_classification_uses_short_log_analysis_timeout(self) -> None:
+        analysis = {
+            "status": "failed",
+            "primaryClassification": {"type": "unknown"},
+        }
+        llm_output = {
+            "decision": "failed",
+            "classification": "unknown",
+            "rootCause": "unknown",
+            "evidence": ["stderr"],
+            "recommendedFixes": ["inspect logs"],
+            "rerunCommand": "",
+            "explanationForBeginner": "inspect logs",
+        }
+        with patch(
+            "agent.log_analysis_orchestrator.analyze_log_with_llm",
+            return_value=(llm_output, {"mode": "log-analysis"}, "{}"),
+        ) as analyze:
+            result = call_log_planner({}, "", [], analysis)
+
+        self.assertTrue(result["llmPlannerUsed"])
+        config = analyze.call_args.kwargs["config"]
+        self.assertEqual(config.timeout_seconds, 10)
+        self.assertEqual(config.max_tokens, 240)
+
     def test_known_classification_skips_llm(self) -> None:
         analysis = {
             "status": "failed",

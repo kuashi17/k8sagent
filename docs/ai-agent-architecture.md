@@ -55,7 +55,7 @@ planner, Tool 실행, final/recovery 결과를 최종 Agent summary 계약으로
 
 planning cache key/저장은 `agent/llm_cache.py`, Tool 결과의 최종 평가와 fallback 진입은 `agent/final_evaluator.py`, deterministic/LLM recovery 선택과 정책 적용은 `agent/recovery_orchestrator.py`가 담당한다.
 
-Local LLM 역할별 설정은 분리된다. `LOCAL_LLM_PLANNING_MODEL`, `LOCAL_LLM_FINAL_MODEL`, `LOCAL_LLM_RECOVERY_MODEL`과 각 역할의 `_TIMEOUT_SECONDS`, `_MAX_TOKENS`를 사용할 수 있다. 역할별 값이 없으면 기존 `LOCAL_LLM_MODEL`, `LOCAL_LLM_TIMEOUT_SECONDS`, `LOCAL_LLM_MAX_TOKENS`를 사용한다. 기본 timeout은 planning/recovery 90초, final 30초다.
+Local LLM 역할별 설정은 분리된다. `LOCAL_LLM_PLANNING_MODEL`, `LOCAL_LLM_FINAL_MODEL`, `LOCAL_LLM_RECOVERY_MODEL`, `LOCAL_LLM_LOG_ANALYSIS_MODEL`과 각 역할의 `_TIMEOUT_SECONDS`, `_MAX_TOKENS`를 사용할 수 있다. planning/final/recovery는 역할별 값이 없으면 기존 `LOCAL_LLM_MODEL`, `LOCAL_LLM_TIMEOUT_SECONDS`, `LOCAL_LLM_MAX_TOKENS`를 사용한다. 기본 timeout은 planning/recovery 90초, final 30초다. deterministic 분류가 `unknown`인 로그 분석은 공용 timeout과 무관하게 10초와 240토큰으로 제한하며, `LOCAL_LLM_LOG_ANALYSIS_TIMEOUT_SECONDS`와 `LOCAL_LLM_LOG_ANALYSIS_MAX_TOKENS`로만 명시적으로 조정한다.
 
 ## Profile-backed Kind Deployment
 

@@ -19,6 +19,28 @@ class RequirementPlanStabilityTest(unittest.TestCase):
                 config_from_env(purpose="planning").timeout_seconds,
             )
 
+    def test_log_analysis_timeout_is_not_expanded_by_global_timeout(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"LOCAL_LLM_TIMEOUT_SECONDS": "120"},
+            clear=True,
+        ):
+            self.assertEqual(
+                config_from_env(purpose="log-analysis").timeout_seconds,
+                10,
+            )
+
+    def test_log_analysis_timeout_can_be_explicitly_overridden(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"LOCAL_LLM_LOG_ANALYSIS_TIMEOUT_SECONDS": "6"},
+            clear=True,
+        ):
+            self.assertEqual(
+                config_from_env(purpose="log-analysis").timeout_seconds,
+                6,
+            )
+
     def test_normalizer_fills_non_executable_optional_arrays(self) -> None:
         output = normalize_requirement_plan(
             {

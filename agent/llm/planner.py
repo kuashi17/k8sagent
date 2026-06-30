@@ -99,6 +99,7 @@ def analyze_log_with_llm(
     retrieved_docs: list[dict[str, Any]],
     config: LLMConfig | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
+    analysis_config = config or config_from_env(purpose="log-analysis")
     compact_summary = compact_execution_summary(summary)
     compact_analysis = analysis_md[:6000]
     compact_docs = compact_retrieved_docs(retrieved_docs, excerpt_limit=700)
@@ -113,7 +114,7 @@ def analyze_log_with_llm(
         analysis_md=compact_analysis,
         retrieved_docs=json.dumps(compact_docs, ensure_ascii=False, indent=2),
     )
-    raw = chat_json(SYSTEM_PROMPT, prompt, config)
+    raw = chat_json(SYSTEM_PROMPT, prompt, analysis_config)
     return normalize_log_analysis_output(parse_json_object(raw), compact_summary), llm_input, raw
 
 

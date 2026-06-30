@@ -33,19 +33,35 @@ def config_from_env(
     purpose: str = "default",
 ) -> LLMConfig:
     prefix = purpose.upper().replace("-", "_")
-    timeout_default = "30" if purpose == "final" else "90"
+    timeout_default = {
+        "final": "30",
+        "log-analysis": "10",
+    }.get(purpose, "90")
+    timeout_fallback = (
+        timeout_default
+        if purpose == "log-analysis"
+        else os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", timeout_default)
+    )
     timeout = os.environ.get(
         f"LOCAL_LLM_{prefix}_TIMEOUT_SECONDS",
-        os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", timeout_default),
+        timeout_fallback,
     )
     try:
         timeout_seconds = int(timeout)
     except ValueError:
         timeout_seconds = int(timeout_default)
-    max_tokens_default = "320" if purpose == "final" else "700"
+    max_tokens_default = {
+        "final": "320",
+        "log-analysis": "240",
+    }.get(purpose, "700")
+    max_tokens_fallback = (
+        max_tokens_default
+        if purpose == "log-analysis"
+        else os.environ.get("LOCAL_LLM_MAX_TOKENS", max_tokens_default)
+    )
     max_tokens_raw = os.environ.get(
         f"LOCAL_LLM_{prefix}_MAX_TOKENS",
-        os.environ.get("LOCAL_LLM_MAX_TOKENS", max_tokens_default),
+        max_tokens_fallback,
     )
     try:
         max_tokens = int(max_tokens_raw)
