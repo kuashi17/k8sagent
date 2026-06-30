@@ -185,6 +185,55 @@ class ControllerIRBuilderTest(unittest.TestCase):
             "merge-string-map",
         )
 
+    def test_generic_policy_cannot_make_patch_existing_namespace_a_creator(
+        self,
+    ) -> None:
+        value = model(
+            ["Namespace"],
+            ["namespaceName", "labels"],
+            ["phase", "message"],
+        )
+        value["controller"]["resourcePolicies"] = [
+            {
+                "kind": "Namespace",
+                "strategy": "create-or-update",
+                "ownership": "none",
+                "deletionPolicy": "retain",
+            }
+        ]
+
+        namespace = build_controller_ir(value).resource("Namespace")
+
+        self.assertEqual(
+            namespace.strategy,
+            ReconcileStrategy.PATCH_EXISTING,
+        )
+
+    def test_generic_owner_reference_policy_preserves_cluster_finalizer(
+        self,
+    ) -> None:
+        value = model(
+            ["ClusterRole"],
+            ["clusterRoleName", "ruleVerbs"],
+            ["phase", "message"],
+        )
+        value["controller"]["resourcePolicies"] = [
+            {
+                "kind": "ClusterRole",
+                "strategy": "create-or-update",
+                "ownership": "ownerReference",
+                "deletionPolicy": "garbage-collect",
+            }
+        ]
+
+        cluster_role = build_controller_ir(value).resource("ClusterRole")
+
+        self.assertEqual(cluster_role.ownership, OwnershipPolicy.FINALIZER)
+        self.assertEqual(
+            cluster_role.deletion_policy,
+            DeletionPolicy.EXPLICIT_DELETE,
+        )
+
     def test_enabled_resource_has_explicit_disable_condition(self) -> None:
         secret = build_controller_ir(
             model(

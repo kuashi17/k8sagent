@@ -542,6 +542,25 @@ class ManagedResourceValidator:
                 raise RuntimeError(
                     f"Custom Resource phase was not accepted: {status}"
                 )
+        if self.state_machine_status:
+            deadline = time.time() + engine.timeout_seconds
+            last_error: RuntimeError | None = None
+            while time.time() < deadline:
+                status = custom_resource.get("status") or {}
+                try:
+                    self.verify_state_machine_status(custom_resource, status)
+                    last_error = None
+                    break
+                except RuntimeError as error:
+                    last_error = error
+                    time.sleep(2)
+                    custom_resource = self.wait_present(
+                        engine,
+                        self.resource,
+                        self.sample_name,
+                    )
+            if last_error is not None:
+                raise last_error
         engine.checks["managedResources"] = managed
         engine.checks["customResourceStatus"] = status
         if self.finalizer:
@@ -562,7 +581,6 @@ class ManagedResourceValidator:
                 "actual": finalizers,
             }
         if self.state_machine_status:
-            self.verify_state_machine_status(custom_resource, status)
             engine.checks["stateMachineStatus"] = {
                 "observedGeneration": status.get(
                     "observedGeneration"

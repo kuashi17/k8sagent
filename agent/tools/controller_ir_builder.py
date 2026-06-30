@@ -21,6 +21,7 @@ from agent.tools.controller_ir import (
     RBACRule,
     ReconcileStrategy,
     ResourceCapability,
+    ResourceScope,
     StatusMapping,
     UpdatePolicy,
 )
@@ -142,6 +143,21 @@ def apply_resource_policy(
             or resource.deletion_policy.value
         )
     )
+    # Requirement parsers describe user intent, while the capability adapter
+    # owns Kubernetes lifecycle constraints. A generic create-or-update policy
+    # must not turn a safe patch-existing capability into a creator, and a
+    # namespaced CR can never own a cluster-scoped object by ownerReference.
+    if (
+        resource.strategy == ReconcileStrategy.PATCH_EXISTING
+        and strategy == ReconcileStrategy.CREATE_OR_UPDATE
+    ):
+        strategy = resource.strategy
+    if (
+        resource.scope == ResourceScope.CLUSTER
+        and ownership == OwnershipPolicy.OWNER_REFERENCE
+    ):
+        ownership = resource.ownership
+        deletion = resource.deletion_policy
     if strategy == ReconcileStrategy.READ_ONLY:
         return resource.model_copy(
             update={

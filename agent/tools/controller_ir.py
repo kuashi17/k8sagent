@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class IRModel(BaseModel):
@@ -122,6 +122,25 @@ class ManagedResourceSpec(IRModel):
     dependency_kind: str = ""
     dependency_variable: str = ""
     dependency_target_path: str = ""
+
+    @model_validator(mode="after")
+    def validate_lifecycle_policy(self) -> "ManagedResourceSpec":
+        if (
+            self.scope == ResourceScope.CLUSTER
+            and self.ownership == OwnershipPolicy.OWNER_REFERENCE
+        ):
+            raise ValueError(
+                f"cluster-scoped resource {self.kind} cannot use ownerReference"
+            )
+        if self.strategy == ReconcileStrategy.PATCH_EXISTING and (
+            self.ownership != OwnershipPolicy.NONE
+            or self.deletion_policy != DeletionPolicy.RETAIN
+        ):
+            raise ValueError(
+                f"patch-existing resource {self.kind} must be retained "
+                "without ownership"
+            )
+        return self
 
 
 class ControllerGenerationIR(IRModel):
