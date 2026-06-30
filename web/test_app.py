@@ -101,6 +101,17 @@ class FakeCompletedJobs(FakeJobs):
             "recovery": {},
         }
 
+    def list(self, limit=20):
+        return [
+            {
+                "jobId": "20260619-async0001",
+                "jobType": "requirement",
+                "state": "failed",
+                "createdAt": "2026-06-19T00:00:00+09:00",
+                "agentLogDir": "logs/agent/example",
+            }
+        ]
+
 
 class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
     async def request(self, method, path, **kwargs):
@@ -178,6 +189,29 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("계획 확인 없이 바로 실행", response.text)
         self.assertNotIn("기존 프로젝트에서 계속", response.text)
         self.assertNotIn("Safety Evaluation</summary>", response.text)
+
+    async def test_log_analysis_selects_recent_failed_job(self) -> None:
+        with patch("web.app.jobs", FakeCompletedJobs()):
+            response = await self.request("GET", "/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("선택한 로그 분석", response.text)
+        self.assertIn(
+            'value="logs/agent/example" selected',
+            response.text,
+        )
+
+    async def test_empty_log_analysis_shows_inline_error(self) -> None:
+        with patch("web.app.jobs", FakeJobs()):
+            response = await self.request(
+                "POST",
+                "/analyze-log",
+                data={"log_dir": ""},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("분석할 로그 작업을 먼저 선택", response.text)
+        self.assertIn('<details class="support-tools" open>', response.text)
 
     async def test_short_requirement_is_rejected_for_beginner(self) -> None:
         with patch("web.app.jobs", FakeJobs()):

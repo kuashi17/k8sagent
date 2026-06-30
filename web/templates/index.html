@@ -129,10 +129,23 @@
 
   <details class="support-tools" {% if show_log_analysis %}open{% endif %}>
     <summary>기존 실패 로그 분석하기</summary>
-    <form method="post" action="/analyze-log">
-      <label for="log_dir">summary.json이 있는 로그 폴더</label>
-      <input id="log_dir" name="log_dir" value="{{ default_log_dir }}" placeholder="logs/agent/20260621-...">
-      <button class="secondary-button" type="submit">로그 분석</button>
+    <form method="post" action="/analyze-log" id="log-analysis-form">
+      {% if log_form_error %}
+      <div class="alert alert-error" role="alert">{{ log_form_error }}</div>
+      {% endif %}
+      <label for="log_dir">분석할 완료 작업</label>
+      {% if log_options %}
+      <select id="log_dir" name="log_dir" required>
+        {% for item in log_options %}
+        <option value="{{ item.path }}" {% if item.path == default_log_dir %}selected{% endif %}>{{ item.label }}</option>
+        {% endfor %}
+      </select>
+      <p class="field-help">실패한 작업이 있으면 자동으로 먼저 선택합니다.</p>
+      <button class="secondary-button" type="submit" id="log-analysis-submit">선택한 로그 분석</button>
+      {% else %}
+      <p class="muted">아직 분석할 완료 작업이 없습니다. 먼저 Operator 계획을 실행해 주세요.</p>
+      <button class="secondary-button" type="button" disabled>분석할 로그 없음</button>
+      {% endif %}
     </form>
   </details>
 </main>

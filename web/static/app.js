@@ -18,6 +18,14 @@
     submit.textContent = "계획을 시작하는 중…";
   });
 
+  const logAnalysisForm = document.getElementById("log-analysis-form");
+  logAnalysisForm?.addEventListener("submit", () => {
+    const submit = document.getElementById("log-analysis-submit");
+    if (!submit) return;
+    submit.disabled = true;
+    submit.textContent = "로그 분석을 시작하는 중…";
+  });
+
   const panel = document.getElementById("job-panel");
   if (panel) {
     const jobId = panel.dataset.jobId;

@@ -123,12 +123,15 @@ async def run_requirement(request: Request) -> HTMLResponse:
 async def analyze_log(request: Request) -> HTMLResponse:
     form = await request.form()
     try:
+        if not str(form.get("log_dir") or "").strip():
+            raise ValueError("분석할 로그 작업을 먼저 선택해 주세요.")
         analysis = LogAnalysisRequest.from_form(form)
         job = workflows.submit_log_analysis(analysis, jobs)
     except (ValidationError, ValueError) as exc:
         return render_home(
             request,
-            form_error=friendly_error(exc),
+            default_log_dir=str(form.get("log_dir") or "").strip(),
+            log_form_error=friendly_error(exc),
             show_log_analysis=True,
             status_code=422,
         )
@@ -291,9 +294,20 @@ def render_home(
     selected_mode: str = "dry-run",
     selected_run_level: str = "fast",
     form_error: str = "",
+    default_log_dir: str = "",
+    log_form_error: str = "",
     show_log_analysis: bool = False,
     status_code: int = 200,
 ) -> HTMLResponse:
+    log_options = analyzable_log_options()
+    selected_log = default_log_dir or next(
+        (
+            item["path"]
+            for item in log_options
+            if item["state"] == "failed"
+        ),
+        log_options[0]["path"] if log_options else "",
+    )
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -303,7 +317,9 @@ def render_home(
             "default_requirement": requirement_text
             if requirement_text is not None
             else "",
-            "default_log_dir": "",
+            "default_log_dir": selected_log,
+            "log_options": log_options,
+            "log_form_error": log_form_error,
             "selected_profile": selected_profile,
             "selected_mode": selected_mode,
             "selected_run_level": selected_run_level,
@@ -314,6 +330,31 @@ def render_home(
         },
         status_code=status_code,
     )
+
+
+def analyzable_log_options(limit: int = 20) -> list[dict[str, str]]:
+    options = []
+    for item in jobs.list(100):
+        log_dir = str(item.get("agentLogDir") or "")
+        if (
+            item.get("jobType") != "requirement"
+            or item.get("state") not in TERMINAL_STATES
+            or not log_dir
+        ):
+            continue
+        options.append(
+            {
+                "path": log_dir,
+                "state": str(item.get("state") or ""),
+                "label": (
+                    f"{STATE_LABELS.get(str(item.get('state')), item.get('state'))} · "
+                    f"{item.get('createdAt') or ''} · {log_dir}"
+                ),
+            }
+        )
+        if len(options) >= limit:
+            break
+    return options
 
 
 def job_status_payload(job: dict[str, Any]) -> dict[str, Any]:
