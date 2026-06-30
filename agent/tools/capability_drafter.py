@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -404,15 +405,30 @@ def approved_proposal_path(value: str) -> Path:
         if path.is_absolute()
         else (REPO_ROOT / path).resolve()
     )
-    try:
-        resolved.relative_to((REPO_ROOT / "generated").resolve())
-    except ValueError as exc:
+    if not is_approved_proposal_location(resolved):
         raise ValueError(
-            "approved capability proposal must be inside generated/"
-        ) from exc
+            "approved capability proposal must be inside generated/ or a "
+            "Web job artifacts directory"
+        )
     if resolved.suffix not in {".yaml", ".yml"}:
         raise ValueError("approved capability proposal must be YAML")
     return resolved
+
+
+def is_approved_proposal_location(path: Path) -> bool:
+    try:
+        relative = path.relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        return False
+    if relative.parts and relative.parts[0] == "generated":
+        return True
+    parts = relative.parts
+    return (
+        len(parts) >= 6
+        and parts[:3] == ("logs", "web", "jobs")
+        and parts[4] == "artifacts"
+        and bool(re.fullmatch(r"[0-9A-Za-z-]+", parts[3]))
+    )
 
 
 def load_combined_catalog(

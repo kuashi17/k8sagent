@@ -26,6 +26,7 @@ def build_requirement_context(
     profile_path: str | None,
     profile: dict[str, Any],
     workspace: str,
+    artifact_dir: str,
     retrieve: RetrievalFunction,
     rag_limit: int,
     allow_profile_hints: bool = True,
@@ -41,6 +42,12 @@ def build_requirement_context(
     )
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
+    artifact_root = Path(artifact_dir)
+    operator_spec = artifact_root / f"{kind_slug}-operator-spec.yaml"
+    isolated_outputs = (
+        Path(workspace) != Path("workspace/generated-operators")
+        or artifact_root != Path("generated")
+    )
     selected_profile = profile_hint["selectedProfile"]
     retrieval = retrieve(requirement_text, rag_limit, "requirement")
     retrieved = retrieval["selectedContext"]
@@ -54,18 +61,23 @@ def build_requirement_context(
         "selectedProfile": selected_profile,
         "profileCandidates": profile_hint["profileCandidates"],
         "workspace": workspace,
+        "isolatedOutputs": isolated_outputs,
         "targetProjectDir": target_project_dir(
             workspace,
             kind,
             kind_slug,
             selected_profile,
+            str(operator_spec),
+            isolated_outputs,
         ),
         "generatedFiles": {
-            "operatorSpec": f"generated/{kind_slug}-operator-spec.yaml",
+            "operatorSpec": str(operator_spec),
             "capabilityProposal": (
-                f"generated/{kind_slug}-capability-proposal.yaml"
+                str(artifact_root / f"{kind_slug}-capability-proposal.yaml")
             ),
-            "commandPlan": f"generated/{kind_slug}-command-plan.md",
+            "commandPlan": str(
+                artifact_root / f"{kind_slug}-command-plan.md"
+            ),
         },
         "timings": {
             "ragRetrievalSeconds": round(
@@ -174,16 +186,18 @@ def target_project_dir(
     kind: str,
     kind_slug: str,
     selected_profile: dict[str, Any],
+    operator_spec: str,
+    isolated_outputs: bool = False,
 ) -> str:
     capability = selected_profile.get("kindDeployment") or {}
     profile_project = str(capability.get("project") or "")
-    if profile_project:
+    if profile_project and not isolated_outputs:
         return profile_project
     return str(
         Path(workspace)
         / infer_project_name(
             kind,
-            f"generated/{kind_slug}-operator-spec.yaml",
+            operator_spec,
         )
     )
 

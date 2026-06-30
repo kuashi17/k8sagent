@@ -291,12 +291,23 @@ def build_kind_deployment_call(
     capability: dict[str, Any],
     execute: bool,
 ) -> dict[str, Any]:
-    project = capability.get("project") or context["targetProjectDir"]
+    configured_project = str(capability.get("project") or "")
+    project = (
+        context["targetProjectDir"]
+        if context.get("isolatedOutputs")
+        else configured_project or context["targetProjectDir"]
+    )
+    sample = remap_profile_project_path(
+        str(capability.get("sample") or ""),
+        configured_project,
+        str(project),
+        bool(context.get("isolatedOutputs")),
+    )
     arguments = {
         "project": project,
         "clusterName": capability.get("clusterName"),
         "image": capability.get("image"),
-        "sample": capability.get("sample"),
+        "sample": sample,
         "namespace": capability.get("namespace"),
         "deployment": capability.get("deployment"),
         "validator": capability.get("validator"),
@@ -320,7 +331,7 @@ def build_kind_deployment_call(
             str(project),
             cluster_name=str(capability.get("clusterName") or ""),
             image=str(capability.get("image") or ""),
-            sample=str(capability.get("sample") or ""),
+            sample=sample,
             namespace=str(capability.get("namespace") or ""),
             deployment=str(capability.get("deployment") or ""),
             validator=str(capability.get("validator") or ""),
@@ -330,6 +341,21 @@ def build_kind_deployment_call(
             skip_prevalidation=bool(capability.get("skipPrevalidation")),
         ),
     }
+
+
+def remap_profile_project_path(
+    value: str,
+    configured_project: str,
+    isolated_project: str,
+    isolated_outputs: bool,
+) -> str:
+    if not isolated_outputs or not value or not configured_project:
+        return value
+    try:
+        relative = Path(value).relative_to(Path(configured_project))
+    except ValueError:
+        return value
+    return str(Path(isolated_project) / relative)
 
 
 def apply_resume_policy(

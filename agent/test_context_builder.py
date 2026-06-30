@@ -81,6 +81,7 @@ AppService의 status에는 다음 값을 표시해주세요.
             None,
             {},
             "workspace/generated-operators",
+            "generated",
             retrieve,
             2,
         )
@@ -124,6 +125,8 @@ AppService의 status에는 다음 값을 표시해주세요.
                     )
                 }
             },
+            "generated/trainingjob-operator-spec.yaml",
+            False,
         )
 
         self.assertEqual(
@@ -140,6 +143,7 @@ AppService의 status에는 다음 값을 표시해주세요.
             None,
             {},
             "workspace/generated-operators",
+            "generated",
             lambda query, limit, purpose: {"selectedContext": []},
             2,
             allow_profile_hints=False,
@@ -155,6 +159,31 @@ AppService의 status에는 다음 값을 표시해주세요.
                 "web-service-operator"
             )
         )
+
+    def test_job_specific_artifact_directory_is_used_for_every_output(
+        self,
+    ) -> None:
+        context = build_requirement_context(
+            Path("logs/web/jobs/job-1/requirement.txt"),
+            REQUIREMENT,
+            None,
+            {},
+            "logs/web/jobs/job-1/workspace",
+            "logs/web/jobs/job-1/artifacts",
+            lambda query, limit, purpose: {"selectedContext": []},
+            2,
+        )
+
+        self.assertEqual(
+            context["generatedFiles"]["operatorSpec"],
+            "logs/web/jobs/job-1/artifacts/webservice-operator-spec.yaml",
+        )
+        self.assertTrue(
+            context["targetProjectDir"].startswith(
+                "logs/web/jobs/job-1/workspace/"
+            )
+        )
+        self.assertTrue(context["isolatedOutputs"])
 
     def test_extracts_only_well_formed_planner_collections(self) -> None:
         data = {"reasoning": ["one"], "toolCalls": [{"tool": "validation"}, "bad"]}

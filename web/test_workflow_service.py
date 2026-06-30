@@ -15,6 +15,13 @@ from web.workflow_service import WorkflowService
 
 
 class WorkflowServiceTest(unittest.TestCase):
+    class Jobs:
+        def __init__(self, parent: dict) -> None:
+            self.parent = parent
+
+        def get(self, job_id: str) -> dict:
+            return self.parent if job_id == self.parent.get("jobId") else {}
+
     def test_execute_command_requires_contract_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -147,6 +154,58 @@ class WorkflowServiceTest(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "변경"):
                 service.validate_capability_approval(request)
+
+    def test_parent_job_capability_artifact_can_be_approved(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "profiles").mkdir()
+            job_id = "20260701-parent"
+            artifacts = root / "logs" / "web" / "jobs" / job_id / "artifacts"
+            artifacts.mkdir(parents=True)
+            proposal = ProposalModel(
+                status="pending-approval",
+                source="test",
+                sourceSpecDigest="source",
+                unsupportedResources=["QuantumQueue"],
+                capabilities=[
+                    ResourceCapabilityDefinition(
+                        kind="QuantumQueue",
+                        apiVersion="example.io/v1",
+                        suffix="queue",
+                    )
+                ],
+            )
+            proposal.proposalId = proposal_digest(proposal)
+            proposal_path = artifacts / "proposal.yaml"
+            proposal_path.write_text(
+                yaml.safe_dump(
+                    proposal.model_dump(mode="json"),
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+            service = WorkflowService(
+                root,
+                root / "logs" / "web",
+                root / "profiles",
+            )
+            request = RequirementRunRequest(
+                requirement_text="Create a QuantumQueue Operator.",
+                mode="execute",
+                confirm_execute=True,
+                capability_proposal=str(proposal_path.relative_to(root)),
+                capability_approval=proposal.proposalId,
+                confirm_capability=True,
+                approval_parent_job_id=job_id,
+            )
+            jobs = self.Jobs(
+                {
+                    "jobId": job_id,
+                    "jobDir": f"logs/web/jobs/{job_id}",
+                }
+            )
+
+            service.validate_capability_approval(request, jobs)
 
 
 if __name__ == "__main__":

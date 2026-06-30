@@ -65,6 +65,7 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
         args.profile,
         profile,
         args.workspace,
+        str(getattr(args, "artifact_dir", "generated") or "generated"),
         perform_retrieval,
         requirement_rag_limit(),
         allow_profile_hints=not bool(

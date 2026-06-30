@@ -49,6 +49,11 @@ class JobManager:
         job_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex[:8]
         job_dir = self.root / job_id
         job_dir.mkdir(parents=True)
+        command = isolate_job_command(
+            job_type,
+            command,
+            relative(job_dir, self.repo_root),
+        )
         for name, content in (input_files or {}).items():
             safe_path = job_dir / Path(name).name
             safe_path.write_text(content, encoding="utf-8")
@@ -353,6 +358,36 @@ def safe_job_id(value: str) -> str:
     if not re.fullmatch(r"[0-9A-Za-z-]+", value):
         raise ValueError("Invalid job ID")
     return value
+
+
+def isolate_job_command(
+    job_type: str,
+    command: list[str],
+    job_dir: str,
+) -> list[str]:
+    """Bind mutable Agent outputs to one Web job directory."""
+    isolated = [str(item) for item in command]
+    if job_type != "requirement" or "agent/langchain_agent.py" not in isolated:
+        return isolated
+    isolated = replace_option(
+        isolated,
+        "--workspace",
+        str(Path(job_dir) / "workspace"),
+    )
+    return replace_option(
+        isolated,
+        "--artifact-dir",
+        str(Path(job_dir) / "artifacts"),
+    )
+
+
+def replace_option(command: list[str], option: str, value: str) -> list[str]:
+    updated = list(command)
+    while option in updated:
+        index = updated.index(option)
+        del updated[index : min(index + 2, len(updated))]
+    updated.extend([option, value])
+    return updated
 
 
 def read_tail(path: Path, limit: int) -> str:

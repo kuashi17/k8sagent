@@ -70,6 +70,17 @@ class CapabilityDrafterTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "generated"):
             approved_proposal_path("../outside-proposal.yaml")
 
+    def test_web_job_artifact_proposal_is_an_allowed_review_source(self) -> None:
+        path = approved_proposal_path(
+            "logs/web/jobs/20260701-test/artifacts/proposal.yaml"
+        )
+
+        self.assertTrue(
+            str(path).endswith(
+                "logs/web/jobs/20260701-test/artifacts/proposal.yaml"
+            )
+        )
+
     def test_candidate_is_pending_until_explicit_apply(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

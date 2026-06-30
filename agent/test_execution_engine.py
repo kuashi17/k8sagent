@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from agent.execution_engine import (
     apply_resume_policy,
+    build_kind_deployment_call,
     build_supported_calls,
     execute_planned_tools,
     order_validated_tool_calls,
@@ -34,6 +35,37 @@ def context(target: str = "workspace/generated-operators/example") -> dict:
 
 
 class ExecutionEngineTest(unittest.TestCase):
+    def test_isolated_kind_call_remaps_profile_project_and_sample(self) -> None:
+        ctx = context("logs/web/jobs/job-1/workspace/example-operator")
+        ctx["isolatedOutputs"] = True
+        call = build_kind_deployment_call(
+            ctx,
+            {
+                "project": "workspace/generated-operators/example-operator",
+                "sample": (
+                    "workspace/generated-operators/example-operator/"
+                    "config/samples/example.yaml"
+                ),
+                "clusterName": "example",
+                "image": "example:kind",
+                "namespace": "example-system",
+                "deployment": "example-controller-manager",
+                "validator": "managed-resources",
+                "validatorConfig": {"resource": "example"},
+            },
+            False,
+        )
+
+        self.assertEqual(
+            call["arguments"]["project"],
+            "logs/web/jobs/job-1/workspace/example-operator",
+        )
+        self.assertEqual(
+            call["arguments"]["sample"],
+            "logs/web/jobs/job-1/workspace/example-operator/"
+            "config/samples/example.yaml",
+        )
+
     def test_execution_result_is_validated_at_boundary(self) -> None:
         result = execution_result([], [], [], [], 0.1, 0.2)
 

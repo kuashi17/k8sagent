@@ -85,7 +85,7 @@ Docker daemon 연결 실패는 `docker-kind-connection`으로 분류한다. reco
 
 Docker 연결 실패처럼 로컬 정책으로 확정할 수 있는 오류는 recovery LLM 호출을 생략한다. Tool 실패 직후에는 recovery planning 전에 plan, Tool 결과, failure context를 Agent log에 체크포인트로 기록한다.
 
-Web UI는 Agent CLI를 백그라운드 job으로 실행한다. 각 job은 `logs/web/jobs/<job-id>`에 상태와 stdout/stderr를 기록한다. embedded 개발 모드와 외부 `web/worker.py` 모드를 지원하며, 외부 모드에서는 여러 worker가 원자적 claim 파일로 작업을 분배한다. UI는 SSE 상태 API로 현재 단계와 로그를 갱신한다. 최근 작업 목록, 실행 중 취소, 제한된 재시도를 지원한다. kind 작업의 rollback은 자동화하지 않고 수동 승인 정책만 기록한다.
+Web UI는 Agent CLI를 백그라운드 job으로 실행한다. 각 job은 `logs/web/jobs/<job-id>`에 상태와 stdout/stderr를 기록하고, `artifacts/`와 `workspace/` 아래에 생성 산출물과 Kubebuilder 프로젝트를 격리한다. 재시도는 새 job ID와 새 가변 경로를 사용하며 capability 승인은 부모 계획 job의 `artifacts/`에 있는 제안만 참조할 수 있다. embedded 개발 모드와 외부 `web/worker.py` 모드를 지원하며, 외부 모드에서는 여러 worker가 원자적 claim 파일로 작업을 분배한다. UI는 SSE 상태 API로 현재 단계와 로그를 갱신한다. 최근 작업 목록, 실행 중 취소, 제한된 재시도를 지원한다. kind 작업의 rollback은 자동화하지 않고 수동 승인 정책만 기록한다.
 
 ## Requirement Analyzer와 Profile Hint
 

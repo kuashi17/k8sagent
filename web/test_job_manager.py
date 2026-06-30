@@ -8,10 +8,67 @@ import time
 import unittest
 from pathlib import Path
 
-from web.job_manager import JobManager, build_journey_timings, infer_phase
+from web.job_manager import (
+    JobManager,
+    build_journey_timings,
+    infer_phase,
+    isolate_job_command,
+)
 
 
 class JobManagerTest(unittest.TestCase):
+    def test_requirement_command_uses_job_specific_output_directories(self) -> None:
+        command = isolate_job_command(
+            "requirement",
+            [
+                "python3",
+                "agent/langchain_agent.py",
+                "--requirement",
+                "requirement.txt",
+                "--workspace",
+                "shared-workspace",
+            ],
+            "logs/web/jobs/job-1",
+        )
+
+        self.assertEqual(
+            command[command.index("--workspace") + 1],
+            "logs/web/jobs/job-1/workspace",
+        )
+        self.assertEqual(
+            command[command.index("--artifact-dir") + 1],
+            "logs/web/jobs/job-1/artifacts",
+        )
+        self.assertNotIn("shared-workspace", command)
+
+    def test_separate_requirement_jobs_never_share_mutable_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manager = JobManager(
+                root,
+                root / "jobs",
+                execution_mode="external",
+            )
+            base = [
+                "python3",
+                "agent/langchain_agent.py",
+                "--requirement",
+                "requirement.txt",
+            ]
+
+            first = manager.submit("requirement", base)
+            second = manager.submit("requirement", base)
+
+            self.assertNotEqual(first["jobId"], second["jobId"])
+            self.assertNotEqual(
+                first["command"][first["command"].index("--workspace") + 1],
+                second["command"][second["command"].index("--workspace") + 1],
+            )
+            self.assertNotEqual(
+                first["command"][first["command"].index("--artifact-dir") + 1],
+                second["command"][second["command"].index("--artifact-dir") + 1],
+            )
+
     def test_linked_approval_journey_separates_human_wait(self) -> None:
         timings = build_journey_timings(
             {

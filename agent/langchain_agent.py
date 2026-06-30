@@ -91,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scaffold workspace parent.",
     )
     parser.add_argument(
+        "--artifact-dir",
+        default="generated",
+        help="Directory for generated specs, proposals, and command plans.",
+    )
+    parser.add_argument(
         "--execute",
         action="store_true",
         help="Allow real execution for mutating tools.",

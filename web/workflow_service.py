@@ -42,7 +42,7 @@ class WorkflowService:
                     "승인 대기 시간을 연결할 완료된 계획 작업을 찾을 수 없습니다."
                 )
         if request.capability_proposal:
-            self.validate_capability_approval(request)
+            self.validate_capability_approval(request, jobs)
         if request.kind_deploy and not profile:
             raise ValueError(
                 "kind 배포는 배포 설정이 있는 Profile을 먼저 선택해야 합니다."
@@ -136,15 +136,21 @@ class WorkflowService:
     def validate_capability_approval(
         self,
         request: RequirementRunRequest,
+        jobs: Any | None = None,
     ) -> None:
         path = self.resolve_repo_path(request.capability_proposal)
-        generated_dir = (self.repo_root / "generated").resolve()
-        try:
-            path.relative_to(generated_dir)
-        except ValueError as exc:
+        allowed_roots = [(self.repo_root / "generated").resolve()]
+        if jobs is not None and request.approval_parent_job_id:
+            parent = jobs.get(request.approval_parent_job_id)
+            parent_job_dir = str((parent or {}).get("jobDir") or "")
+            if parent_job_dir:
+                allowed_roots.append(
+                    (self.repo_root / parent_job_dir / "artifacts").resolve()
+                )
+        if not any(is_relative_to(path, root) for root in allowed_roots):
             raise ValueError(
-                "Capability 제안은 generated 폴더의 파일만 승인할 수 있습니다."
-            ) from exc
+                "Capability 제안은 해당 계획 작업의 산출물만 승인할 수 있습니다."
+            )
         if not path.is_file():
             raise ValueError("승인할 capability 제안 파일을 찾을 수 없습니다.")
         proposal = load_proposal(path)
@@ -195,3 +201,11 @@ class WorkflowService:
 
     def relative(self, path: Path) -> str:
         return str(path.resolve().relative_to(self.repo_root.resolve()))
+
+
+def is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False

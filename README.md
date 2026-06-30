@@ -1080,6 +1080,12 @@ python3 web/server.py 8000
 
 긴 LLM planning이나 kind 배포 중에도 최초 HTTP 요청은 즉시 작업 페이지로 이동합니다. 최근 작업은 `GET /api/jobs`, 개별 상태는 `GET /api/jobs/<job-id>`, 취소는 `POST /api/jobs/<job-id>/cancel`로 처리합니다. 실행 정보는 `logs/web/jobs/<job-id>/status.json`, `stdout.log`, `stderr.log`에 저장됩니다. 서버 재시작 시 실행 중이던 작업은 `interrupted`로 표시되고 완료된 작업 결과는 계속 열 수 있습니다.
 
+Web 작업의 생성 산출물과 Kubebuilder 프로젝트는 각각
+`logs/web/jobs/<job-id>/artifacts`와 `logs/web/jobs/<job-id>/workspace`에
+격리됩니다. 동시 실행과 재시도는 서로의 spec, capability proposal, 생성 코드를
+덮어쓰지 않습니다. CLI 직접 실행은 호환성을 위해 `generated/`와
+`workspace/generated-operators`를 기본값으로 유지합니다.
+
 운영 상태는 `GET /api/health`에서 확인합니다. 응답에는 Web 서비스 상태,
 embedded/external 실행 모드와 queued/running/terminal 작업 수가 포함됩니다.
 
