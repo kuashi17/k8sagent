@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from agent.contracts import RecoveryPlan
+from agent.error_taxonomy import classification_for_error_code
 from agent.tool_validator import normalize_tool_name
 
 
@@ -37,6 +38,11 @@ SUPPORTED_FIELD_TYPES = {
 
 
 def deterministic_recovery_classification(failure_context: dict[str, Any]) -> str:
+    structured = classification_for_error_code(
+        failure_context.get("errorCode")
+    )
+    if structured:
+        return structured
     failed_tool = str(failure_context.get("failedTool") or "")
     failed_step = str(failure_context.get("failedStep") or "")
     text = " ".join(
@@ -64,6 +70,7 @@ def validate_recovery_plan(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     unsupported = detect_unsupported_field_types(context)
+    has_structured_error = bool(failure_context.get("errorCode"))
     classification = policy_classification(raw_plan, failure_context, unsupported)
     rejected = validate_raw_recovery_calls(raw_plan, classification)
 
@@ -92,13 +99,14 @@ def validate_recovery_plan(
     else:
         validated_calls = generic_validated_recovery_calls(classification, failure_context)
         actual_failure = (
-            failure_context.get("stderrTail")
+            (failure_context.get("errorDetails") or {}).get("message")
+            or failure_context.get("stderrTail")
             or failure_context.get("stdoutTail")
             or "Recovery requires manual review."
         )
         root_cause = (
             actual_failure
-            if classification == "unknown"
+            if classification == "unknown" or has_structured_error
             else raw_plan.get("rootCause") or actual_failure
         )
         proposed = (
@@ -125,6 +133,7 @@ def validate_recovery_plan(
         "evidence": (
             raw_plan.get("evidence")
             if classification != "unknown"
+            and not has_structured_error
             and isinstance(raw_plan.get("evidence"), list)
             else default_recovery_evidence(failure_context, unsupported)
         ),
@@ -156,6 +165,7 @@ def validate_recovery_plan(
         "rejectedRecoveryToolCalls": rejected,
         "policyEvaluation": {
             "classification": classification,
+            "errorCode": str(failure_context.get("errorCode") or ""),
             "unsupportedFieldTypes": unsupported,
             "allowlist": sorted(RECOVERY_TOOL_ALLOWLIST),
             "rawRecoveryToolCalls": raw_plan.get("recoveryToolCalls") or [],
@@ -237,6 +247,11 @@ def policy_classification(
     failure_context: dict[str, Any],
     unsupported: list[dict[str, str]],
 ) -> str:
+    structured = classification_for_error_code(
+        failure_context.get("errorCode")
+    )
+    if structured:
+        return structured
     if unsupported:
         return "invalid-field-type"
     text = " ".join(
@@ -357,4 +372,11 @@ def default_recovery_evidence(
         evidence.append(f"failedStep={failure_context.get('failedStep')}")
     if failure_context.get("exitCode") is not None:
         evidence.append(f"exitCode={failure_context.get('exitCode')}")
+    if failure_context.get("errorCode"):
+        evidence.append(f"errorCode={failure_context.get('errorCode')}")
+    details = failure_context.get("errorDetails") or {}
+    if details.get("resource"):
+        evidence.append(f"resource={details.get('resource')}")
+    if details.get("verb"):
+        evidence.append(f"verb={details.get('verb')}")
     return evidence

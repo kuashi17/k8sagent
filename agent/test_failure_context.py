@@ -59,6 +59,34 @@ class FailureContextTest(unittest.TestCase):
         self.assertEqual(failure["previousSuccessfulSteps"], ["artifact_patcher"])
         self.assertEqual(failure["agentMode"], "execute")
 
+    def test_structured_tool_error_is_preserved_for_recovery(self) -> None:
+        failure = detect_failure_context(
+            self.context,
+            {
+                "rejectedToolCalls": [],
+                "toolResults": [
+                    {
+                        "tool": "kind_deployment",
+                        "exitCode": 1,
+                        "errorCode": "RBAC_FORBIDDEN",
+                        "errorDetails": {
+                            "errorCode": "RBAC_FORBIDDEN",
+                            "category": "policy",
+                            "message": "forbidden",
+                            "stage": "rbac-preflight",
+                            "resource": "deployments",
+                            "verb": "patch",
+                            "retryable": False,
+                        },
+                    }
+                ],
+            },
+            "execute",
+        )
+
+        self.assertEqual(failure["errorCode"], "RBAC_FORBIDDEN")
+        self.assertEqual(failure["errorDetails"]["resource"], "deployments")
+
     def test_dry_run_does_not_fail_only_for_missing_artifacts(self) -> None:
         failure = detect_failure_context(
             self.context,

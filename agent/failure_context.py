@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.contracts import FailureContext
+from agent.error_taxonomy import ErrorCode
 
 
 def detect_failure_context(
@@ -20,6 +21,14 @@ def detect_failure_context(
             "failedTool": "tool-validation",
             "failedStep": "rejectedToolCalls",
             "exitCode": 2,
+            "errorCode": ErrorCode.TOOL_VALIDATION_REJECTED.value,
+            "errorDetails": {
+                "errorCode": ErrorCode.TOOL_VALIDATION_REJECTED.value,
+                "category": "policy",
+                "message": rejected,
+                "stage": "rejectedToolCalls",
+                "retryable": False,
+            },
             "command": [],
             "stdoutTail": "",
             "stderrTail": rejected,
@@ -48,6 +57,8 @@ def detect_failure_context(
             "failedTool": result.get("tool"),
             "failedStep": failed_step or result.get("tool"),
             "exitCode": result.get("exitCode"),
+            "errorCode": str(result.get("errorCode") or ""),
+            "errorDetails": result.get("errorDetails"),
             "command": result.get("command"),
             "stdoutTail": tail_lines(str(result.get("stdout") or ""), 100),
             "stderrTail": tail_lines(str(result.get("stderr") or ""), 100),
@@ -71,6 +82,14 @@ def detect_failure_context(
         "failedTool": "artifact-check",
         "failedStep": "expected artifact missing",
         "exitCode": 2,
+        "errorCode": ErrorCode.ARTIFACT_MISSING.value,
+        "errorDetails": {
+            "errorCode": ErrorCode.ARTIFACT_MISSING.value,
+            "category": "execution",
+            "message": message,
+            "stage": "expected artifact missing",
+            "retryable": False,
+        },
         "command": [],
         "stdoutTail": "",
         "stderrTail": message,
@@ -151,6 +170,7 @@ def build_failure_rag_query(failure_context: dict[str, Any]) -> str:
             str(failure_context.get("failedTool") or ""),
             str(failure_context.get("failedStep") or ""),
             str(failure_context.get("exitCode") or ""),
+            str(failure_context.get("errorCode") or ""),
             str(failure_context.get("stdoutTail") or ""),
             str(failure_context.get("stderrTail") or ""),
         ]

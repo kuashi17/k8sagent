@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.contracts import ExecutionResult, ToolResult
+from agent.error_taxonomy import normalize_tool_result
 from agent.tool_validator import validate_planned_tool_calls
 from agent.tools import langchain_wrappers as tools
 from agent.tools.resource_catalog import load_resource_catalog
@@ -84,6 +85,7 @@ def execute_planned_tools(
         print(f"\nCalling tool: {name}")
         result = supported_calls[name]["call"]()
         result["tool"] = name
+        result = normalize_tool_result(result, name)
         result = ToolResult.model_validate(result).to_dict()
         results.append(result)
         print(f"exitCode={result['exitCode']} status={result['status']}")

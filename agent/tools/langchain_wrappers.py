@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from agent.error_taxonomy import normalize_tool_result
 from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 
 try:  # Optional dependency for future real LangChain Agent execution.
@@ -33,14 +34,14 @@ def run_command(command: list[str], cwd: Path | None = None) -> dict[str, Any]:
 
     workdir = cwd or REPO_ROOT
     completed = subprocess.run(command, cwd=workdir, text=True, capture_output=True)
-    return {
+    return normalize_tool_result({
         "command": command,
         "cwd": str(workdir),
         "stdout": completed.stdout,
         "stderr": completed.stderr,
         "exitCode": completed.returncode,
         "status": "succeeded" if completed.returncode == 0 else "failed",
-    }
+    })
 
 
 def spec_generator(requirement: str, output: str | None = None) -> dict[str, Any]:
@@ -223,7 +224,7 @@ def kind_deployment_runner(
         result["deploymentSummary"] = json.loads(result.get("stdout") or "{}")
     except json.JSONDecodeError:
         result["deploymentSummary"] = {}
-    return result
+    return normalize_tool_result(result, "kind_deployment")
 
 
 def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]:
@@ -231,7 +232,7 @@ def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]
     requested = targets or allowed
     invalid = [target for target in requested if target not in allowed]
     if invalid:
-        return {
+        return normalize_tool_result({
             "command": ["make", *requested],
             "cwd": str(REPO_ROOT / project),
             "stdout": "",
@@ -239,7 +240,7 @@ def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]
             "exitCode": 2,
             "status": "failed",
             "steps": [],
-        }
+        }, "validation")
 
     results = []
     for target in requested:
@@ -252,7 +253,7 @@ def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]
     stdout = "\n".join(f"## make {item['target']}\n{item['stdout']}" for item in results)
     stderr = "\n".join(f"## make {item['target']}\n{item['stderr']}" for item in results if item.get("stderr"))
     exit_code = results[-1]["exitCode"] if results else 0
-    return {
+    return normalize_tool_result({
         "command": ["make", *requested],
         "cwd": str(REPO_ROOT / project),
         "stdout": stdout,
@@ -260,7 +261,7 @@ def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]
         "exitCode": exit_code,
         "status": "succeeded" if exit_code == 0 else "failed",
         "steps": results,
-    }
+    }, "validation")
 
 
 def log_analyzer(log_dir: str, output: str | None = None) -> dict[str, Any]:

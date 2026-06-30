@@ -38,6 +38,16 @@ class PlannedToolCall(ToolCall):
     mode: str
 
 
+class StructuredToolError(AgentContract):
+    errorCode: str
+    category: str
+    message: str
+    stage: str = ""
+    resource: str = ""
+    verb: str = ""
+    retryable: bool = False
+
+
 class RequirementPlan(AgentContract):
     requirementSummary: str
     missingInformation: list[Any]
@@ -58,6 +68,8 @@ class ToolResult(AgentContract):
     stderr: str = ""
     exitCode: int
     status: str
+    errorCode: str = ""
+    errorDetails: StructuredToolError | None = None
     steps: list[dict[str, Any]] = Field(default_factory=list)
     deploymentSummary: dict[str, Any] = Field(default_factory=dict)
 
@@ -91,6 +103,8 @@ class FailureContext(AgentContract):
     failedTool: str
     failedStep: str
     exitCode: int
+    errorCode: str = ""
+    errorDetails: StructuredToolError | None = None
     command: list[str] | str | None = None
     stdoutTail: str = ""
     stderrTail: str = ""

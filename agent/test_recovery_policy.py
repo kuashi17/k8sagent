@@ -15,6 +15,40 @@ from agent.recovery_policy import (
 
 
 class RecoveryPolicyTest(unittest.TestCase):
+    def test_structured_error_code_wins_over_conflicting_log_text(self) -> None:
+        policy = validate_recovery_plan(
+            {"classification": "gpu-insufficient"},
+            {
+                "failedTool": "kind_deployment",
+                "failedStep": "rbac-preflight",
+                "errorCode": "RBAC_FORBIDDEN",
+                "errorDetails": {
+                    "message": "Controller cannot patch deployments",
+                    "resource": "deployments",
+                    "verb": "patch",
+                },
+                "stderrTail": "GPU image pull text that must not override code",
+            },
+            {"generatedFiles": {"operatorSpec": "missing.yaml"}},
+        )
+
+        self.assertEqual(
+            policy["validatedRecoveryPlan"]["classification"],
+            "rbac-forbidden",
+        )
+        self.assertEqual(
+            policy["policyEvaluation"]["errorCode"],
+            "RBAC_FORBIDDEN",
+        )
+        self.assertEqual(
+            policy["validatedRecoveryPlan"]["rootCause"],
+            "Controller cannot patch deployments",
+        )
+        self.assertIn(
+            "resource=deployments",
+            policy["validatedRecoveryPlan"]["evidence"],
+        )
+
     def test_unknown_failure_without_validated_tool_is_not_approval_waiting(
         self,
     ) -> None:

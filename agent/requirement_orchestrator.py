@@ -497,6 +497,7 @@ def call_requirement_planner(
                 "key": cache["key"],
                 "path": str(cache["path"]),
                 "createdAt": cached["createdAt"],
+                "contractDigest": cache["contractDigest"],
             }
             return result
         except (OSError, json.JSONDecodeError) as exc:
@@ -523,6 +524,7 @@ def call_requirement_planner(
             "key": cache["key"],
             "path": str(cache["path"]),
             "refreshed": bool(args.refresh_cache),
+            "contractDigest": cache["contractDigest"],
         }
         if not args.no_cache:
             write_requirement_plan_cache(
