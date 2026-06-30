@@ -1134,7 +1134,7 @@ Profileless kind 결과의 `timings.deploymentCategories`에는 Docker build, ki
 image load, cluster 준비, install/deploy, readiness, RBAC, lifecycle 검증 시간이
 사례별·전체 합계로 기록됩니다.
 
-각 kind deployment summary의 `runtimeEvidence`는 멱등성, 외부 drift 복구,
+각 kind deployment summary의 `runtimeEvidence`는 멱등성, 외부 drift 복구, read-only 외부 watch,
 RBAC 허용 목록과 wildcard 거부, 삭제 정책, finalizer, observedGeneration/Conditions를
 동일한 차원으로 기록합니다. Quick CI의 `legacy-usage` gate는
 `config/legacy-path-policy.yaml`에 승인되지 않은 legacy 참조가 추가되는 것을 막고
@@ -1252,7 +1252,7 @@ python3 agent/evaluation/profileless_kind_runner.py \
   --output-dir evaluation/results/profileless-kind/local
 ```
 
-이 검증은 임시 workspace에서 8개 profileless Operator를 새로 생성·컴파일합니다. 생성된 Controller를 같은 kind 클러스터에 순차 배포하여 관리 리소스 생성, 초기 field mapping, 재적용 멱등성, 변경 반영, immutable 재생성, 삭제 정책, sample 복구를 확인합니다. profile fixture나 전용 Controller 준비 코드는 사용하지 않으며 결과는 `profileless-kind-results.json`에 저장됩니다.
+이 검증은 임시 workspace에서 10개 profileless Operator를 새로 생성·컴파일합니다. 생성된 Controller를 같은 kind 클러스터에 순차 배포하여 관리 리소스 생성, 초기 field mapping, 재적용 멱등성, 변경 반영, immutable 재생성, 삭제 정책, sample 복구를 확인합니다. read-only 사례는 외부 리소스 변경이 watch를 통해 CR status에 반영되는지, 쓰기 RBAC이 실제로 거부되는지, CR 삭제 후 외부 리소스가 유지되는지도 확인합니다. profile fixture나 전용 Controller 준비 코드는 사용하지 않으며 결과는 `profileless-kind-results.json`에 저장됩니다.
 
 Controller 생성의 일반화 경계는 다음과 같습니다.
 

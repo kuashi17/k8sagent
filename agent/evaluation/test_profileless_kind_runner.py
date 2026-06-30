@@ -321,6 +321,7 @@ spec:
                 "verb": "update",
                 "resource": "namespaces",
                 "apiGroup": "",
+                "expectedAllowed": True,
             },
             config["rbacChecks"],
         )

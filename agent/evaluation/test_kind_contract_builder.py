@@ -14,7 +14,26 @@ from agent.tools.controller_ir_builder import build_controller_ir
 def build_ir(
     resource: str,
     spec_fields: list[dict[str, str]],
+    *,
+    read_only: bool = False,
+    status_fields: list[dict[str, str]] | None = None,
 ):
+    controller = (
+        {
+            "managedResources": [],
+            "observedResources": [resource],
+            "resourcePolicies": [
+                {
+                    "kind": resource,
+                    "strategy": "read-only",
+                    "ownership": "none",
+                    "deletionPolicy": "retain",
+                }
+            ],
+        }
+        if read_only
+        else {"managedResources": [resource]}
+    )
     model = normalize_spec(
         {
             "project": {
@@ -30,10 +49,9 @@ def build_ir(
                 "domain": "sample.io",
             },
             "specFields": spec_fields,
-            "statusFields": [
-                {"name": "phase", "type": "string"}
-            ],
-            "controller": {"managedResources": [resource]},
+            "statusFields": status_fields
+            or [{"name": "phase", "type": "string"}],
+            "controller": controller,
             "rbac": {"resources": []},
         },
         {},
@@ -43,6 +61,59 @@ def build_ir(
 
 
 class KindContractBuilderTest(unittest.TestCase):
+    def test_read_only_deployment_contract_probes_external_watch_and_denies_writes(
+        self,
+    ) -> None:
+        ir = build_ir(
+            "Deployment",
+            [{"name": "deploymentName", "type": "string"}],
+            read_only=True,
+            status_fields=[
+                {"name": "phase", "type": "string"},
+                {"name": "desiredReplicas", "type": "int32"},
+            ],
+        )
+        contract = build_validation_contract(
+            ir,
+            {
+                "metadata": {"name": "health-sample"},
+                "spec": {"deploymentName": "observed-app"},
+            },
+            "genericpolicies",
+            "policy.sample.io",
+        )
+
+        self.assertEqual(contract.managedResources, [])
+        self.assertEqual(contract.observedResources[0].resource, "deployment")
+        self.assertEqual(
+            contract.observedResources[0].mutationPatch,
+            {"spec": {"replicas": 2}},
+        )
+        self.assertEqual(
+            contract.observedResources[0].statusPath,
+            "status.desiredReplicas",
+        )
+        self.assertEqual(contract.setupResources[0]["kind"], "Deployment")
+        checks = [item.model_dump(mode="json") for item in contract.rbacChecks]
+        self.assertIn(
+            {
+                "verb": "watch",
+                "resource": "deployments",
+                "apiGroup": "apps",
+                "expectedAllowed": True,
+            },
+            checks,
+        )
+        self.assertIn(
+            {
+                "verb": "update",
+                "resource": "deployments",
+                "apiGroup": "apps",
+                "expectedAllowed": False,
+            },
+            checks,
+        )
+
     def test_cluster_scoped_explicit_delete_exposes_finalizer_contract(
         self,
     ) -> None:
@@ -78,6 +149,7 @@ class KindContractBuilderTest(unittest.TestCase):
                 "verb": "create",
                 "resource": "clusterroles",
                 "apiGroup": "rbac.authorization.k8s.io",
+                "expectedAllowed": True,
             },
             [item.model_dump(mode="json") for item in contract.rbacChecks],
         )

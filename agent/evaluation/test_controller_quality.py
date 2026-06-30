@@ -96,6 +96,25 @@ class ControllerQualityTest(unittest.TestCase):
             ["Deployment"],
         )
 
+    def test_behavior_evidence_tracks_external_read_only_watch(self) -> None:
+        evidence = collect_behavior_evidence(
+            """
+            builder.Watches(
+                managedObject("apps", "v1", "Deployment", "", ""),
+                handler.EnqueueRequestsFromMapFunc(r.mapDeployment),
+            )
+            """,
+            {
+                "controller": {
+                    "managedResources": [],
+                    "observedResources": ["Deployment"],
+                },
+                "statusFields": [],
+            },
+        )
+
+        self.assertEqual(evidence["watchRegistrations"], ["Deployment"])
+
 
 if __name__ == "__main__":
     unittest.main()

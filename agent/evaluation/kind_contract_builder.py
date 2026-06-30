@@ -39,12 +39,24 @@ class RBACCheckContract(ContractModel):
     verb: str
     resource: str
     apiGroup: str = ""
+    expectedAllowed: bool = True
+
+
+class ObservedResourceContract(ContractModel):
+    resource: str
+    name: str
+    mutationPatch: dict[str, Any] = Field(default_factory=dict)
+    statusPath: str = ""
+    expectedStatus: Any = None
 
 
 class KindValidationContract(ContractModel):
     resource: str
     sampleName: str
     managedResources: list[ManagedResourceContract]
+    observedResources: list[ObservedResourceContract] = Field(
+        default_factory=list
+    )
     initialAssertions: list[AssertionContract] = Field(
         default_factory=list
     )
@@ -72,6 +84,7 @@ def build_validation_contract(
     sample_name = str(metadata.get("name") or "")
     sample_spec = sample.get("spec") or {}
     managed = []
+    observed = []
     setup = []
     update_spec: dict[str, Any] = {}
     assertions = []
@@ -85,6 +98,41 @@ def build_validation_contract(
             apiGroup=custom_resource_api_group,
         )
     ]
+    for resource in ir.managed_resources:
+        if resource.strategy != ReconcileStrategy.READ_ONLY:
+            continue
+        token = resource_token(resource)
+        name = managed_name(resource, sample_name, sample_spec)
+        probe = external_watch_probe(resource, name)
+        observed.append(
+            ObservedResourceContract(
+                resource=token,
+                name=name,
+                mutationPatch=probe.get("mutationPatch") or {},
+                statusPath=str(probe.get("statusPath") or ""),
+                expectedStatus=probe.get("expectedStatus"),
+            )
+        )
+        setup_resource = observed_setup_resource(resource, name)
+        if setup_resource:
+            setup.append(setup_resource)
+        for verb in ("get", "list", "watch"):
+            rbac.append(
+                RBACCheckContract(
+                    verb=verb,
+                    resource=(resource.plural or pluralize(token)),
+                    apiGroup=managed_api_group(resource),
+                )
+            )
+        for verb in ("create", "update", "patch", "delete"):
+            rbac.append(
+                RBACCheckContract(
+                    verb=verb,
+                    resource=(resource.plural or pluralize(token)),
+                    apiGroup=managed_api_group(resource),
+                    expectedAllowed=False,
+                )
+            )
     for resource in ir.renderable_resources():
         token = resource_token(resource)
         name = managed_name(resource, sample_name, sample_spec)
@@ -134,6 +182,7 @@ def build_validation_contract(
         resource=ir.kind.lower(),
         sampleName=sample_name,
         managedResources=managed,
+        observedResources=observed,
         initialAssertions=initial_assertions,
         driftAssertions=drift_assertions[:1],
         updateSpec=update_spec,
@@ -143,6 +192,49 @@ def build_validation_contract(
         rbacChecks=rbac,
         finalizer=ir.state_machine.finalizer_name,
     )
+
+
+def external_watch_probe(
+    resource: ManagedResourceSpec,
+    name: str,
+) -> dict[str, Any]:
+    for mapping in resource.status_mappings:
+        if mapping.source_path == "spec.replicas":
+            return {
+                "mutationPatch": {"spec": {"replicas": 2}},
+                "statusPath": mapping.target_path,
+                "expectedStatus": 2,
+            }
+    return {}
+
+
+def observed_setup_resource(
+    resource: ManagedResourceSpec,
+    name: str,
+) -> dict[str, Any]:
+    if resource.kind == "Deployment":
+        labels = {"app": name}
+        return {
+            "apiVersion": resource.api_version,
+            "kind": resource.kind,
+            "metadata": {"name": name},
+            "spec": {
+                "replicas": 1,
+                "selector": {"matchLabels": labels},
+                "template": {
+                    "metadata": {"labels": labels},
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "application",
+                                "image": "nginx:alpine",
+                            }
+                        ]
+                    },
+                },
+            },
+        }
+    return {}
 
 
 def lifecycle_update(

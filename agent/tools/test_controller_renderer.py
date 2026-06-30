@@ -74,6 +74,17 @@ class ControllerRendererTest(unittest.TestCase):
         self.assertIn("r.Get(", function)
         self.assertNotIn("CreateOrUpdate", function)
         self.assertNotIn("r.Update(", function)
+        self.assertIn(
+            "Watches(managedObject(\"apps\", \"v1\", \"Deployment\"",
+            rendered,
+        )
+        self.assertIn(
+            "handler.EnqueueRequestsFromMapFunc(r.mapDeployment)",
+            rendered,
+        )
+        self.assertIn("func (r *ExampleReconciler) mapDeployment", rendered)
+        self.assertIn("expectedName := instance.Spec.DeploymentName", rendered)
+        self.assertIn("client.InNamespace(object.GetNamespace())", rendered)
         self.assertIn('"NotFound"', rendered)
         self.assertIn("instance.Status.DesiredReplicas", rendered)
 

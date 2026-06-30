@@ -211,11 +211,20 @@ class KindDeploymentEngine:
                 check=False,
             )
             allowed = result["exitCode"] == 0 and result["stdout"].strip() == "yes"
-            checks.append({**item, "allowed": allowed})
-            if not allowed:
+            expected_allowed = bool(item.get("expectedAllowed", True))
+            checks.append(
+                {
+                    **item,
+                    "allowed": allowed,
+                    "passed": allowed == expected_allowed,
+                }
+            )
+            if allowed != expected_allowed:
                 self.failed_step = "rbac-preflight"
                 raise RuntimeError(
-                    f"Controller RBAC denied: {item['verb']} {resource}"
+                    "Controller RBAC expectation failed: "
+                    f"{item['verb']} {resource} expectedAllowed="
+                    f"{expected_allowed}, actual={allowed}"
                 )
         self.checks["rbacPreflight"] = checks
         wildcard = self.run_cmd(
@@ -363,6 +372,7 @@ def build_runtime_evidence(checks: dict[str, Any]) -> dict[str, Any]:
     least = checks.get("rbacLeastPrivilege") or {}
     deletion = checks.get("lifecycleDelete") or {}
     managed_delete = deletion.get("managedResources") or {}
+    observed_delete = deletion.get("observedResources") or {}
     finalizer = checks.get("finalizerLifecycle") or {}
     state_machine = checks.get("stateMachineStatus") or {}
     return {
@@ -387,13 +397,17 @@ def build_runtime_evidence(checks: dict[str, Any]) -> dict[str, Any]:
             if rbac or least
             else {},
             bool(rbac)
-            and all(item.get("allowed") for item in rbac)
+            and all(
+                item.get("passed", item.get("allowed"))
+                for item in rbac
+            )
             and least.get("passed") is True,
         ),
         "deletionPolicy": evidence(
             deletion,
             bool(deletion.get("customResourceAbsent"))
-            and all(item.get("passed") for item in managed_delete.values()),
+            and all(item.get("passed") for item in managed_delete.values())
+            and all(item.get("passed") for item in observed_delete.values()),
         ),
         "finalizer": evidence(
             finalizer,
@@ -404,6 +418,11 @@ def build_runtime_evidence(checks: dict[str, Any]) -> dict[str, Any]:
             state_machine,
             bool(state_machine.get("observedGeneration"))
             and bool(state_machine.get("conditions")),
+        ),
+        "externalWatch": evidence(
+            checks.get("externalWatch"),
+            bool((checks.get("externalWatch") or {}).get("passed")),
+            not bool(checks.get("observedResources")),
         ),
     }
 

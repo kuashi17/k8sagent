@@ -386,6 +386,19 @@ class ManagedResourceValidator:
             for item in config.get("managedResources") or []
             if isinstance(item, dict) and item.get("resource")
         ]
+        self.observed_resources = [
+            {
+                "resource": str(item.get("resource") or ""),
+                "name": str(item.get("name") or ""),
+                "mutationPatch": dict(item.get("mutationPatch") or {}),
+                "statusPath": str(item.get("statusPath") or ""),
+                "expectedStatus": item.get("expectedStatus"),
+            }
+            for item in config.get("observedResources") or []
+            if isinstance(item, dict)
+            and item.get("resource")
+            and item.get("name")
+        ]
         self.status_phases = [
             str(item)
             for item in config.get("acceptedStatusPhases") or []
@@ -449,6 +462,9 @@ class ManagedResourceValidator:
                 "verb": str(item.get("verb") or "get"),
                 "resource": str(item.get("resource") or ""),
                 "apiGroup": str(item.get("apiGroup") or ""),
+                "expectedAllowed": bool(
+                    item.get("expectedAllowed", True)
+                ),
             }
             for item in config.get("rbacChecks") or []
             if isinstance(item, dict) and item.get("resource")
@@ -479,6 +495,14 @@ class ManagedResourceValidator:
             {"name": "apply-setup-resources", "validator": self.name},
             {"name": "verify-managed-resources", "validator": self.name},
         ])
+        if self.observed_resources:
+            steps.append(
+                {
+                    "name": "verify-external-watch",
+                    "mutating": True,
+                    "validator": self.name,
+                }
+            )
         if include_lifecycle:
             steps.append(
                 {
@@ -518,6 +542,10 @@ class ManagedResourceValidator:
         managed = [
             self.wait_present(engine, item["resource"], item["name"])
             for item in self.managed_resources
+        ]
+        observed = [
+            self.wait_present(engine, item["resource"], item["name"])
+            for item in self.observed_resources
         ]
         custom_resource = self.wait_present(
             engine,
@@ -562,6 +590,7 @@ class ManagedResourceValidator:
             if last_error is not None:
                 raise last_error
         engine.checks["managedResources"] = managed
+        engine.checks["observedResources"] = observed
         engine.checks["customResourceStatus"] = status
         if self.finalizer:
             finalizers = list(
@@ -594,6 +623,7 @@ class ManagedResourceValidator:
             ]
 
     def verify_lifecycle(self, engine: DeploymentEngine) -> None:
+        self.verify_external_watches(engine)
         self.verify_idempotency(engine)
         if self.drift_assertions:
             self.verify_drift_recovery(engine)
@@ -635,6 +665,19 @@ class ManagedResourceValidator:
                         item["name"],
                     ),
                 }
+        observed_results = {
+            f"{item['resource']}/{item['name']}": {
+                "expected": "present",
+                "passed": bool(
+                    self.wait_present(
+                        engine,
+                        item["resource"],
+                        item["name"],
+                    )
+                ),
+            }
+            for item in self.observed_resources
+        }
         engine.checks["lifecycleDelete"] = {
             "customResourceAbsent": self.wait_absent(
                 engine,
@@ -642,6 +685,7 @@ class ManagedResourceValidator:
                 self.sample_name,
             ),
             "managedResources": managed_results,
+            "observedResources": observed_results,
         }
         if self.finalizer:
             engine.checks["finalizerLifecycle"] = {
@@ -771,6 +815,55 @@ class ManagedResourceValidator:
             "resources": sorted(before),
         }
 
+    def verify_external_watches(self, engine: DeploymentEngine) -> None:
+        probes = [
+            item
+            for item in self.observed_resources
+            if item["mutationPatch"] and item["statusPath"]
+        ]
+        if not probes:
+            return
+        results = []
+        for item in probes:
+            engine.failed_step = "verify-external-watch"
+            patch = json.dumps(
+                item["mutationPatch"],
+                separators=(",", ":"),
+            )
+            engine.run_cmd(
+                f"kubectl-patch-observed-{item['resource']}-{item['name']}",
+                self.kubectl(
+                    [
+                        "patch",
+                        item["resource"],
+                        item["name"],
+                        "--type=merge",
+                        "-p",
+                        patch,
+                    ]
+                ),
+                timeout=120,
+            )
+            assertion = self.wait_assertion(
+                engine,
+                {
+                    "resource": self.resource,
+                    "name": self.sample_name,
+                    "path": item["statusPath"],
+                    "equals": item["expectedStatus"],
+                },
+            )
+            results.append(
+                {
+                    **item,
+                    "statusUpdated": bool(assertion.get("passed")),
+                }
+            )
+        engine.checks["externalWatch"] = {
+            "passed": all(item["statusUpdated"] for item in results),
+            "probes": results,
+        }
+
     def verify_drift_recovery(self, engine: DeploymentEngine) -> None:
         engine.failed_step = "verify-drift-recovery"
         assertion = self.drift_assertions[0]
@@ -823,6 +916,7 @@ class ManagedResourceValidator:
                 "namespace": self.namespace,
             },
             "managedResources": self.managed_resources,
+            "observedResources": self.observed_resources,
             "initialAssertions": self.initial_assertions,
             "driftAssertions": self.drift_assertions,
             "updateSpec": self.update_spec,

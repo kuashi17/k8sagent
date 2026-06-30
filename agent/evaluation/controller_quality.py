@@ -247,13 +247,17 @@ def collect_behavior_evidence(
     ]
     watched = [
         item
-        for item in managed
+        for item in [*managed, *observed]
         if re.search(
             rf"(?:\.|\b)Owns\([^)]*{re.escape(item)}",
             controller,
         )
         or re.search(
             rf"(?:\.|\b)Owns\(&[A-Za-z0-9_.]*{re.escape(item)}\{{",
+            controller,
+        )
+        or re.search(
+            rf"(?:\.|\b)Watches\([^)]*{re.escape(item)}",
             controller,
         )
     ]

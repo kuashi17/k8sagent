@@ -72,6 +72,7 @@ import (
 \t"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 \t"k8s.io/apimachinery/pkg/runtime"
 \t"k8s.io/apimachinery/pkg/runtime/schema"
+{render_watch_imports(ir)}
 \tctrl "sigs.k8s.io/controller-runtime"
 \t"sigs.k8s.io/controller-runtime/pkg/client"
 \t"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -109,6 +110,7 @@ func (r *{kind}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 {chr(10).join(functions)}
 {render_status_function(ir, alias)}
 {render_finalizer_function(ir, alias)}
+{render_external_watch_functions(ir, alias)}
 
 func managedObject(group, version, kind, namespace, name string) *unstructured.Unstructured {{
 \tobject := &unstructured.Unstructured{{}}
@@ -711,14 +713,88 @@ def render_owned_watches(ir: ControllerGenerationIR) -> str:
     for resource in ir.managed_resources:
         if not resource.watch:
             continue
-        if resource.ownership != OwnershipPolicy.OWNER_REFERENCE:
-            continue
         group, version = split_api_version(resource.api_version)
-        lines.append(
-            '.\n\t\tOwns(managedObject('
-            f'"{group}", "{version}", "{resource.kind}", "", ""))'
-        )
+        if resource.ownership == OwnershipPolicy.OWNER_REFERENCE:
+            lines.append(
+                '.\n\t\tOwns(managedObject('
+                f'"{group}", "{version}", "{resource.kind}", "", ""))'
+            )
+        elif resource.strategy == ReconcileStrategy.READ_ONLY:
+            lines.append(
+                '.\n\t\tWatches(managedObject('
+                f'"{group}", "{version}", "{resource.kind}", "", ""), '
+                "handler.EnqueueRequestsFromMapFunc("
+                f"r.map{go_name(resource.resource_id)}))"
+            )
     return "".join(lines)
+
+
+def external_watch_resources(
+    ir: ControllerGenerationIR,
+) -> list[ManagedResourceSpec]:
+    return [
+        resource
+        for resource in ir.managed_resources
+        if resource.watch
+        and resource.strategy == ReconcileStrategy.READ_ONLY
+    ]
+
+
+def render_watch_imports(ir: ControllerGenerationIR) -> str:
+    if not external_watch_resources(ir):
+        return ""
+    return (
+        '\t"k8s.io/apimachinery/pkg/types"\n'
+        '\t"sigs.k8s.io/controller-runtime/pkg/handler"\n'
+        '\t"sigs.k8s.io/controller-runtime/pkg/reconcile"'
+    )
+
+
+def render_external_watch_functions(
+    ir: ControllerGenerationIR,
+    alias: str,
+) -> str:
+    functions = []
+    for resource in external_watch_resources(ir):
+        function_name = go_name(resource.resource_id)
+        expected_name = source_expression(resource.name.source_path)
+        suffix = resource.name.fallback_template.replace(
+            "{metadata.name}-",
+            "",
+        )
+        list_options = (
+            "\tlistOptions := []client.ListOption{}\n"
+            "\tif object.GetNamespace() != \"\" {\n"
+            "\t\tlistOptions = append(listOptions, "
+            "client.InNamespace(object.GetNamespace()))\n"
+            "\t}\n"
+        )
+        functions.append(
+            f'''func (r *{ir.kind}Reconciler) map{function_name}(ctx context.Context, object client.Object) []reconcile.Request {{
+\tvar instances {alias}.{ir.kind}List
+{list_options}\tif err := r.List(ctx, &instances, listOptions...); err != nil {{
+\t\treturn nil
+\t}}
+\trequests := make([]reconcile.Request, 0, len(instances.Items))
+\tfor index := range instances.Items {{
+\t\tinstance := &instances.Items[index]
+\t\texpectedName := {expected_name}
+\t\tif expectedName == "" {{
+\t\t\texpectedName = instance.Name + "-{suffix}"
+\t\t}}
+\t\tif expectedName != object.GetName() {{
+\t\t\tcontinue
+\t\t}}
+\t\trequests = append(requests, reconcile.Request{{NamespacedName: types.NamespacedName{{
+\t\t\tNamespace: instance.Namespace,
+\t\t\tName: instance.Name,
+\t\t}}}})
+\t}}
+\treturn requests
+}}
+'''
+        )
+    return "\n".join(functions)
 
 
 def render_status_imports(ir: ControllerGenerationIR) -> str:
