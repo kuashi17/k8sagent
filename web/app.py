@@ -30,6 +30,7 @@ from agent.llm.client import LLMUnavailable, warm_up_model  # noqa: E402
 from web.job_manager import JobManager, TERMINAL_STATES  # noqa: E402
 from web.result_presenter import (  # noqa: E402
     developer_details,
+    present_log_analysis_result,
     present_run_result,
 )
 from web.schemas import LogAnalysisRequest, RequirementRunRequest  # noqa: E402
@@ -157,7 +158,17 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
         else ""
     )
     terminal = job.get("state") in TERMINAL_STATES
-    result_view = present_run_result(job) if terminal else None
+    is_log_analysis = job.get("jobType") == "log-analysis"
+    result_view = (
+        present_run_result(job)
+        if terminal and not is_log_analysis
+        else None
+    )
+    log_analysis_view = (
+        present_log_analysis_result(job)
+        if terminal and is_log_analysis
+        else None
+    )
     return templates.TemplateResponse(
         request=request,
         name="run.html",
@@ -166,6 +177,8 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
             "job": job,
             "terminal": terminal,
             "result_view": result_view,
+            "log_analysis_view": log_analysis_view,
+            "is_log_analysis": is_log_analysis,
             "developer": developer_details(job) if terminal else {},
             "requirement_text": requirement_text,
             "profiles": list_profiles(),

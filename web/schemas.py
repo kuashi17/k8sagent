@@ -126,5 +126,19 @@ class RunResultView(WebModel):
     capability_discovery_errors: list[str] = Field(default_factory=list)
 
 
+class LogAnalysisView(WebModel):
+    succeeded: bool
+    title: str
+    summary: str
+    source_log_dir: str = ""
+    classification: str = "unknown"
+    root_cause: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    recommended_fixes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    deterministic: bool = False
+
+
 def checkbox(value: Any) -> bool:
     return str(value or "").lower() in {"1", "true", "yes", "on"}

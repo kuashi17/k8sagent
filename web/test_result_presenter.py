@@ -12,10 +12,39 @@ import yaml
 from agent.tools.capability_drafter import ProposalModel, proposal_digest
 from agent.tools.capability_discovery import CapabilityDiscoveryResult
 from agent.tools.resource_catalog import ResourceCapabilityDefinition
-from web.result_presenter import present_run_result
+from web.result_presenter import (
+    present_log_analysis_result,
+    present_run_result,
+)
 
 
 class ResultPresenterTest(unittest.TestCase):
+    def test_log_analysis_uses_dedicated_beginner_result(self) -> None:
+        result = present_log_analysis_result(
+            {
+                "state": "succeeded",
+                "summary": {
+                    "llmPlannerUsed": False,
+                    "sourceLogDir": "logs/agent/failed",
+                    "logAnalyzerResult": {"exitCode": 0},
+                    "llmAnalysis": {
+                        "classification": "incomplete-requirement",
+                        "rootCause": "필수 정보가 누락되었습니다.",
+                        "evidence": ["failedStep=spec_generator"],
+                        "recommendedFixes": ["요구사항을 보완합니다."],
+                        "explanationForBeginner": "입력 정보를 보완하면 됩니다.",
+                    },
+                    "warnings": [],
+                    "errors": [],
+                },
+            }
+        )
+
+        self.assertTrue(result.succeeded)
+        self.assertTrue(result.deterministic)
+        self.assertEqual(result.classification, "incomplete-requirement")
+        self.assertEqual(result.summary, "입력 정보를 보완하면 됩니다.")
+
     def test_read_only_resource_is_presented_separately(self) -> None:
         result = present_run_result(
             {

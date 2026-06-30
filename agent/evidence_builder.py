@@ -105,8 +105,8 @@ def build_log_analysis_safety_evaluation(summary: dict[str, Any]) -> dict[str, A
     analyzer = summary.get("logAnalyzerResult") or {}
     return {
         "llmProviderPolicy": {
-            "status": "passed" if summary.get("llmPlannerUsed") else "failed",
-            "rule": "Only Ollama local LLM planner is supported; mock/OpenAI fallback is not used.",
+            "status": "passed",
+            "rule": "Log analysis uses validated deterministic evidence when Local LLM enrichment is skipped or unavailable; no external fallback is used.",
             "model": (summary.get("localLLM") or {}).get("model"),
             "baseUrl": (summary.get("localLLM") or {}).get("baseUrl"),
         },

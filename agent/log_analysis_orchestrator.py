@@ -25,6 +25,7 @@ from agent.report_writer import write_agent_artifacts
 from agent.retrieval_context import build_log_rag_query, perform_retrieval
 from agent.tool_validator import validate_llm_output_schema
 from agent.tools import langchain_wrappers as tools
+from agent.tools.log_analyzer import analyze_summary
 
 
 def run_log_analysis_agent(args: argparse.Namespace) -> int:
@@ -56,6 +57,10 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
         if analysis_path.is_file()
         else ""
     )
+    deterministic_analysis = analyze_summary(
+        source_log_dir,
+        source_summary,
+    )
     retrieval = perform_retrieval(
         build_log_rag_query(source_summary, analysis_text),
         limit=3,
@@ -66,6 +71,7 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
         source_summary,
         analysis_text,
         retrieved,
+        deterministic_analysis,
     )
 
     errors = (
@@ -73,8 +79,11 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
         if analyzer_result["exitCode"] == 0
         else ["log_analyzer failed"]
     )
-    if planner_result["error"]:
-        errors.append("LLM planner failed")
+    warnings = list(source_summary.get("warnings") or [])
+    if planner_result.get("fallbackUsed"):
+        warnings.append(
+            "Local LLM 분석을 생략하거나 사용할 수 없어 검증된 규칙 기반 분석 결과를 사용했습니다."
+        )
 
     summary = {
         "mode": "log-analysis",
@@ -94,7 +103,7 @@ def run_log_analysis_agent(args: argparse.Namespace) -> int:
             planner_result.get("llmOutput") or {},
             "ragEvidence",
         ),
-        "warnings": source_summary.get("warnings") or [],
+        "warnings": warnings,
         "errors": errors,
     }
     summary["safetyEvaluation"] = build_log_analysis_safety_evaluation(
@@ -119,13 +128,22 @@ def call_log_planner(
     source_summary: dict[str, Any],
     analysis_text: str,
     retrieved: list[dict[str, Any]],
+    deterministic_analysis: dict[str, Any],
 ) -> dict[str, Any]:
     llm_input = {
         "mode": "log-analysis",
         "summary": source_summary,
         "analysisMd": analysis_text,
         "retrievedDocs": retrieved,
+        "deterministicAnalysis": deterministic_analysis,
     }
+    primary = deterministic_analysis.get("primaryClassification") or {}
+    if primary.get("type") != "unknown":
+        return deterministic_log_result(
+            llm_input,
+            deterministic_analysis,
+            reason="Known classification from validated log evidence.",
+        )
     try:
         output, exact_input, raw = analyze_log_with_llm(
             source_summary,
@@ -137,10 +155,69 @@ def call_log_planner(
     except (LLMUnavailable, LLMOutputParseError, Exception) as exc:  # noqa: BLE001
         message = str(exc) or "Local LLM planner failed."
         print(f"LLM planner failed: {message}")
-        return llm_result(
-            False,
+        return deterministic_log_result(
             llm_input,
-            {},
-            raw_from_exception(exc),
-            message,
+            deterministic_analysis,
+            reason=message,
+            raw=raw_from_exception(exc),
         )
+
+
+def deterministic_log_result(
+    llm_input: dict[str, Any],
+    analysis: dict[str, Any],
+    *,
+    reason: str,
+    raw: str = "",
+) -> dict[str, Any]:
+    primary = analysis.get("primaryClassification") or {}
+    status = str(analysis.get("status") or "unknown")
+    output = {
+        "decision": "failed" if status == "failed" else "succeeded",
+        "classification": str(primary.get("type") or "unknown"),
+        "rootCause": str(
+            primary.get("cause")
+            or "로그에서 확정적인 원인을 찾지 못했습니다."
+        ),
+        "evidence": deterministic_evidence(analysis),
+        "recommendedFixes": [
+            str(
+                primary.get("resolution")
+                or "실패 단계의 stdout/stderr를 확인해 주세요."
+            )
+        ],
+        "rerunCommand": str(analysis.get("recommendedCommand") or ""),
+        "explanationForBeginner": beginner_log_explanation(
+            status,
+            str(primary.get("type") or "unknown"),
+        ),
+    }
+    result = llm_result(False, llm_input, output, raw)
+    result.update(
+        {
+            "effectivePlanner": "deterministic-log-analyzer",
+            "fallbackUsed": True,
+            "fallbackReason": reason,
+        }
+    )
+    return result
+
+
+def deterministic_evidence(analysis: dict[str, Any]) -> list[str]:
+    evidence = []
+    if analysis.get("failedStep"):
+        evidence.append(f"failedStep={analysis['failedStep']}")
+    for line in str(analysis.get("evidence") or "").splitlines():
+        if line.strip():
+            evidence.append(line.strip())
+        if len(evidence) >= 6:
+            break
+    return evidence or ["summary.json과 analysis.md를 규칙 기반으로 검사했습니다."]
+
+
+def beginner_log_explanation(status: str, classification: str) -> str:
+    if status != "failed":
+        return "필수 작업은 완료됐습니다. 경고가 있다면 아래 내용을 확인해 주세요."
+    if classification == "incomplete-requirement":
+        return "코드 문제가 아니라 요구사항 정보가 부족해 중단된 작업입니다. 누락된 항목을 보완하면 됩니다."
+    return "실패 로그에서 확인된 원인과 가장 작은 수정 방법을 아래에 정리했습니다."

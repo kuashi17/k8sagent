@@ -13,6 +13,16 @@ from typing import Any
 
 ERROR_RULES = [
     {
+        "type": "incomplete-requirement",
+        "patterns": [
+            "missing required field",
+            "missing or weakly inferred information",
+            "field type requires confirmation",
+        ],
+        "cause": "Operator 요구사항의 필수 정보가 누락되었거나 안전하게 확정되지 않았습니다.",
+        "resolution": "누락된 Kind, API, spec/status 필드 또는 필드 타입을 보완한 뒤 계획을 다시 생성합니다.",
+    },
+    {
         "type": "docker-kind-connection",
         "patterns": ["permission denied while trying to connect to the docker daemon", "cannot connect to the docker daemon", "docker daemon"],
         "cause": "Docker daemon is unavailable or the current user cannot access it.",
@@ -136,15 +146,27 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def analyze_summary(log_dir: Path, summary: dict[str, Any]) -> dict[str, Any]:
-    failed_step_name = summary.get("failedStep")
-    steps = summary.get("steps") or []
+    steps = summary.get("steps") or normalized_tool_steps(summary)
+    failed_step_name = summary.get("failedStep") or next(
+        (
+            item.get("name")
+            for item in steps
+            if item.get("status") == "failed"
+            or item.get("exitCode") not in {None, 0}
+        ),
+        None,
+    )
     failed_step = find_failed_step(steps, failed_step_name)
     warnings = summary.get("warnings") or []
     warning_text = "\n".join(str(item) for item in warnings)
 
     if failed_step_name:
-        stdout = read_log(failed_step.get("stdoutLog"))
-        stderr = read_log(failed_step.get("stderrLog"))
+        stdout = str(failed_step.get("stdout") or "") or read_log(
+            failed_step.get("stdoutLog")
+        )
+        stderr = str(failed_step.get("stderr") or "") or read_log(
+            failed_step.get("stderrLog")
+        )
         evidence = "\n".join([stdout, stderr, warning_text])
         classifications = classify(evidence)
         primary = classifications[0] if classifications else unknown_classification()
@@ -168,6 +190,17 @@ def analyze_summary(log_dir: Path, summary: dict[str, Any]) -> dict[str, Any]:
         "stepCounts": count_steps(steps),
         "jobSpecValidation": summary.get("jobSpecValidation"),
     }
+
+
+def normalized_tool_steps(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            **item,
+            "name": str(item.get("tool") or item.get("name") or ""),
+        }
+        for item in summary.get("toolResults") or []
+        if isinstance(item, dict)
+    ]
 
 
 def find_failed_step(steps: list[dict[str, Any]], failed_step_name: str | None) -> dict[str, Any]:

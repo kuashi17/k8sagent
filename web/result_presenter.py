@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.tools.capability_drafter import load_proposal, proposal_digest
-from web.schemas import RunResultView
+from web.schemas import LogAnalysisView, RunResultView
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -135,6 +135,48 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         capability_resources=proposal_resources,
         capability_discovery=discovery,
         capability_discovery_errors=discovery_errors,
+    )
+
+
+def present_log_analysis_result(job: dict[str, Any]) -> LogAnalysisView:
+    summary = job.get("summary") or {}
+    analysis = summary.get("llmAnalysis") or {}
+    errors = strings(summary.get("errors"))
+    analyzer = summary.get("logAnalyzerResult") or {}
+    succeeded = (
+        job.get("state") == "succeeded"
+        and analyzer.get("exitCode") == 0
+        and not errors
+    )
+    fallback_used = not bool(summary.get("llmPlannerUsed"))
+    return LogAnalysisView(
+        succeeded=succeeded,
+        title=(
+            "로그 분석이 완료됐습니다."
+            if succeeded
+            else "로그 분석을 완료하지 못했습니다."
+        ),
+        summary=str(
+            analysis.get("explanationForBeginner")
+            or (
+                "로그에서 확인된 원인과 다음 조치를 정리했습니다."
+                if succeeded
+                else "분석 도구의 오류를 확인해 주세요."
+            )
+        ),
+        source_log_dir=str(summary.get("sourceLogDir") or ""),
+        classification=str(
+            analysis.get("classification") or "unknown"
+        ),
+        root_cause=str(
+            analysis.get("rootCause")
+            or "확정된 원인이 없습니다."
+        ),
+        evidence=strings(analysis.get("evidence")),
+        recommended_fixes=strings(analysis.get("recommendedFixes")),
+        warnings=strings(summary.get("warnings")),
+        errors=errors,
+        deterministic=fallback_used,
     )
 
 
