@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.tools.kind_deployment_validators import create_validator  # noqa: E402
+from agent.error_taxonomy import infer_tool_error  # noqa: E402
 
 
 DEFAULT_PROJECT = REPO_ROOT / "workspace" / "generated-operators" / "app-config-operator"
@@ -47,6 +48,7 @@ class KindDeploymentEngine:
         self.checks: dict[str, Any] = {}
         self.failed_step = ""
         self.started = time.time()
+        self.structured_error: dict[str, Any] = {}
 
     def run(self) -> int:
         try:
@@ -86,6 +88,16 @@ class KindDeploymentEngine:
             status = "failed"
             self.failed_step = self.failed_step or "unknown"
             self.checks["error"] = str(exc)
+            self.structured_error = infer_tool_error(
+                {
+                    "exitCode": 1,
+                    "stderr": str(exc),
+                    "deploymentSummary": {
+                        "failedStep": self.failed_step,
+                    },
+                },
+                "kind_deployment",
+            )
             print(f"FAILED at {self.failed_step}: {exc}", file=sys.stderr)
         summary = self.write_summary(status)
         print(json.dumps(summary, indent=2, ensure_ascii=False))
@@ -362,6 +374,9 @@ class KindDeploymentEngine:
             "elapsedSeconds": round(time.time() - self.started, 3),
             "logDir": rel(self.log_dir),
         }
+        if status != "succeeded" and self.structured_error:
+            summary["errorCode"] = self.structured_error["errorCode"]
+            summary["errorDetails"] = self.structured_error
         (self.log_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         return summary
 

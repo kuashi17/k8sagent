@@ -15,6 +15,12 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from agent.error_taxonomy import ErrorCode, emit_tool_error
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Dry-run or execute Kubebuilder scaffold commands.")
@@ -36,6 +42,11 @@ def main() -> int:
 
     if args.dry_run and args.execute:
         print("Use either --dry-run or --execute, not both.", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.INVALID_TOOL_ARGUMENTS,
+            "Use either --dry-run or --execute, not both.",
+            stage="argument-validation",
+        )
         return 2
 
     input_path = Path(args.input)
@@ -60,6 +71,11 @@ def main() -> int:
         print("Cannot run scaffold because operator spec has errors:", file=sys.stderr)
         for error in errors:
             print(f"- {error}", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.REQUIRED_INPUT_MISSING,
+            "; ".join(str(item) for item in errors),
+            stage="scaffold-preflight",
+        )
         return 2
 
     warnings = spec.get("warnings") or []
@@ -73,6 +89,11 @@ def main() -> int:
         print("Cannot run scaffold because required fields are missing:", file=sys.stderr)
         for field in missing:
             print(f"- {field}", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.REQUIRED_INPUT_MISSING,
+            "Missing required fields: " + ", ".join(missing),
+            stage="scaffold-preflight",
+        )
         return 2
 
     if not args.execute:
@@ -84,6 +105,11 @@ def main() -> int:
     print(f"Preflight result written: {result['preflightLog']}")
     if not result["passed"]:
         print("Scaffold execution stopped because preflight failed.", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.REQUIRED_INPUT_MISSING,
+            "Scaffold execution stopped because preflight failed.",
+            stage="scaffold-preflight",
+        )
         return 2
 
     return execute_steps(input_path, target_dir, steps, args.force)

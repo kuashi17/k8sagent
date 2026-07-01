@@ -17,6 +17,12 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from agent.error_taxonomy import ErrorCode, emit_tool_error
+
 
 GENERATOR_VERSION = "0.1.0"
 MAX_PROJECT_NAME_LENGTH = 28
@@ -111,6 +117,16 @@ def main() -> int:
         print(f"Errors: {len(spec['errors'])}")
         for error in spec["errors"]:
             print(f"Error: {error}")
+        message = "; ".join(str(item) for item in spec["errors"])
+        emit_tool_error(
+            (
+                ErrorCode.INVALID_FIELD_TYPE
+                if "type" in message.lower()
+                else ErrorCode.REQUIRED_INPUT_MISSING
+            ),
+            message,
+            stage="spec-generation",
+        )
         return 2
     return 0
 

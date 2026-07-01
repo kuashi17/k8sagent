@@ -24,6 +24,7 @@ from agent.tools.controller_pipeline import generate_controller
 from agent.tools.controller_ir_builder import build_controller_ir
 from agent.tools.controller_ir import ReconcileStrategy
 from agent.tools.resource_catalog import load_resource_catalog
+from agent.error_taxonomy import ErrorCode, emit_tool_error
 
 
 GO_TYPES = {
@@ -49,6 +50,11 @@ def main() -> int:
 
     if args.dry_run and args.execute:
         print("Use either --dry-run or --execute, not both.", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.INVALID_TOOL_ARGUMENTS,
+            "Use either --dry-run or --execute, not both.",
+            stage="argument-validation",
+        )
         return 2
 
     spec_path = Path(args.input)
@@ -60,6 +66,11 @@ def main() -> int:
         print("Cannot patch artifacts because operator spec has errors:", file=sys.stderr)
         for error in errors:
             print(f"- {error}", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.REQUIRED_INPUT_MISSING,
+            "; ".join(str(item) for item in errors),
+            stage="artifact-preflight",
+        )
         return 2
 
     model = normalize_spec(spec, profile, args.profile)
@@ -68,6 +79,11 @@ def main() -> int:
         print("Cannot patch artifacts because required fields are missing:", file=sys.stderr)
         for field in missing:
             print(f"- {field}", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.REQUIRED_INPUT_MISSING,
+            "Missing required fields: " + ", ".join(missing),
+            stage="artifact-preflight",
+        )
         return 2
 
     changes = build_changes(project_dir, model)

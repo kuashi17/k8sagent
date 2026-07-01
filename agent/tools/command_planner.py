@@ -14,6 +14,12 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from agent.error_taxonomy import ErrorCode, emit_tool_error
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate a Kubebuilder command plan from operator-spec.yaml.")
@@ -35,6 +41,11 @@ def main() -> int:
         print("Cannot create command plan because operator spec has errors:", file=sys.stderr)
         for error in errors:
             print(f"- {error}", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.REQUIRED_INPUT_MISSING,
+            "; ".join(str(item) for item in errors),
+            stage="command-planning",
+        )
         return 2
 
     model = normalize_spec(spec, args.workspace)
@@ -43,6 +54,11 @@ def main() -> int:
         print("Cannot create command plan because required fields are missing:", file=sys.stderr)
         for field in missing:
             print(f"- {field}", file=sys.stderr)
+        emit_tool_error(
+            ErrorCode.REQUIRED_INPUT_MISSING,
+            "Missing required fields: " + ", ".join(missing),
+            stage="command-planning",
+        )
         return 2
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import json
+import sys
 from enum import Enum
 from typing import Any
 
@@ -11,6 +13,7 @@ class ErrorCode(str, Enum):
     NONE = ""
     UNKNOWN = "TOOL_EXECUTION_FAILED"
     TOOL_VALIDATION_REJECTED = "TOOL_VALIDATION_REJECTED"
+    INVALID_TOOL_ARGUMENTS = "INVALID_TOOL_ARGUMENTS"
     PATH_POLICY_VIOLATION = "PATH_POLICY_VIOLATION"
     REQUIRED_INPUT_MISSING = "REQUIRED_INPUT_MISSING"
     INVALID_FIELD_TYPE = "INVALID_FIELD_TYPE"
@@ -30,6 +33,7 @@ class ErrorCode(str, Enum):
 
 ERROR_CLASSIFICATIONS = {
     ErrorCode.TOOL_VALIDATION_REJECTED.value: "tool-validation",
+    ErrorCode.INVALID_TOOL_ARGUMENTS.value: "tool-validation",
     ErrorCode.PATH_POLICY_VIOLATION.value: "path-safety",
     ErrorCode.REQUIRED_INPUT_MISSING.value: "incomplete-requirement",
     ErrorCode.INVALID_FIELD_TYPE.value: "invalid-field-type",
@@ -57,6 +61,11 @@ def normalize_tool_result(
         normalized["errorCode"] = ""
         normalized.pop("errorDetails", None)
         return normalized
+    native = extract_native_error(normalized)
+    if native:
+        normalized["errorCode"] = native["errorCode"]
+        normalized["errorDetails"] = native
+        return normalized
     existing = str(normalized.get("errorCode") or "")
     details = normalized.get("errorDetails")
     if existing and isinstance(details, dict):
@@ -65,6 +74,54 @@ def normalize_tool_result(
     normalized["errorCode"] = structured["errorCode"]
     normalized["errorDetails"] = structured
     return normalized
+
+
+def emit_tool_error(
+    error_code: ErrorCode | str,
+    message: str,
+    *,
+    stage: str = "",
+    resource: str = "",
+    verb: str = "",
+    retryable: bool = False,
+) -> dict[str, Any]:
+    code = error_code.value if isinstance(error_code, ErrorCode) else str(error_code)
+    payload = {
+        "errorCode": code,
+        "category": error_category(ErrorCode(code)) if code in ErrorCode._value2member_map_ else "execution",
+        "message": message,
+        "stage": stage,
+        "resource": resource,
+        "verb": verb,
+        "retryable": retryable,
+    }
+    print(
+        "TOOL_ERROR_JSON=" + json.dumps(payload, ensure_ascii=False),
+        file=sys.stderr,
+    )
+    return payload
+
+
+def extract_native_error(result: dict[str, Any]) -> dict[str, Any] | None:
+    summary = result.get("deploymentSummary") or {}
+    if summary.get("errorCode") and isinstance(summary.get("errorDetails"), dict):
+        return dict(summary["errorDetails"])
+    text = "\n".join(
+        [
+            str(result.get("stderr") or ""),
+            str(result.get("stdout") or ""),
+        ]
+    )
+    for line in reversed(text.splitlines()):
+        if not line.startswith("TOOL_ERROR_JSON="):
+            continue
+        try:
+            payload = json.loads(line.split("=", 1)[1])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("errorCode"):
+            return payload
+    return None
 
 
 def infer_tool_error(
@@ -136,6 +193,7 @@ def error_category(code: ErrorCode) -> str:
         ErrorCode.PATH_POLICY_VIOLATION,
         ErrorCode.VALIDATION_TARGET_DENIED,
         ErrorCode.TOOL_VALIDATION_REJECTED,
+        ErrorCode.INVALID_TOOL_ARGUMENTS,
     }:
         return "policy"
     if code in {
