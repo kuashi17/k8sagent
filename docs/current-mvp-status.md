@@ -63,10 +63,10 @@ python3 scripts/run-regression-tests.py --suite standard
 python3 scripts/run-regression-tests.py --suite full
 ```
 
-2026-06-28 현재 확인 결과:
+2026-07-01 현재 확인 결과:
 
-- Agent 45개, LLM 3개, Tool 86개, Evaluation 26개 단위 테스트 통과
-- Web 단위·통합 테스트 24개 통과
+- Agent 64개, LLM 5개, Tool 113개, Evaluation 37개 단위 테스트 통과
+- Web 단위·통합 테스트 33개 통과
 - `quick` regression 통과
 - requirement RAG fixture Hit@3 1.0 통과
 - Local LLM Agent 1회를 포함한 `standard` regression 통과
@@ -76,8 +76,10 @@ python3 scripts/run-regression-tests.py --suite full
 - RedisCache StatefulSet/Service create/delete/restore lifecycle 통과
 - 실제 Agent standard execute → validation → kind deployment 경로 통과
 - profileless Controller 13종 컴파일·품질 평가 통과
-- profileless kind 9종, lifecycle check 39개 통과
-- 최신 full regression 425.389초, 최종 평가 100점
+- profileless kind 10종 통과. read-only 외부 watch와 쓰기 RBAC 거부 포함
+- 최신 로컬 full regression 통과: 통합 976.212초, kind matrix 559.590초
+- capability 등급 자동 산출: stable 8, beta 4, experimental 4
+- 실제 Web execute에서 spec → scaffold → patch → `make generate manifests test` 통과
 
 ```bash
 python3 scripts/run-regression-tests.py --suite full
@@ -107,6 +109,13 @@ python3 scripts/run-regression-tests.py --suite full
 5. kind validator는 profile별 구현을 추가해야 새로운 Operator lifecycle을 깊게 검증할 수 있다.
 6. RAG 품질은 fixture 확대와 reranker 성능 측정이 더 필요하다.
 7. Jenkins, Harbor, Argo CD 연계는 아직 문서/확장 단계다.
+
+## Legacy 유지 결정
+
+`job-workload-v1` 호환 adapter의 참조 4개는 이번 릴리스에서 유지한다. generic
+managed-resources validator가 Job/Pod/PVC의 기존 profile 계약을 완전히 대체할 때
+adapter, profile 선언과 전용 테스트를 함께 제거한다. Quick CI는 현재 상한 4개와
+목표 0개를 강제하므로 신규 legacy 참조는 허용하지 않는다.
 
 ## 내부 fixture의 위치
 

@@ -68,6 +68,10 @@ class JobManagerTest(unittest.TestCase):
                 first["command"][first["command"].index("--artifact-dir") + 1],
                 second["command"][second["command"].index("--artifact-dir") + 1],
             )
+            for job in (first, second):
+                job_dir = root / job["jobDir"]
+                self.assertTrue((job_dir / "workspace").is_dir())
+                self.assertTrue((job_dir / "artifacts").is_dir())
 
     def test_linked_approval_journey_separates_human_wait(self) -> None:
         timings = build_journey_timings(

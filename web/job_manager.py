@@ -49,6 +49,9 @@ class JobManager:
         job_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex[:8]
         job_dir = self.root / job_id
         job_dir.mkdir(parents=True)
+        if job_type == "requirement":
+            (job_dir / "artifacts").mkdir()
+            (job_dir / "workspace").mkdir()
         command = isolate_job_command(
             job_type,
             command,

@@ -816,7 +816,7 @@ python3 agent/langchain_agent.py \
 
 현재 기본값은 빠른 피드백을 위해 `--run-level fast`입니다. 정밀한 최종 LLM 평가가 필요하면 `--run-level standard`를 사용합니다. 명시적으로 최종 LLM 평가만 건너뛰려면 `--skip-final-llm-evaluation`을 사용할 수 있습니다.
 
-같은 requirement, profile hint, RAG 문서, local model 조합은 기본적으로 LLM planning cache를 사용합니다. 캐시는 `.cache/agent/llm-plans/` 아래에 저장됩니다. 새 모델 응답을 강제로 받고 싶으면 `--refresh-cache`, 캐시를 끄고 싶으면 `--no-cache`를 사용합니다.
+같은 requirement, profile hint, RAG 문서, local model 조합은 기본적으로 LLM planning cache를 사용합니다. 캐시는 `.cache/agent/llm-plans/` 아래에 저장됩니다. 현재 `requirement-planning-v5` 계약은 prompt, Pydantic schema, Tool 계약, catalog와 profile digest가 달라지면 이전 계획을 자동으로 무효화합니다. 새 모델 응답을 강제로 받고 싶으면 `--refresh-cache`, 캐시를 끄고 싶으면 `--no-cache`를 사용합니다.
 
 로컬 모델 출력 길이는 기본적으로 짧게 제한합니다. 필요하면 다음 환경변수로 조정합니다.
 
@@ -881,6 +881,8 @@ requirement
 `--kind-deploy`는 profile에 `kindDeployment.enabled: true`와 실행 인자가 정의된 경우에만 허용됩니다. Docker 연결 실패처럼 원인이 결정론적인 경우에는 별도 recovery LLM 호출 없이 `docker-kind-connection` policy plan을 즉시 생성합니다. 사용자 승인 전에는 자동 재실행하지 않습니다.
 
 Tool 실패가 감지되면 recovery planning 전에 현재 plan, Tool 결과, failure context를 Agent 로그에 체크포인트로 저장합니다. recovery LLM이 지연되거나 프로세스가 중단되어도 실행 근거가 빈 로그 디렉터리로 남지 않습니다.
+
+핵심 Tool은 stderr에 `TOOL_ERROR_JSON` 구조화 오류를 함께 기록합니다. Recovery는 `errorCode`를 우선 사용하고, 구조화 코드가 없는 외부 명령에만 제한적으로 문자열 분류를 적용합니다.
 
 kind runner는 공통 배포 엔진과 profile별 validator로 나뉩니다. 공통 엔진은 cluster 준비, image build/load, CRD 설치, Controller 배포 대기만 담당합니다. Custom Resource와 관리 리소스의 상태/lifecycle 검증은 `kindDeployment.validator`와 `validatorConfig`가 선택한 validator가 담당합니다. 현재 내부 fixture는 `appconfig-configmap` validator를 사용합니다.
 
@@ -1169,7 +1171,7 @@ GitHub Actions 분리:
 
 `full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
 
-profileless kind matrix는 9개 요구사항에서 Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC, ServiceAccount, Role, ClusterRole의 공통 lifecycle과 조합형 workload primitive를 검증합니다. ClusterRole 시나리오는 전체 API group 기반 finalizer 등록, cluster-scoped 리소스의 명시적 삭제, finalizer 제거 후 Custom Resource 삭제, restore까지 실제 kind에서 확인합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
+profileless kind matrix는 10개 요구사항에서 Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC, ServiceAccount, Role, ClusterRole의 공통 lifecycle과 조합형 workload primitive를 검증합니다. read-only Deployment 시나리오는 외부 리소스 변경 watch, status 반영, 쓰기 RBAC 거부와 retain 삭제 정책을 확인합니다. ClusterRole 시나리오는 전체 API group 기반 finalizer 등록, cluster-scoped 리소스의 명시적 삭제, finalizer 제거 후 Custom Resource 삭제, restore까지 실제 kind에서 확인합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
 
 빠른 정책/캐시 검증:
 

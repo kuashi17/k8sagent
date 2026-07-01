@@ -50,8 +50,8 @@ def main() -> int:
         Path(args.matrix)
     )
     results = [
-        run_requirement(path, args.run_level, args.mode)
-        for path in requirements
+        run_requirement(path, args.run_level, args.mode, out_dir, index)
+        for index, path in enumerate(requirements, start=1)
     ]
     summary = {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -71,8 +71,15 @@ def run_requirement(
     requirement: str,
     run_level: str,
     mode: str,
+    output_dir: Path,
+    index: int,
 ) -> dict[str, Any]:
     started = time.time()
+    run_root = output_dir / "runs" / f"{index:02d}"
+    artifact_dir = run_root / "artifacts"
+    workspace = run_root / "workspace"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    workspace.mkdir(parents=True, exist_ok=True)
     command = [
         "python3",
         "agent/langchain_agent.py",
@@ -83,6 +90,10 @@ def run_requirement(
         "--run-level",
         run_level,
         "--disable-profile-hints",
+        "--artifact-dir",
+        str(artifact_dir),
+        "--workspace",
+        str(workspace),
     ]
     if mode == "execute":
         command.append("--execute")
@@ -128,6 +139,8 @@ def run_requirement(
         "rejectedCount": len(summary.get("rejectedToolCalls") or []),
         "errors": errors,
         "controllerQuality": quality,
+        "artifactDir": str(artifact_dir),
+        "workspace": str(workspace),
         "passed": bool(passed),
     }
 
