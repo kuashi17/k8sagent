@@ -65,7 +65,7 @@ python3 scripts/run-regression-tests.py --suite full
 
 2026-07-01 현재 확인 결과:
 
-- Agent 66개, LLM 5개, Tool 113개, Evaluation 41개 단위 테스트 통과
+- Agent 66개, LLM 5개, Tool 113개, Evaluation 42개 단위 테스트 통과
 - Web 단위·통합 테스트 34개 통과
 - `quick` regression 통과
 - requirement RAG fixture Hit@3 1.0 통과
@@ -75,9 +75,9 @@ python3 scripts/run-regression-tests.py --suite full
 - TrainingJob Job create/delete/restore lifecycle 통과
 - RedisCache StatefulSet/Service create/delete/restore lifecycle 통과
 - 실제 Agent standard execute → validation → kind deployment 경로 통과
-- profileless Controller 13종 컴파일·품질 평가 통과
+- profileless Controller 14종 컴파일·품질 평가 통과
 - profileless kind 10종 통과. read-only 외부 watch와 쓰기 RBAC 거부 포함
-- 최신 로컬 full regression 통과: 통합 976.212초, kind matrix 559.590초
+- 최신 로컬 full regression 통과: 통합 427.607초, kind matrix 307.761초
 - capability 등급 자동 산출: stable 8, beta 4, experimental 4
 - 실제 Web execute에서 spec → scaffold → patch → `make generate manifests test` 통과
 

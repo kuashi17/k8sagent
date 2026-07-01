@@ -12,3 +12,4 @@ requirements:
   - evaluation/fixtures/requirements/network-policy-controller.txt
   - evaluation/fixtures/requirements/access-bundle-controller.txt
   - evaluation/fixtures/requirements/autoscaled-workload.txt
+  - evaluation/fixtures/requirements/deployment-health.txt
