@@ -14,10 +14,25 @@ from agent.evaluation.profileless_kind_runner import (
     build_kind_contract,
     project_content_digest,
     load_precompiled_results,
+    result_payload,
 )
 
 
 class ProfilelessKindRunnerTest(unittest.TestCase):
+    def test_result_records_precompiled_workspace_reuse(self) -> None:
+        result = result_payload(
+            "passed",
+            Path("requirements/widget.txt"),
+            {"passed": True},
+            {"status": "succeeded"},
+            [],
+            "",
+            {},
+            compile_reused=True,
+        )
+
+        self.assertTrue(result["compileReused"])
+
     def test_kind_timings_group_expensive_deployment_steps(self) -> None:
         categories = aggregate_deployment_categories(
             {

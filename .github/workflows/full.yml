@@ -2,6 +2,11 @@ name: full-kind-regression
 
 on:
   workflow_dispatch:
+    inputs:
+      release_ref:
+        description: "Release tag or commit being validated"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -12,8 +17,11 @@ jobs:
     runs-on: [self-hosted, local-llm, docker, kind]
     env:
       GOCACHE: /tmp/k8sagent-go-build
+      DOCKER_BUILDKIT: "1"
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_ref || github.sha }}
       - name: Install pinned local tools
         run: |
           export K8SAGENT_TOOLS_DIR="$HOME/.cache/k8sagent/tools"
@@ -34,6 +42,19 @@ jobs:
       - run: python3 scripts/run-regression-tests.py --suite full --output-dir evaluation/results/regression/ci-full --history-file .ci-history/full.json
       - run: test -f evaluation/results/regression/ci-full/profileless-compile/profileless-compile-results.json
       - run: test -f evaluation/results/regression/ci-full/profileless-kind/profileless-kind-results.json
+      - name: Verify compile and kind reuse contract
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("evaluation/results/regression/ci-full/profileless-kind/profileless-kind-results.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          results = payload.get("results") or []
+          if not results or not all(item.get("compileReused") for item in results):
+              raise SystemExit("profileless kind did not reuse every compile result")
+          print(f"Reused {len(results)} compile results in one kind matrix cluster.")
+          PY
       - run: test -f evaluation/results/regression/ci-full/final-evaluation.json
       - uses: actions/cache/save@v5
         if: always()

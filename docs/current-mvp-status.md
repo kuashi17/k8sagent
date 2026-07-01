@@ -65,8 +65,8 @@ python3 scripts/run-regression-tests.py --suite full
 
 2026-07-01 현재 확인 결과:
 
-- Agent 64개, LLM 5개, Tool 113개, Evaluation 37개 단위 테스트 통과
-- Web 단위·통합 테스트 33개 통과
+- Agent 66개, LLM 5개, Tool 113개, Evaluation 41개 단위 테스트 통과
+- Web 단위·통합 테스트 34개 통과
 - `quick` regression 통과
 - requirement RAG fixture Hit@3 1.0 통과
 - Local LLM Agent 1회를 포함한 `standard` regression 통과

@@ -42,6 +42,9 @@ class StructuredToolError(AgentContract):
     errorCode: str
     category: str
     message: str
+    userMessage: str = ""
+    recoveryPolicy: str = "manual-review"
+    uiSeverity: Literal["info", "warning", "error", "critical"] = "error"
     stage: str = ""
     resource: str = ""
     verb: str = ""

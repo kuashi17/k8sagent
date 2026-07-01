@@ -883,6 +883,10 @@ requirement
 Tool 실패가 감지되면 recovery planning 전에 현재 plan, Tool 결과, failure context를 Agent 로그에 체크포인트로 저장합니다. recovery LLM이 지연되거나 프로세스가 중단되어도 실행 근거가 빈 로그 디렉터리로 남지 않습니다.
 
 핵심 Tool은 stderr에 `TOOL_ERROR_JSON` 구조화 오류를 함께 기록합니다. Recovery는 `errorCode`를 우선 사용하고, 구조화 코드가 없는 외부 명령에만 제한적으로 문자열 분류를 적용합니다.
+`agent/error_registry.py`의 Pydantic `ErrorDefinition`이 오류별 사용자 메시지,
+Recovery 분류·정책, retry 가능 여부와 Web UI severity의 단일 원천입니다. 새
+오류 코드를 추가하면서 registry 계약을 빠뜨리면 단위 테스트와 import 검증이
+실패합니다.
 
 kind runner는 공통 배포 엔진과 profile별 validator로 나뉩니다. 공통 엔진은 cluster 준비, image build/load, CRD 설치, Controller 배포 대기만 담당합니다. Custom Resource와 관리 리소스의 상태/lifecycle 검증은 `kindDeployment.validator`와 `validatorConfig`가 선택한 validator가 담당합니다. 현재 내부 fixture는 `appconfig-configmap` validator를 사용합니다.
 
@@ -1161,13 +1165,13 @@ Self-hosted Full runner의 pinned tool과 Go build/module cache는 runner의 영
 
 GitHub Actions 분리:
 
-- `.github/workflows/quick.yml`: PR와 main push에서 실행
-- `.github/workflows/standard.yml`: `local-llm` self-hosted runner에서 수동 실행
-- `.github/workflows/full.yml`: `local-llm`, `docker`, `kind` self-hosted runner에서 수동 실행
+- `.github/workflows/quick.yml`: 모든 PR에서 실행하며 필요하면 수동 재실행
+- `.github/workflows/standard.yml`: main push, 주간 정기 실행과 수동 실행
+- `.github/workflows/full.yml`: 릴리스 후보에서 수동 실행하는 Docker/kind gate
 
 세 workflow는 suite별 `.ci-history/*.json`을 Actions cache로 복원·저장하므로 새 checkout에서도 직전 성능과 비교할 수 있습니다. 실행 결과 artifact는 run ID별 이름으로 30일 보존하며, `full`은 종료 시 자신이 사용하는 임시 kind 클러스터를 정리합니다.
 
-`standard`와 `full`은 local LLM planning cache를 workflow 간 복원합니다. `full`의 pinned Go/kind/Kubebuilder 도구와 Go module/build cache는 self-hosted runner의 checkout 밖 영속 경로를 사용하고, 도구가 없을 때만 자동 설치합니다. Profileless compile은 첫 fixture로 Go cache를 준비한 뒤 최대 2개만 병렬 실행하고, scaffold 직후의 중복 validation은 생략하되 artifact patch 이후 `make generate`, `make manifests`, `make test` 최종 gate는 그대로 수행합니다. Kind matrix는 동일 실행에서 통과한 compile workspace를 재사용합니다. 생성 Dockerfile은 BuildKit의 module/build cache mount를 사용하고 전체 의존성을 매번 다시 만드는 `go build -a`를 사용하지 않습니다.
+`standard`와 `full`은 local LLM planning cache를 workflow 간 복원합니다. `full`의 pinned Go/kind/Kubebuilder 도구와 Go module/build cache는 self-hosted runner의 checkout 밖 영속 경로를 사용하고, 도구가 없을 때만 자동 설치합니다. Profileless compile은 첫 fixture로 Go cache를 준비한 뒤 최대 2개만 병렬 실행하고, scaffold 직후의 중복 validation은 생략하되 artifact patch 이후 `make generate`, `make manifests`, `make test` 최종 gate는 그대로 수행합니다. Kind matrix는 동일 실행에서 통과한 compile workspace와 단일 kind 클러스터를 재사용하며, 결과의 모든 `compileReused` 값이 참인지 workflow가 검사합니다. 생성 Dockerfile은 BuildKit의 module/build cache mount를 사용하고 전체 의존성을 매번 다시 만드는 `go build -a`를 사용하지 않습니다.
 
 `full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
 

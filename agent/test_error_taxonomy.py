@@ -4,10 +4,27 @@ from __future__ import annotations
 
 import unittest
 
-from agent.error_taxonomy import ErrorCode, normalize_tool_result
+from agent.error_registry import ERROR_REGISTRY, ErrorCode, get_error_definition
+from agent.error_taxonomy import normalize_tool_result
 
 
 class ErrorTaxonomyTest(unittest.TestCase):
+    def test_registry_covers_every_non_empty_error_code(self) -> None:
+        expected = {code.value for code in ErrorCode if code is not ErrorCode.NONE}
+        self.assertEqual(set(ERROR_REGISTRY), expected)
+
+    def test_registry_is_the_source_for_recovery_retry_and_ui(self) -> None:
+        contract = get_error_definition(ErrorCode.COMMAND_TIMEOUT)
+
+        self.assertEqual(contract.recoveryClassification, "command-timeout")
+        self.assertEqual(
+            contract.recoveryPolicy,
+            "retry-after-environment-recovery",
+        )
+        self.assertTrue(contract.retryable)
+        self.assertEqual(contract.uiSeverity, "warning")
+        self.assertTrue(contract.userMessage)
+
     def test_rbac_failure_extracts_code_resource_and_verb(self) -> None:
         result = normalize_tool_result(
             {
@@ -38,6 +55,10 @@ class ErrorTaxonomyTest(unittest.TestCase):
             ErrorCode.DOCKER_DAEMON_UNAVAILABLE.value,
         )
         self.assertTrue(result["errorDetails"]["retryable"])
+        self.assertEqual(
+            result["errorDetails"]["uiSeverity"],
+            "error",
+        )
 
     def test_success_has_no_error_details(self) -> None:
         result = normalize_tool_result(

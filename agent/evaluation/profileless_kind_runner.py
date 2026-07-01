@@ -168,6 +168,7 @@ def run_requirement(
                 "deploymentStepSeconds": 0.0,
                 "deploymentCategories": {},
             },
+            compile_reused=precompiled_result is not None,
         )
 
     spec_path = Path(compile_result["specPath"])
@@ -222,6 +223,7 @@ def run_requirement(
                 deployment
             ),
         },
+        compile_reused=precompiled_result is not None,
     )
     write_result(output_dir, payload)
     return payload
@@ -359,6 +361,8 @@ def result_payload(
     command: list[str],
     error: str,
     timings: dict[str, Any],
+    *,
+    compile_reused: bool = False,
 ) -> dict[str, Any]:
     return {
         "createdAt": datetime.now().astimezone().isoformat(
@@ -367,6 +371,7 @@ def result_payload(
         "status": status,
         "requirement": relative(requirement),
         "profileUsed": False,
+        "compileReused": compile_reused,
         "compile": compile_result,
         "kindCommand": command,
         "deploymentSummary": deployment,

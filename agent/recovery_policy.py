@@ -9,6 +9,7 @@ import yaml
 
 from agent.contracts import RecoveryPlan
 from agent.error_taxonomy import classification_for_error_code
+from agent.error_registry import get_error_definition
 from agent.tool_validator import normalize_tool_name
 
 
@@ -71,6 +72,11 @@ def validate_recovery_plan(
 ) -> dict[str, Any]:
     unsupported = detect_unsupported_field_types(context)
     has_structured_error = bool(failure_context.get("errorCode"))
+    error_contract = (
+        get_error_definition(str(failure_context.get("errorCode")))
+        if has_structured_error
+        else None
+    )
     classification = policy_classification(raw_plan, failure_context, unsupported)
     rejected = validate_raw_recovery_calls(raw_plan, classification)
 
@@ -166,6 +172,15 @@ def validate_recovery_plan(
         "policyEvaluation": {
             "classification": classification,
             "errorCode": str(failure_context.get("errorCode") or ""),
+            "recoveryPolicy": (
+                error_contract.recoveryPolicy if error_contract else ""
+            ),
+            "retryable": (
+                error_contract.retryable if error_contract else False
+            ),
+            "uiSeverity": (
+                error_contract.uiSeverity if error_contract else "error"
+            ),
             "unsupportedFieldTypes": unsupported,
             "allowlist": sorted(RECOVERY_TOOL_ALLOWLIST),
             "rawRecoveryToolCalls": raw_plan.get("recoveryToolCalls") or [],

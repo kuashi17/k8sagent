@@ -64,6 +64,28 @@ class ResultPresenterTest(unittest.TestCase):
         self.assertEqual(result.managed_resources, [])
         self.assertEqual(result.observed_resources, ["Deployment"])
 
+    def test_structured_error_uses_registry_message_and_severity(self) -> None:
+        result = present_run_result(
+            {
+                "state": "failed",
+                "jobType": "requirement",
+                "summary": {
+                    "errors": ["kind_deployment failed with exit code 1"],
+                    "failureContext": {
+                        "errorCode": "DOCKER_DAEMON_UNAVAILABLE"
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(result.error_code, "DOCKER_DAEMON_UNAVAILABLE")
+        self.assertEqual(
+            result.error_message,
+            "Docker daemon에 연결할 수 없습니다.",
+        )
+        self.assertEqual(result.error_severity, "error")
+        self.assertTrue(result.error_retryable)
+
     def test_legacy_english_actions_are_presented_in_korean(self) -> None:
         result = present_run_result(
             {

@@ -44,6 +44,14 @@ class RecoveryPolicyTest(unittest.TestCase):
             policy["validatedRecoveryPlan"]["rootCause"],
             "Controller cannot patch deployments",
         )
+        self.assertEqual(
+            policy["policyEvaluation"]["recoveryPolicy"],
+            "approval-gated",
+        )
+        self.assertEqual(
+            policy["policyEvaluation"]["uiSeverity"],
+            "critical",
+        )
         self.assertIn(
             "resource=deployments",
             policy["validatedRecoveryPlan"]["evidence"],

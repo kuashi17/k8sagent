@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent.error_registry import get_error_definition
 from agent.tools.capability_drafter import load_proposal, proposal_digest
 from web.schemas import LogAnalysisView, RunResultView
 
@@ -72,6 +73,9 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         discovery_errors,
     ) = capability_review(summary)
     result_status = str(shared.get("status") or "")
+    failure_context = summary.get("failureContext") or {}
+    error_code = str(failure_context.get("errorCode") or "")
+    error_contract = get_error_definition(error_code) if error_code else None
     title = (
         "추가 정보가 필요합니다."
         if result_status == "clarification-required"
@@ -112,6 +116,16 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         generated_artifacts=unique(generated),
         warnings=warnings,
         errors=errors,
+        error_code=error_code,
+        error_message=(
+            error_contract.userMessage if error_contract else ""
+        ),
+        error_severity=(
+            error_contract.uiSeverity if error_contract else "error"
+        ),
+        error_retryable=(
+            error_contract.retryable if error_contract else False
+        ),
         next_actions=(
             beginner_strings(technical.get("nextActions"))
             or beginner_strings(summary.get("nextRecommendedActions"))

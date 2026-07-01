@@ -114,6 +114,10 @@ class RunResultView(WebModel):
     generated_artifacts: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    error_code: str = ""
+    error_message: str = ""
+    error_severity: Literal["info", "warning", "error", "critical"] = "error"
+    error_retryable: bool = False
     next_actions: list[str] = Field(default_factory=list)
     capability_support: list[dict[str, Any]] = Field(default_factory=list)
     beginner_explanation: list[str] = Field(default_factory=list)

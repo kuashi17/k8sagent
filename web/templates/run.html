@@ -120,9 +120,11 @@
   {% endif %}
 
   {% if result_view.errors %}
-  <section class="alert alert-error result-alert">
+  <section class="alert alert-error result-alert" data-severity="{{ result_view.error_severity }}">
     <strong>문제가 발생한 이유</strong>
+    {% if result_view.error_message %}<p>{{ result_view.error_message }}{% if result_view.error_code %} <span class="muted">({{ result_view.error_code }})</span>{% endif %}</p>{% endif %}
     <ul>{% for item in result_view.errors %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% if result_view.error_retryable %}<p>환경을 확인한 뒤 이 작업을 다시 시도할 수 있습니다.</p>{% endif %}
   </section>
   {% endif %}
 
