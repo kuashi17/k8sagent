@@ -837,7 +837,14 @@ def resource_roles_for_line(
     managed: list[str] = []
     observed: list[str] = []
     denied: list[str] = []
-    for clause in re.split(r"\s*,\s*", line):
+    # Keep read and write intents local when beginners describe a pipeline in
+    # one sentence: "Deployment를 읽고 ConfigMap에 기록".
+    role_scoped_line = re.sub(
+        r"(읽고|조회하고|관리하며|관리하고)\s+",
+        r"\1, ",
+        line,
+    )
+    for clause in re.split(r"\s*,\s*", role_scoped_line):
         resources = extract_k8s_resources(clause)
         if not resources:
             continue
@@ -852,6 +859,17 @@ def resource_roles_for_line(
         if not has_resource_mutation_intent(clause):
             continue
         for resource in resources:
+            if (
+                resource == "Pod"
+                and not re.search(
+                    r"Pod(?:를|을|는|은)?[^,.]*(?:직접\s*)?(?:생성|관리|수정|삭제)",
+                    clause,
+                )
+            ):
+                # Pod mentions commonly describe selectors, readiness, or a
+                # child workload. Treat Pod as managed only on explicit direct
+                # mutation intent.
+                continue
             if (
                 resource == "Pod"
                 and "선택" in clause
@@ -884,7 +902,7 @@ def find_after_heading(text: str, heading: str) -> str:
 def extract_k8s_resources(line: str) -> list[str]:
     resources: list[str] = []
     for alias, canonical in RESOURCE_ALIASES.items():
-        pattern = rf"(?<![A-Za-z0-9]){re.escape(alias)}(?:과|와|를|을|는|은|의|에|,|\s|$)"
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(alias)}(?:과|와|를|을|는|은|의|에|으로|로|,|\s|$)"
         if re.search(pattern, line, re.I):
             resources.append(resource_kind(canonical))
     resources.extend(

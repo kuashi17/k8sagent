@@ -127,6 +127,17 @@ def run_suite(
             ],
         ),
         run_check(
+            "response-consistency",
+            [
+                sys.executable,
+                "agent/evaluation/response_consistency_runner.py",
+                "--runs",
+                "5",
+                "--output",
+                str(output_dir / "response-consistency.json"),
+            ],
+        ),
+        run_check(
             "legacy-usage",
             [
                 sys.executable,
