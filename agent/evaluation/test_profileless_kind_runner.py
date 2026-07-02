@@ -183,6 +183,7 @@ spec:
             {
                 "resource": "clusterrole",
                 "name": "managed-access",
+                "ownership": "finalizer",
                 "deletionPolicy": "explicit-delete",
                 "updatePolicy": "in-place",
             },

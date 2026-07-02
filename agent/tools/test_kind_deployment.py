@@ -175,6 +175,7 @@ class KindDeploymentValidatorTest(unittest.TestCase):
                 {
                     "resource": "job",
                     "name": "sample-job",
+                    "ownership": "none",
                     "deletionPolicy": "retain",
                     "updatePolicy": "in-place",
                 }

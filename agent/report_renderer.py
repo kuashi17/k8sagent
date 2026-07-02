@@ -44,6 +44,15 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     ]
     if summary.get("llmPlan"):
         lines.extend(["", "## LLM Planner Output", "", json_block(summary["llmPlan"])])
+    if summary.get("clarificationContext"):
+        lines.extend(
+            [
+                "",
+                "## Clarification Contract",
+                "",
+                json_block(summary["clarificationContext"]),
+            ]
+        )
     lines.extend(["", "## RAG Evidence", "", *format_rag_evidence(summary.get("ragEvidence") or [])])
     lines.extend(["", "## Evidence Trace", "", *format_evidence_trace(summary.get("evidenceTrace") or {})])
     lines.extend(["", "## Tool Call Plan", "", *format_tool_call_plan(summary.get("toolCallPlan") or [])])

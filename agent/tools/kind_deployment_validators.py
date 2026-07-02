@@ -376,6 +376,14 @@ class ManagedResourceValidator:
             {
                 "resource": str(item.get("resource") or ""),
                 "name": str(item.get("name") or self.sample_name),
+                "ownership": str(
+                    item.get("ownership")
+                    or (
+                        "none"
+                        if item.get("deletionPolicy") == "retain"
+                        else "ownerReference"
+                    )
+                ),
                 "deletionPolicy": str(
                     item.get("deletionPolicy") or "garbage-collect"
                 ),
@@ -390,14 +398,29 @@ class ManagedResourceValidator:
             {
                 "resource": str(item.get("resource") or ""),
                 "name": str(item.get("name") or ""),
+                "labelSelector": dict(item.get("labelSelector") or {}),
                 "mutationPatch": dict(item.get("mutationPatch") or {}),
                 "statusPath": str(item.get("statusPath") or ""),
                 "expectedStatus": item.get("expectedStatus"),
+                "statusSourcePath": str(item.get("statusSourcePath") or ""),
+                "deletionExpectation": str(
+                    item.get("deletionExpectation") or "retain"
+                ),
             }
             for item in config.get("observedResources") or []
             if isinstance(item, dict)
             and item.get("resource")
-            and item.get("name")
+            and (item.get("name") or item.get("labelSelector"))
+        ]
+        self.status_projections = [
+            {
+                "resource": str(item.get("resource") or ""),
+                "name": str(item.get("name") or ""),
+                "sourcePath": str(item.get("sourcePath") or ""),
+                "statusPath": str(item.get("statusPath") or ""),
+            }
+            for item in config.get("statusProjections") or []
+            if isinstance(item, dict)
         ]
         self.status_phases = [
             str(item)
@@ -417,6 +440,17 @@ class ManagedResourceValidator:
         self.update_mode = str(
             config.get("updateMode") or "in-place"
         )
+        self.immutable_spec = dict(config.get("immutableSpec") or {})
+        self.immutable_assertions = [
+            {
+                "resource": str(item.get("resource") or ""),
+                "name": str(item.get("name") or self.sample_name),
+                "path": str(item.get("path") or ""),
+                "equals": item.get("equals"),
+            }
+            for item in config.get("immutableAssertions") or []
+            if isinstance(item, dict)
+        ]
         self.state_machine_status = bool(
             config.get("stateMachineStatus", False)
         )
@@ -519,6 +553,14 @@ class ManagedResourceValidator:
                         "validator": self.name,
                     }
                 )
+            if self.immutable_spec:
+                steps.append(
+                    {
+                        "name": "verify-immutable-change",
+                        "mutating": True,
+                        "validator": self.name,
+                    }
+                )
             steps.extend(
                 {"name": name, "mutating": True, "validator": self.name}
                 for name in ("verify-delete", "restore-sample")
@@ -543,8 +585,33 @@ class ManagedResourceValidator:
             self.wait_present(engine, item["resource"], item["name"])
             for item in self.managed_resources
         ]
+        ownership_results = []
+        for item, managed_object in zip(self.managed_resources, managed):
+            references = list(
+                (managed_object.get("metadata") or {}).get("ownerReferences")
+                or []
+            )
+            has_owner = any(
+                reference.get("name") == self.sample_name
+                for reference in references
+            )
+            expected = item["ownership"] == "ownerReference"
+            if has_owner != expected:
+                raise RuntimeError(
+                    f"OwnerReference mismatch for {item['resource']}/{item['name']}: "
+                    f"expected={expected}, actual={references}"
+                )
+            ownership_results.append(
+                {
+                    "resource": item["resource"],
+                    "name": item["name"],
+                    "ownership": item["ownership"],
+                    "passed": True,
+                }
+            )
+        engine.checks["ownership"] = ownership_results
         observed = [
-            self.wait_present(engine, item["resource"], item["name"])
+            self.wait_observed(engine, item)
             for item in self.observed_resources
         ]
         custom_resource = self.wait_present(
@@ -553,6 +620,48 @@ class ManagedResourceValidator:
             self.sample_name,
         )
         status = custom_resource.get("status") or {}
+        selector_watch_results = []
+        for item, observed_object in zip(self.observed_resources, observed):
+            if not item["labelSelector"] or not item["statusPath"]:
+                continue
+            expected = get_path(
+                observed_object,
+                item["statusSourcePath"] or "metadata.name",
+            )
+            assertion = self.wait_assertion(
+                engine,
+                {
+                    "resource": self.resource,
+                    "name": self.sample_name,
+                    "path": item["statusPath"],
+                    "equals": expected,
+                },
+            )
+            selector_watch_results.append(
+                {**item, "expectedStatus": expected, "statusUpdated": assertion["passed"]}
+            )
+        if selector_watch_results:
+            engine.checks["externalWatch"] = {
+                "passed": all(item["statusUpdated"] for item in selector_watch_results),
+                "probes": selector_watch_results,
+            }
+        projection_results = []
+        for item in self.status_projections:
+            expected = self.wait_resource_value(engine, item)
+            assertion = self.wait_assertion(
+                engine,
+                {
+                    "resource": self.resource,
+                    "name": self.sample_name,
+                    "path": item["statusPath"],
+                    "equals": expected,
+                },
+            )
+            projection_results.append(
+                {**item, "expected": expected, "passed": assertion["passed"]}
+            )
+        if projection_results:
+            engine.checks["statusProjections"] = projection_results
         if self.status_phases:
             deadline = time.time() + engine.timeout_seconds
             while (
@@ -629,6 +738,8 @@ class ManagedResourceValidator:
             self.verify_drift_recovery(engine)
         if self.update_spec:
             self.verify_update(engine)
+        if self.immutable_spec:
+            self.verify_immutable_change(engine)
         engine.failed_step = "verify-delete"
         engine.run_cmd(
             "kubectl-delete-custom-resource",
@@ -665,19 +776,19 @@ class ManagedResourceValidator:
                         item["name"],
                     ),
                 }
-        observed_results = {
-            f"{item['resource']}/{item['name']}": {
-                "expected": "present",
-                "passed": bool(
-                    self.wait_present(
-                        engine,
-                        item["resource"],
-                        item["name"],
-                    )
-                ),
-            }
-            for item in self.observed_resources
-        }
+        observed_results = {}
+        for item in self.observed_resources:
+            key = f"{item['resource']}/{item['name'] or item['labelSelector']}"
+            if item["deletionExpectation"] == "transitive-delete":
+                observed_results[key] = {
+                    "expected": "absent-via-owner",
+                    "passed": self.wait_observed_absent(engine, item),
+                }
+            else:
+                observed_results[key] = {
+                    "expected": "present",
+                    "passed": bool(self.wait_observed(engine, item)),
+                }
         engine.checks["lifecycleDelete"] = {
             "customResourceAbsent": self.wait_absent(
                 engine,
@@ -760,6 +871,60 @@ class ManagedResourceValidator:
             ),
             timeout=120,
         )
+        if self.storage_expansion_is_unsupported(engine):
+            time.sleep(3)
+            storage_assertion = next(
+                item
+                for item in self.update_assertions
+                if item["resource"] == "persistentvolumeclaim"
+                and item["path"] == "spec.resources.requests.storage"
+            )
+            original = next(
+                item["equals"]
+                for item in self.initial_assertions
+                if item["resource"] == "persistentvolumeclaim"
+                and item["path"] == "spec.resources.requests.storage"
+            )
+            current = get_path(
+                self.wait_present(
+                    engine,
+                    storage_assertion["resource"],
+                    storage_assertion["name"],
+                ),
+                storage_assertion["path"],
+            )
+            if current != original:
+                raise RuntimeError(
+                    "PVC storage changed despite an environment that does "
+                    f"not support expansion: expected={original}, actual={current}"
+                )
+            field = next(iter(self.update_spec))
+            engine.run_cmd(
+                "kubectl-restore-custom-resource-after-limited-expansion",
+                self.kubectl(
+                    [
+                        "patch",
+                        self.resource,
+                        self.sample_name,
+                        "--type",
+                        "merge",
+                        "-p",
+                        json.dumps({"spec": {field: original}}),
+                    ]
+                ),
+                timeout=120,
+            )
+            engine.checks["lifecycleUpdate"] = {
+                "specPatch": self.update_spec,
+                "mode": self.update_mode,
+                "status": "limited-by-storage-class",
+                "actual": current,
+                "limitation": (
+                    "The kind storage class does not allow volume expansion; "
+                    "the Controller attempted no unsafe recreation."
+                ),
+            }
+            return
         assertions = [
             self.wait_assertion(engine, item)
             for item in self.update_assertions
@@ -768,6 +933,95 @@ class ManagedResourceValidator:
             "specPatch": self.update_spec,
             "mode": self.update_mode,
             "assertions": assertions,
+        }
+
+    def storage_expansion_is_unsupported(
+        self,
+        engine: DeploymentEngine,
+    ) -> bool:
+        assertion = next(
+            (
+                item
+                for item in self.update_assertions
+                if item["resource"] == "persistentvolumeclaim"
+                and item["path"] == "spec.resources.requests.storage"
+            ),
+            None,
+        )
+        if not assertion:
+            return False
+        pvc = self.wait_present(
+            engine,
+            assertion["resource"],
+            assertion["name"],
+        )
+        storage_class = str(
+            (pvc.get("spec") or {}).get("storageClassName") or ""
+        )
+        if not storage_class:
+            return True
+        result = engine.run_cmd(
+            "kubectl-get-storage-class-expansion-policy",
+            ["kubectl", "get", "storageclass", storage_class, "-o", "json"],
+            check=False,
+        )
+        if result["exitCode"] != 0:
+            return True
+        payload = parse_json(result["stdout"])
+        return payload.get("allowVolumeExpansion") is not True
+
+    def verify_immutable_change(self, engine: DeploymentEngine) -> None:
+        engine.failed_step = "verify-immutable-change"
+        before = self.wait_present(
+            engine,
+            self.immutable_assertions[0]["resource"],
+            self.immutable_assertions[0]["name"],
+        )
+        before_uid = str((before.get("metadata") or {}).get("uid") or "")
+        patch_payload = json.dumps(
+            {"spec": self.immutable_spec},
+            separators=(",", ":"),
+        )
+        engine.run_cmd(
+            "kubectl-patch-custom-resource-immutable",
+            self.kubectl(
+                [
+                    "patch",
+                    self.resource,
+                    self.sample_name,
+                    "--type",
+                    "merge",
+                    "-p",
+                    patch_payload,
+                ]
+            ),
+            timeout=120,
+        )
+        assertions = [
+            self.wait_assertion(engine, item)
+            for item in self.immutable_assertions
+        ]
+        after = self.wait_present(
+            engine,
+            self.immutable_assertions[0]["resource"],
+            self.immutable_assertions[0]["name"],
+        )
+        after_uid = str((after.get("metadata") or {}).get("uid") or "")
+        if not before_uid or after_uid != before_uid:
+            raise RuntimeError(
+                "Immutable retained resource was unexpectedly recreated: "
+                f"before={before_uid}, after={after_uid}"
+            )
+        engine.checks["immutableChange"] = {
+            "specPatch": self.immutable_spec,
+            "unsafePatchBlocked": True,
+            "resourceRecreated": False,
+            "resourceUid": before_uid,
+            "assertions": assertions,
+            "limitation": (
+                "Immutable fields on retained resources require manual "
+                "migration; the Controller does not patch or recreate them."
+            ),
         }
 
     def verify_idempotency(self, engine: DeploymentEngine) -> None:
@@ -917,11 +1171,14 @@ class ManagedResourceValidator:
             },
             "managedResources": self.managed_resources,
             "observedResources": self.observed_resources,
+            "statusProjections": self.status_projections,
             "initialAssertions": self.initial_assertions,
             "driftAssertions": self.drift_assertions,
             "updateSpec": self.update_spec,
             "updateAssertions": self.update_assertions,
             "updateMode": self.update_mode,
+            "immutableSpec": self.immutable_spec,
+            "immutableAssertions": self.immutable_assertions,
             "stateMachineStatus": self.state_machine_status,
             "finalizer": self.finalizer,
         }
@@ -961,6 +1218,80 @@ class ManagedResourceValidator:
                 return parse_json(result["stdout"])
             time.sleep(2)
         raise RuntimeError(f"{resource}/{name} was not created: {last}")
+
+    def wait_resource_value(
+        self,
+        engine: DeploymentEngine,
+        item: dict[str, Any],
+    ) -> Any:
+        deadline = time.time() + engine.timeout_seconds
+        last = None
+        while time.time() < deadline:
+            resource = self.wait_present(
+                engine,
+                item["resource"],
+                item["name"],
+            )
+            last = get_path(resource, item["sourcePath"])
+            if last is not None:
+                return last
+            time.sleep(2)
+        raise RuntimeError(
+            f"Status projection source was not available: {item}, actual={last}"
+        )
+
+    def wait_observed(
+        self,
+        engine: DeploymentEngine,
+        item: dict[str, Any],
+    ) -> dict[str, Any]:
+        if item.get("name"):
+            return self.wait_present(engine, item["resource"], item["name"])
+        selector = ",".join(
+            f"{key}={value}"
+            for key, value in sorted(item["labelSelector"].items())
+        )
+        deadline = time.time() + engine.timeout_seconds
+        last = ""
+        while time.time() < deadline:
+            result = engine.run_cmd(
+                f"kubectl-get-{item['resource']}-selector",
+                self.kubectl(["get", item["resource"], "-l", selector, "-o", "json"]),
+                check=False,
+            )
+            last = result.get("stderr") or result.get("stdout") or ""
+            if result["exitCode"] == 0:
+                payload = parse_json(result["stdout"])
+                resources = payload.get("items") or []
+                if resources:
+                    return resources[0]
+            time.sleep(2)
+        raise RuntimeError(
+            f"{item['resource']} matching {selector} was not found: {last}"
+        )
+
+    def wait_observed_absent(
+        self,
+        engine: DeploymentEngine,
+        item: dict[str, Any],
+    ) -> bool:
+        if item.get("name"):
+            return self.wait_absent(engine, item["resource"], item["name"])
+        selector = ",".join(
+            f"{key}={value}"
+            for key, value in sorted(item["labelSelector"].items())
+        )
+        deadline = time.time() + engine.timeout_seconds
+        while time.time() < deadline:
+            result = engine.run_cmd(
+                f"kubectl-get-{item['resource']}-selector-absent",
+                self.kubectl(["get", item["resource"], "-l", selector, "-o", "json"]),
+                check=False,
+            )
+            if result["exitCode"] == 0 and not (parse_json(result["stdout"]).get("items") or []):
+                return True
+            time.sleep(2)
+        return False
 
     def wait_absent(
         self,

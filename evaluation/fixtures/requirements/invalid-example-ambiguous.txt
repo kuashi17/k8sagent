@@ -1,0 +1,8 @@
+InvalidExample Operator를 생성한다.
+domain은 sample.io, group은 invalid, version은 v1alpha1, kind는 InvalidExample로 한다.
+spec:
+count: 숫자 타입
+options: 알 수 없는 사용자 정의 타입
+status:
+phase: string
+Controller는 Deployment를 생성한다.

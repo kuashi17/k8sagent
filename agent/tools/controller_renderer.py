@@ -12,6 +12,7 @@ from agent.tools.controller_ir import (
 )
 from agent.tools.controller_emitters import (
     render_dependencies,
+    render_immutable_guard,
     render_mutations,
     render_recreate_guard,
 )
@@ -316,6 +317,7 @@ def render_resource_function(
         namespace,
     )
     recreate_guard = render_recreate_guard(resource)
+    immutable_guard = render_immutable_guard(resource)
     owner = (
         ""
         if resource.ownership != OwnershipPolicy.OWNER_REFERENCE
@@ -360,6 +362,7 @@ def render_resource_function(
 \tobject := managedObject("{group}", "{version}", "{resource.kind}", {namespace}, name)
 {disable_guard}
 {recreate_guard}
+{immutable_guard}
 \t_, err := controllerutil.CreateOrUpdate(ctx, r.Client, object, func() error {{
 \t\tlabels := object.GetLabels()
 \t\tif labels == nil {{
@@ -389,6 +392,37 @@ def render_read_only_function(
     suffix: str,
     namespace: str,
 ) -> str:
+    if resource.selector_label and resource.selector_dependency_kind:
+        dependency = ir.resource(resource.selector_dependency_kind)
+        dependency_expression = (
+            source_expression(dependency.name.source_path)
+            if dependency
+            else '""'
+        )
+        dependency_suffix = (
+            dependency.name.fallback_template.replace(
+                "{metadata.name}-", ""
+            )
+            if dependency
+            else resource.selector_dependency_kind.lower()
+        )
+        return f'''func (r *{ir.kind}Reconciler) reconcile{function_name}(ctx context.Context, instance *{alias}.{ir.kind}) (string, error) {{
+\tdependencyName := {dependency_expression}
+\tif dependencyName == "" {{
+\t\tdependencyName = instance.Name + "-{dependency_suffix}"
+\t}}
+\tobjects := &unstructured.UnstructuredList{{}}
+\tobjects.SetAPIVersion("{resource.api_version}")
+\tobjects.SetKind("{resource.kind}List")
+\tif err := r.List(ctx, objects, client.InNamespace(instance.Namespace), client.MatchingLabels{{"{resource.selector_label}": dependencyName}}); err != nil {{
+\t\treturn "", fmt.Errorf("list read-only {resource.kind}: %w", err)
+\t}}
+\tif len(objects.Items) == 0 {{
+\t\treturn "", fmt.Errorf("get read-only {resource.kind}: no resource matches {resource.selector_label}=%s", dependencyName)
+\t}}
+\treturn objects.Items[0].GetName(), nil
+}}
+'''
     return f'''func (r *{ir.kind}Reconciler) reconcile{function_name}(ctx context.Context, instance *{alias}.{ir.kind}) (string, error) {{
 \tname := {name_expression}
 \tif name == "" {{
@@ -769,6 +803,36 @@ def render_external_watch_functions(
             "client.InNamespace(object.GetNamespace()))\n"
             "\t}\n"
         )
+        selector_match = ""
+        if resource.selector_label and resource.selector_dependency_kind:
+            dependency = ir.resource(resource.selector_dependency_kind)
+            dependency_expression = (
+                source_expression(dependency.name.source_path)
+                if dependency
+                else '""'
+            )
+            dependency_suffix = (
+                dependency.name.fallback_template.replace(
+                    "{metadata.name}-", ""
+                )
+                if dependency
+                else resource.selector_dependency_kind.lower()
+            )
+            selector_match = f'''\t\tdependencyName := {dependency_expression}
+\t\tif dependencyName == "" {{ dependencyName = instance.Name + "-{dependency_suffix}" }}
+\t\tif object.GetLabels()["{resource.selector_label}"] != dependencyName {{
+\t\t\tcontinue
+\t\t}}
+'''
+        else:
+            selector_match = f'''\t\texpectedName := {expected_name}
+\t\tif expectedName == "" {{
+\t\t\texpectedName = instance.Name + "-{suffix}"
+\t\t}}
+\t\tif expectedName != object.GetName() {{
+\t\t\tcontinue
+\t\t}}
+'''
         functions.append(
             f'''func (r *{ir.kind}Reconciler) map{function_name}(ctx context.Context, object client.Object) []reconcile.Request {{
 \tvar instances {alias}.{ir.kind}List
@@ -778,13 +842,7 @@ def render_external_watch_functions(
 \trequests := make([]reconcile.Request, 0, len(instances.Items))
 \tfor index := range instances.Items {{
 \t\tinstance := &instances.Items[index]
-\t\texpectedName := {expected_name}
-\t\tif expectedName == "" {{
-\t\t\texpectedName = instance.Name + "-{suffix}"
-\t\t}}
-\t\tif expectedName != object.GetName() {{
-\t\t\tcontinue
-\t\t}}
+{selector_match}
 \t\trequests = append(requests, reconcile.Request{{NamespacedName: types.NamespacedName{{
 \t\t\tNamespace: instance.Namespace,
 \t\t\tName: instance.Name,

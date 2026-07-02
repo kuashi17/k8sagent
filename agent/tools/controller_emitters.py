@@ -126,6 +126,31 @@ def render_recreate_guard(resource: ManagedResourceSpec) -> str:
 """ % ("\n".join(comparisons), resource.kind)
 
 
+def render_immutable_guard(resource: ManagedResourceSpec) -> str:
+    mappings = [
+        mapping
+        for mapping in resource.field_mappings
+        if mapping.update_policy == UpdatePolicy.IMMUTABLE
+    ]
+    if not mappings:
+        return ""
+    comparisons = []
+    for mapping in mappings:
+        comparisons.append(
+            "\t\tif current, found := nestedValue(object.Object, "
+            f"{go_path(mapping.target_path)}); !found || "
+            f"!reflect.DeepEqual(current, {mapping_value(mapping)}) {{\n"
+            f'\t\t\treturn name, fmt.Errorf("immutable managed resource change blocked: {resource.kind} {mapping.source_path}")\n'
+            "\t\t}"
+        )
+    return """\tif err := r.Get(ctx, client.ObjectKey{Namespace: object.GetNamespace(), Name: name}, object); err == nil {
+%s
+\t} else if !apierrors.IsNotFound(err) {
+\t\treturn name, err
+\t}
+""" % "\n".join(comparisons)
+
+
 def source_expression(path: str) -> str:
     if path.startswith("spec."):
         return f"instance.Spec.{go_name(source_field(path))}"

@@ -407,6 +407,20 @@ def build_runtime_evidence(checks: dict[str, Any]) -> dict[str, Any]:
                 )
             ),
         ),
+        "immutableSafety": evidence(
+            checks.get("immutableChange"),
+            bool(
+                (checks.get("immutableChange") or {}).get(
+                    "unsafePatchBlocked"
+                )
+            )
+            and not bool(
+                (checks.get("immutableChange") or {}).get(
+                    "resourceRecreated"
+                )
+            ),
+            not bool(checks.get("immutableChange")),
+        ),
         "rbacLeastPrivilege": evidence(
             {"requiredChecks": rbac, "wildcardCheck": least}
             if rbac or least

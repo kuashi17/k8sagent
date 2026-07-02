@@ -36,9 +36,9 @@ class ControllerPropertyTest(unittest.TestCase):
                     )
                 for mapping in definition.fieldMappings:
                     if mapping.mutability == FieldMutability.IMMUTABLE:
-                        self.assertEqual(
+                        self.assertIn(
                             mapping.updatePolicy,
-                            UpdatePolicy.RECREATE,
+                            {UpdatePolicy.RECREATE, UpdatePolicy.IMMUTABLE},
                         )
 
     def test_random_field_order_is_render_idempotent(self) -> None:

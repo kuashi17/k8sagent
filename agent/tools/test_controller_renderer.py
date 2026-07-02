@@ -45,6 +45,29 @@ def model(resources, spec_fields, status_fields):
 
 
 class ControllerRendererTest(unittest.TestCase):
+    def test_job_owned_pod_is_selected_and_watched_by_job_label(self) -> None:
+        value = model(
+            ["Job"],
+            ["image", "command"],
+            ["phase", "jobName", "podName", "message"],
+        )
+        value["controller"]["observedResources"] = ["Pod"]
+        value["controller"]["resourcePolicies"] = [
+            {
+                "kind": "Pod",
+                "strategy": "read-only",
+                "ownership": "none",
+                "deletionPolicy": "retain",
+            }
+        ]
+
+        rendered = render_controller(value)
+
+        self.assertIn('client.MatchingLabels{"job-name": dependencyName}', rendered)
+        self.assertIn('object.GetLabels()["job-name"]', rendered)
+        self.assertIn('instance.Name + "-job"', rendered)
+        self.assertIn("instance.Status.PodName", rendered)
+
     def test_read_only_resource_uses_get_without_mutation(self) -> None:
         value = model(
             [],
@@ -292,6 +315,30 @@ class ControllerRendererTest(unittest.TestCase):
             '[]interface{}{"spec", "accessModes"}',
             function,
         )
+
+    def test_retained_pvc_blocks_immutable_change_without_delete(self) -> None:
+        value = model(
+            ["PVC"],
+            ["size", "storageClassName", "accessMode"],
+            ["phase", "pvcName", "message"],
+        )
+        value["controller"]["resourcePolicies"] = [
+            {
+                "kind": "PVC",
+                "strategy": "create-or-update",
+                "ownership": "none",
+                "deletionPolicy": "retain",
+            }
+        ]
+
+        rendered = render_controller(value)
+        function = rendered.split(
+            "func (r *ExampleReconciler) reconcilePersistentVolumeClaim",
+            1,
+        )[1].split("func ", 1)[0]
+
+        self.assertIn("immutable managed resource change blocked", function)
+        self.assertNotIn("r.Delete(ctx, object)", function)
 
     def test_composable_container_primitives_are_rendered(self) -> None:
         rendered = render_controller(

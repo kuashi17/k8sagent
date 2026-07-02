@@ -101,8 +101,13 @@ resources:
         transform: string-slice
         mutability: immutable
         updatePolicy: recreate
+      - source: accessMode
+        target: spec.accessModes[0]
+        mutability: immutable
+        updatePolicy: immutable
     statusMappings:
       - {field: claimName, source: metadata.name, resourceName: true}
+      - {field: pvcName, source: metadata.name, resourceName: true}
 
   - kind: CronJob
     apiVersion: batch/v1
@@ -395,6 +400,10 @@ resources:
     strategy: read-only
     ownership: none
     deletionPolicy: retain
+    selectorLabel: job-name
+    selectorDependencyKind: Job
+    statusMappings:
+      - {field: podName, source: metadata.name, resourceName: true}
 
   - kind: Job
     apiVersion: batch/v1

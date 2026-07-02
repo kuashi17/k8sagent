@@ -51,6 +51,16 @@ class StructuredToolError(AgentContract):
     retryable: bool = False
 
 
+class ClarificationContext(AgentContract):
+    errorCode: str
+    category: str
+    userMessage: str
+    recoveryPolicy: str
+    uiSeverity: Literal["info", "warning", "error", "critical"]
+    retryable: bool = False
+    missingInformation: list[str] = Field(default_factory=list)
+
+
 class RequirementPlan(AgentContract):
     requirementSummary: str
     missingInformation: list[Any]

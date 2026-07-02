@@ -1,0 +1,15 @@
+StorageClaim Operator를 생성한다.
+domain은 sample.io, group은 storage, version은 v1alpha1, kind는 StorageClaim으로 한다.
+spec:
+storageClassName: string
+size: string
+accessMode: string
+status:
+phase: string
+pvcName: string
+message: string
+Controller는 PVC를 생성한다.
+size 증가는 가능한 경우 반영한다.
+storageClassName 또는 accessMode 변경은 무조건 patch하지 않고 immutable 변경으로 처리한다.
+StorageClaim 삭제 시 데이터 보호를 위해 PVC는 유지한다.
+검증 명령은 make generate, make manifests, make test를 사용한다.

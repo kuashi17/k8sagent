@@ -122,6 +122,8 @@ class ManagedResourceSpec(IRModel):
     dependency_kind: str = ""
     dependency_variable: str = ""
     dependency_target_path: str = ""
+    selector_label: str = ""
+    selector_dependency_kind: str = ""
 
     @model_validator(mode="after")
     def validate_lifecycle_policy(self) -> "ManagedResourceSpec":

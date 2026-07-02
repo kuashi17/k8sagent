@@ -677,6 +677,7 @@ def sample_value(field_type: str, name: str) -> Any:
 
 def semantic_sample_value(name: str) -> Any:
     values = {
+        "accessMode": "ReadWriteOnce",
         "accessModes": ["ReadWriteOnce"],
         "command": ["echo", "hello"],
         "cpuLimit": "100m",
@@ -693,6 +694,7 @@ def semantic_sample_value(name: str) -> Any:
         "resourceLimits": {"cpu": "100m", "memory": "128Mi"},
         "schedule": "*/5 * * * *",
         "storageClassName": "standard",
+        "size": "1Gi",
         "storageSize": "1Gi",
     }
     return values.get(name)

@@ -1,0 +1,5 @@
+requirements:
+  - evaluation/fixtures/requirements/app-service-lifecycle.txt
+  - evaluation/fixtures/requirements/batch-application-lifecycle.txt
+  - evaluation/fixtures/requirements/deployment-health.txt
+  - evaluation/fixtures/requirements/storage-claim-lifecycle.txt

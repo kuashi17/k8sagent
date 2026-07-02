@@ -162,6 +162,8 @@ class ResourceCapabilityDefinition(CatalogModel):
     dependencyKind: str = ""
     dependencyVariable: str = ""
     dependencyTargetPath: str = ""
+    selectorLabel: str = ""
+    selectorDependencyKind: str = ""
     behaviorBindings: list[CatalogBehaviorBinding] = Field(
         default_factory=list
     )

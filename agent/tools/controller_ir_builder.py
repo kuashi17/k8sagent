@@ -175,16 +175,31 @@ def apply_resource_policy(
                 "active_behaviors": [],
                 "base_object": {},
                 "label_paths": [],
-                "dependency_kind": "",
-                "dependency_variable": "",
-                "dependency_target_path": "",
             }
         )
+    field_mappings = resource.field_mappings
+    update_policy = resource.update_policy
+    if deletion == DeletionPolicy.RETAIN:
+        field_mappings = [
+            item.model_copy(
+                update={"update_policy": UpdatePolicy.IMMUTABLE}
+            )
+            if item.mutability == FieldMutability.IMMUTABLE
+            else item
+            for item in field_mappings
+        ]
+        if any(
+            item.update_policy == UpdatePolicy.IMMUTABLE
+            for item in field_mappings
+        ):
+            update_policy = UpdatePolicy.IMMUTABLE
     return resource.model_copy(
         update={
             "strategy": strategy,
             "ownership": ownership,
             "deletion_policy": deletion,
+            "field_mappings": field_mappings,
+            "update_policy": update_policy,
         }
     )
 def build_managed_resource(
@@ -249,6 +264,8 @@ def build_managed_resource(
         dependency_kind=defaults.dependencyKind,
         dependency_variable=defaults.dependencyVariable,
         dependency_target_path=defaults.dependencyTargetPath,
+        selector_label=defaults.selectorLabel,
+        selector_dependency_kind=defaults.selectorDependencyKind,
     )
 
 

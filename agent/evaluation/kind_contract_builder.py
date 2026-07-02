@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,6 +25,7 @@ class ContractModel(BaseModel):
 class ManagedResourceContract(ContractModel):
     resource: str
     name: str
+    ownership: str
     deletionPolicy: str
     updatePolicy: str
 
@@ -44,10 +46,20 @@ class RBACCheckContract(ContractModel):
 
 class ObservedResourceContract(ContractModel):
     resource: str
-    name: str
+    name: str = ""
+    labelSelector: dict[str, str] = Field(default_factory=dict)
     mutationPatch: dict[str, Any] = Field(default_factory=dict)
     statusPath: str = ""
     expectedStatus: Any = None
+    statusSourcePath: str = ""
+    deletionExpectation: str = "retain"
+
+
+class StatusProjectionContract(ContractModel):
+    resource: str
+    name: str
+    sourcePath: str
+    statusPath: str
 
 
 class KindValidationContract(ContractModel):
@@ -55,6 +67,9 @@ class KindValidationContract(ContractModel):
     sampleName: str
     managedResources: list[ManagedResourceContract]
     observedResources: list[ObservedResourceContract] = Field(
+        default_factory=list
+    )
+    statusProjections: list[StatusProjectionContract] = Field(
         default_factory=list
     )
     initialAssertions: list[AssertionContract] = Field(
@@ -68,6 +83,10 @@ class KindValidationContract(ContractModel):
         default_factory=list
     )
     updateMode: str = UpdatePolicy.NONE.value
+    immutableSpec: dict[str, Any] = Field(default_factory=dict)
+    immutableAssertions: list[AssertionContract] = Field(
+        default_factory=list
+    )
     setupResources: list[dict[str, Any]] = Field(default_factory=list)
     rbacChecks: list[RBACCheckContract] = Field(default_factory=list)
     stateMachineStatus: bool = True
@@ -86,11 +105,14 @@ def build_validation_contract(
     managed = []
     observed = []
     setup = []
+    status_projections = []
     update_spec: dict[str, Any] = {}
     assertions = []
     initial_assertions = []
     drift_assertions = []
     update_mode = UpdatePolicy.NONE
+    immutable_spec: dict[str, Any] = {}
+    immutable_assertions: list[AssertionContract] = []
     rbac = [
         RBACCheckContract(
             verb="update",
@@ -104,13 +126,19 @@ def build_validation_contract(
         token = resource_token(resource)
         name = managed_name(resource, sample_name, sample_spec)
         probe = external_watch_probe(resource, name)
+        selector = observed_selector(resource, ir, sample_name, sample_spec)
         observed.append(
             ObservedResourceContract(
                 resource=token,
-                name=name,
+                name="" if selector else name,
+                labelSelector=selector,
                 mutationPatch=probe.get("mutationPatch") or {},
                 statusPath=str(probe.get("statusPath") or ""),
                 expectedStatus=probe.get("expectedStatus"),
+                statusSourcePath=str(probe.get("statusSourcePath") or ""),
+                deletionExpectation=(
+                    "transitive-delete" if selector else "retain"
+                ),
             )
         )
         setup_resource = observed_setup_resource(resource, name)
@@ -140,9 +168,23 @@ def build_validation_contract(
             ManagedResourceContract(
                 resource=token,
                 name=name,
+                ownership=resource.ownership.value,
                 deletionPolicy=resource.deletion_policy.value,
                 updatePolicy=resource.update_policy.value,
             )
+        )
+        status_projections.extend(
+            StatusProjectionContract(
+                resource=token,
+                name=name,
+                sourcePath=mapping.source_path,
+                statusPath=mapping.target_path,
+            )
+            for mapping in resource.status_mappings
+            if mapping.transform != "resource-name"
+            and mapping.source_path == "status.readyReplicas"
+            and resource.kind == "Deployment"
+            and len(ir.renderable_resources()) == 1
         )
         resource_assertions = initial_assertions_for(
             resource, sample_spec, name
@@ -152,6 +194,10 @@ def build_validation_contract(
             item
             for item in resource_assertions
             if is_safe_drift_path(item.path)
+            and not (
+                resource.kind == "Job"
+                and item.path.startswith("spec.template.")
+            )
         )
         if resource.strategy == ReconcileStrategy.PATCH_EXISTING:
             setup.append(
@@ -166,6 +212,14 @@ def build_validation_contract(
             update_spec.update(update["spec"])
             assertions.extend(update["assertions"])
             update_mode = UpdatePolicy(update["mode"])
+        immutable = immutable_lifecycle_update(
+            resource,
+            sample_spec,
+            name,
+        )
+        if immutable and not immutable_spec:
+            immutable_spec.update(immutable["spec"])
+            immutable_assertions.extend(immutable["assertions"])
         rbac.append(
             RBACCheckContract(
                 verb=(
@@ -183,11 +237,14 @@ def build_validation_contract(
         sampleName=sample_name,
         managedResources=managed,
         observedResources=observed,
+        statusProjections=status_projections,
         initialAssertions=initial_assertions,
         driftAssertions=drift_assertions[:1],
         updateSpec=update_spec,
         updateAssertions=assertions,
         updateMode=update_mode.value,
+        immutableSpec=immutable_spec,
+        immutableAssertions=immutable_assertions,
         setupResources=setup,
         rbacChecks=rbac,
         finalizer=ir.state_machine.finalizer_name,
@@ -199,6 +256,11 @@ def external_watch_probe(
     name: str,
 ) -> dict[str, Any]:
     for mapping in resource.status_mappings:
+        if mapping.transform == "resource-name":
+            return {
+                "statusPath": mapping.target_path,
+                "statusSourcePath": "metadata.name",
+            }
         if mapping.source_path == "spec.replicas":
             return {
                 "mutationPatch": {"spec": {"replicas": 2}},
@@ -206,6 +268,26 @@ def external_watch_probe(
                 "expectedStatus": 2,
             }
     return {}
+
+
+def observed_selector(
+    resource: ManagedResourceSpec,
+    ir: ControllerGenerationIR,
+    sample_name: str,
+    sample_spec: dict[str, Any],
+) -> dict[str, str]:
+    if not resource.selector_label or not resource.selector_dependency_kind:
+        return {}
+    dependency = ir.resource(resource.selector_dependency_kind)
+    if not dependency:
+        return {}
+    return {
+        resource.selector_label: managed_name(
+            dependency,
+            sample_name,
+            sample_spec,
+        )
+    }
 
 
 def observed_setup_resource(
@@ -251,6 +333,8 @@ def lifecycle_update(
         ),
     )
     for mapping in ordered:
+        if mapping.update_policy == UpdatePolicy.IMMUTABLE:
+            continue
         candidate = update_candidate(mapping, sample_spec)
         if not candidate:
             continue
@@ -264,6 +348,36 @@ def lifecycle_update(
                     name=name,
                     path=assertion_path(mapping),
                     equals=expected,
+                )
+            ],
+        }
+    return {}
+
+
+def immutable_lifecycle_update(
+    resource: ManagedResourceSpec,
+    sample_spec: dict[str, Any],
+    name: str,
+) -> dict[str, Any]:
+    for mapping in resource.field_mappings:
+        if mapping.update_policy != UpdatePolicy.IMMUTABLE:
+            continue
+        candidate = update_candidate(mapping, sample_spec)
+        if not candidate:
+            continue
+        field, updated, _ = candidate
+        current = sample_spec.get(field)
+        return {
+            "spec": {field: updated},
+            "assertions": [
+                AssertionContract(
+                    resource=resource_token(resource),
+                    name=name,
+                    path=assertion_path(mapping),
+                    equals=transformed_value(
+                        mapping.assertion_transform or mapping.transform,
+                        current,
+                    ),
                 )
             ],
         }
@@ -353,6 +467,14 @@ def update_candidate(
 ) -> tuple[str, Any, Any] | None:
     field = mapping.source_path.removeprefix("spec.")
     current = sample_spec.get(field)
+    if (
+        mapping.target_path == "spec.resources.requests.storage"
+        and isinstance(current, str)
+    ):
+        match = re.fullmatch(r"(\d+)([A-Za-z]+)", current)
+        if match:
+            updated = f"{int(match.group(1)) + 1}{match.group(2)}"
+            return field, updated, updated
     if mapping.transform == "env-map" and isinstance(current, dict):
         updated = {**current, "PROFILELESS_E2E": "updated"}
         expected = [

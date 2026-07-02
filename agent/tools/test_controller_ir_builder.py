@@ -82,7 +82,11 @@ class ControllerIRBuilderTest(unittest.TestCase):
         self.assertEqual(deployment.update_policy, UpdatePolicy.NONE)
 
     def test_requirement_policy_can_retain_managed_pvc(self) -> None:
-        value = model(["PVC"], ["size"], ["pvcName"])
+        value = model(
+            ["PVC"],
+            ["size", "storageClassName", "accessMode"],
+            ["pvcName"],
+        )
         value["controller"]["resourcePolicies"] = [
             {
                 "kind": "PVC",
@@ -98,6 +102,35 @@ class ControllerIRBuilderTest(unittest.TestCase):
 
         self.assertEqual(claim.ownership, OwnershipPolicy.NONE)
         self.assertEqual(claim.deletion_policy, DeletionPolicy.RETAIN)
+        immutable = [
+            item
+            for item in claim.field_mappings
+            if item.mutability == FieldMutability.IMMUTABLE
+        ]
+        self.assertTrue(immutable)
+        self.assertTrue(all(
+            item.update_policy == UpdatePolicy.IMMUTABLE
+            for item in immutable
+        ))
+
+    def test_job_pod_observer_uses_dependency_label_selector(self) -> None:
+        ir = build_controller_ir(
+            model(
+                ["Job", "Pod"],
+                ["image", "command"],
+                ["phase", "jobName", "podName", "message"],
+            )
+        )
+
+        pod = ir.resource("Pod")
+        self.assertEqual(pod.strategy, ReconcileStrategy.READ_ONLY)
+        self.assertEqual(pod.selector_label, "job-name")
+        self.assertEqual(pod.selector_dependency_kind, "Job")
+        self.assertTrue(any(
+            item.target_path == "status.podName"
+            and item.transform == "resource-name"
+            for item in pod.status_mappings
+        ))
 
     def test_create_or_update_resource_has_behavior_contract(self) -> None:
         ir = build_controller_ir(

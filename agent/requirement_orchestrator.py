@@ -14,6 +14,8 @@ from agent.context_builder import (
     clarifying_questions,
     extract_tool_call_plan,
 )
+from agent.contracts import ClarificationContext
+from agent.error_registry import ErrorCode, get_error_definition
 from agent.evidence_builder import (
     build_requirement_evidence_trace,
     build_requirement_safety_evaluation,
@@ -290,6 +292,27 @@ def finish_clarification_required(
         final_result,
     )
     summary["runStatus"] = "clarification-required"
+    summary["generatedFiles"] = {}
+    clarification_code = (
+        ErrorCode.INVALID_FIELD_TYPE
+        if any(
+            str(item).startswith("field type:")
+            for item in context["missingInformation"]
+        )
+        else ErrorCode.REQUIRED_INPUT_MISSING
+    )
+    clarification_contract = get_error_definition(clarification_code)
+    summary["clarificationContext"] = ClarificationContext(
+        errorCode=clarification_code.value,
+        category=clarification_contract.category,
+        userMessage=clarification_contract.userMessage,
+        recoveryPolicy=clarification_contract.recoveryPolicy,
+        uiSeverity=clarification_contract.uiSeverity,
+        retryable=clarification_contract.retryable,
+        missingInformation=[
+            str(item) for item in context["missingInformation"]
+        ],
+    ).to_dict()
     summary["timings"] = finalize_timings(
         context,
         execution,
