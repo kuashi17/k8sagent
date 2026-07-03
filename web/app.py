@@ -6,7 +6,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -359,7 +361,7 @@ def render_home(
             "selected_run_level": selected_run_level,
             "form_error": form_error,
             "show_log_analysis": show_log_analysis,
-            "recent_jobs": jobs.list(3),
+            "recent_jobs": recent_job_items(3),
             "state_labels": STATE_LABELS,
         },
         status_code=status_code,
@@ -372,7 +374,7 @@ def analyzable_log_options(limit: int = 20) -> list[dict[str, str]]:
         log_dir = str(item.get("agentLogDir") or "")
         if (
             item.get("jobType") != "requirement"
-            or item.get("state") not in TERMINAL_STATES
+            or item.get("state") not in {"failed", "interrupted"}
             or not log_dir
         ):
             continue
@@ -381,14 +383,72 @@ def analyzable_log_options(limit: int = 20) -> list[dict[str, str]]:
                 "path": log_dir,
                 "state": str(item.get("state") or ""),
                 "label": (
-                    f"{STATE_LABELS.get(str(item.get('state')), item.get('state'))} · "
-                    f"{item.get('createdAt') or ''} · {log_dir}"
+                    f"{job_title(item)} · "
+                    f"{friendly_datetime(item.get('createdAt'))} · "
+                    f"{STATE_LABELS.get(str(item.get('state')), item.get('state'))}"
                 ),
             }
         )
         if len(options) >= limit:
             break
     return options
+
+
+def recent_job_items(limit: int = 3) -> list[dict[str, Any]]:
+    return [
+        {
+            **item,
+            "displayTitle": job_title(item),
+            "displayTime": friendly_datetime(item.get("createdAt")),
+        }
+        for item in jobs.list(limit)
+    ]
+
+
+def job_title(item: dict[str, Any]) -> str:
+    job_type = str(item.get("jobType") or "")
+    if job_type == "kind-validation":
+        return "Kubernetes 검증"
+    if job_type == "log-analysis":
+        return "실패 원인 분석"
+    metadata = item.get("metadata") or {}
+    summary = read_json(
+        REPO_ROOT
+        / str(item.get("agentLogDir") or "")
+        / "summary.json"
+    ) if item.get("agentLogDir") else {}
+    kind = str(
+        (summary.get("requirementSummary") or {}).get("kind") or ""
+    )
+    requirement_path = str(metadata.get("requirementPath") or "")
+    requirement = read_text(REPO_ROOT / requirement_path) if requirement_path else ""
+    if not kind and requirement:
+        match = re.search(
+            r"\b([A-Z][A-Za-z0-9]+)(?:이라는|라는)\s+"
+            r"(?:(?:Kubernetes\s+)?Custom Resource|리소스)",
+            requirement,
+        )
+        kind = match.group(1) if match else ""
+    if kind and kind.lower() != "unknown":
+        return f"{kind} Operator"
+    first_line = next(
+        (line.strip() for line in requirement.splitlines() if line.strip()),
+        "",
+    )
+    return first_line[:36] + ("…" if len(first_line) > 36 else "") or "Operator 작업"
+
+
+def friendly_datetime(value: Any) -> str:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return str(value or "")
+    period = "오전" if parsed.hour < 12 else "오후"
+    hour = parsed.hour % 12 or 12
+    return (
+        f"{parsed.year}. {parsed.month}. {parsed.day}. "
+        f"{period} {hour}:{parsed.minute:02d}"
+    )
 
 
 def job_status_payload(job: dict[str, Any]) -> dict[str, Any]:
@@ -438,6 +498,14 @@ def friendly_error(exc: Exception) -> str:
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def compact(value: str, limit: int = 100) -> str:

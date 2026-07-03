@@ -214,11 +214,16 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
             response = await self.request("GET", "/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("선택한 로그 분석", response.text)
+        self.assertIn("실패 원인 분석하기", response.text)
         self.assertIn(
             'value="logs/agent/example" selected',
             response.text,
         )
+        self.assertIn(
+            ">Operator 작업 · 2026. 6. 19. 오전 12:00 · 실패</option>",
+            response.text,
+        )
+        self.assertIn("2026. 6. 19. 오전 12:00", response.text)
 
     async def test_empty_log_analysis_shows_inline_error(self) -> None:
         with patch("web.app.jobs", FakeJobs()):

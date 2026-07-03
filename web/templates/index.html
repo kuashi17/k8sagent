@@ -99,8 +99,8 @@
       {% for item in recent_jobs %}
       <a href="/runs/job/{{ item.jobId }}" class="recent-item">
         <span>
-          <strong>{{ "Operator 작업" if item.jobType == "requirement" else "로그 분석" }}</strong>
-          <small>{{ item.createdAt }}</small>
+          <strong>{{ item.displayTitle }}</strong>
+          <small>{{ item.displayTime }}</small>
         </span>
         <span class="status status-{{ item.state }}">{{ state_labels.get(item.state, item.state) }}</span>
       </a>
@@ -123,7 +123,7 @@
         {% endfor %}
       </select>
       <p class="field-help">실패한 작업이 있으면 자동으로 먼저 선택합니다.</p>
-      <button class="secondary-button" type="submit" id="log-analysis-submit">선택한 로그 분석</button>
+      <button class="secondary-button" type="submit" id="log-analysis-submit">실패 원인 분석하기</button>
       {% else %}
       <p class="muted">아직 분석할 완료 작업이 없습니다. 먼저 Operator 계획을 실행해 주세요.</p>
       <button class="secondary-button" type="button" disabled>분석할 로그 없음</button>
