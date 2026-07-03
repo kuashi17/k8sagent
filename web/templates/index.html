@@ -20,19 +20,20 @@
         Operator가 해야 할 일을 설명해 주세요
       </label>
       <p class="field-help">
-        아래 세 가지 중 아는 내용만 포함해도 시작할 수 있습니다.
+        한 번에 계획을 만들려면 아래 네 가지를 포함해 주세요.
       </p>
       <ul class="writing-hints" aria-label="요구사항 작성 도움말">
-        <li><strong>무엇을 관리할지</strong><span>예: 웹 서비스, 예약 작업, 설정 파일</span></li>
-        <li><strong>어떤 값을 받을지</strong><span>예: 이미지, 포트, 실행 주기</span></li>
-        <li><strong>어떻게 동작할지</strong><span>예: 생성, 변경 반영, 상태 표시</span></li>
+        <li><strong>리소스 이름과 API</strong><span>예: WebApp, apps.sample.io/v1alpha1</span></li>
+        <li><strong>입력값과 타입</strong><span>예: image:string, replicas:int32</span></li>
+        <li><strong>관리 대상과 동작</strong><span>예: Deployment 생성·변경·복구</span></li>
+        <li><strong>표시할 상태와 삭제 방식</strong><span>예: phase:string, 삭제 시 함께 정리</span></li>
       </ul>
       <textarea
         id="requirement_text"
         name="requirement_text"
         spellcheck="false"
         aria-describedby="requirement-help"
-        placeholder="예: WebApp이라는 리소스를 만들면 Deployment와 Service를 생성해 주세요. image와 replicas를 입력받고, 값이 바뀌면 배포에도 반영해 주세요. 현재 준비 상태도 보여주세요."
+        placeholder="예: WebApp Custom Resource를 만들어 주세요. API는 apps.sample.io/v1alpha1입니다. spec은 image:string, replicas:int32이고 status는 phase:string, readyReplicas:int32입니다. Deployment를 생성·변경·복구하고 WebApp 삭제 시 함께 정리해 주세요."
       >{{ default_requirement }}</textarea>
 
       <div class="example-row" id="requirement-help">

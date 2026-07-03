@@ -183,6 +183,12 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("안전한 계획 만들기", response.text)
         self.assertIn("<summary>개발자 설정</summary>", response.text)
         self.assertIn("막막하다면 예시로 시작하세요", response.text)
+        self.assertIn(
+            "한 번에 계획을 만들려면 아래 네 가지를 포함해 주세요.",
+            response.text,
+        )
+        self.assertIn("리소스 이름과 API", response.text)
+        self.assertIn("입력값과 타입", response.text)
         self.assertIn(">웹 서비스</button>", response.text)
         self.assertIn("API는 apps.sample.io/v1alpha1입니다.", response.text)
         self.assertIn("readyReplicas: int32", response.text)
