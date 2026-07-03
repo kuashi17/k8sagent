@@ -25,7 +25,7 @@
       <ul class="writing-hints" aria-label="요구사항 작성 도움말">
         <li>
           <strong>리소스 이름과 API</strong>
-          <span><b>무엇:</b> 만들 Custom Resource의 이름과 주소입니다.<br><b>용도:</b> CRD 이름과 <code>kubectl</code> API 경로를 결정합니다.<br>예: WebApp, apps.sample.io/v1alpha1</span>
+          <span><b>무엇:</b> 만들 Custom Resource의 이름과 주소입니다.<br><b>용도:</b> CRD 이름과 <code>kubectl</code> API 경로를 결정합니다.<br><b>정하는 법:</b> 프로젝트에서 사용할 고유한 주소이며, 예제의 <code>sample.io</code>를 조직이나 프로젝트 이름으로 바꿔 사용할 수 있습니다.<br>예: WebApp, apps.sample.io/v1alpha1</span>
         </li>
         <li>
           <strong>입력값과 타입</strong>
@@ -37,7 +37,7 @@
         </li>
         <li>
           <strong>표시할 status와 삭제 방식</strong>
-          <span><b>무엇:</b> 사용자에게 보여줄 현재 상태와 삭제 시 처리 방법입니다.<br><b>용도:</b> status 갱신과 retain·함께 삭제 정책을 생성합니다.<br>예: phase:string, 삭제 시 함께 정리</span>
+          <span><b>무엇:</b> 사용자에게 보여줄 현재 상태와 삭제 시 처리 방법입니다.<br><b>용도:</b> status 갱신과 리소스의 생명주기를 결정합니다.<br><b>삭제 예:</b> “WebApp 삭제 시 Deployment도 함께 삭제” 또는 “StorageClaim을 삭제해도 기존 PVC는 남겨두기”<br>상태 예: phase:string</span>
         </li>
       </ul>
       <div class="beginner-note">
