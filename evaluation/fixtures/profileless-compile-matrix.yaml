@@ -13,3 +13,4 @@ requirements:
   - evaluation/fixtures/requirements/access-bundle-controller.txt
   - evaluation/fixtures/requirements/autoscaled-workload.txt
   - evaluation/fixtures/requirements/deployment-health.txt
+  - evaluation/fixtures/requirements/multi-resource-status.txt

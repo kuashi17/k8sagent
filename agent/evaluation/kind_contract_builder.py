@@ -190,7 +190,14 @@ def build_validation_contract(
                 or (
                     mapping.source_path == "status.readyReplicas"
                     and resource.kind == "Deployment"
-                    and len(ir.renderable_resources()) == 1
+                    and (
+                        len(ir.renderable_resources()) == 1
+                        or any(
+                            item.kind == "Pod"
+                            and item.strategy == ReconcileStrategy.READ_ONLY
+                            for item in ir.managed_resources
+                        )
+                    )
                 )
             )
         )
@@ -290,10 +297,14 @@ def observed_selector(
     if not dependency:
         return {}
     return {
-        resource.selector_label: managed_name(
-            dependency,
-            sample_name,
-            sample_spec,
+        resource.selector_label: (
+            sample_name
+            if resource.selector_value_source == "owner-name"
+            else managed_name(
+                dependency,
+                sample_name,
+                sample_spec,
+            )
         )
     }
 

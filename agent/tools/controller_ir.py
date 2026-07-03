@@ -124,9 +124,17 @@ class ManagedResourceSpec(IRModel):
     dependency_target_path: str = ""
     selector_label: str = ""
     selector_dependency_kind: str = ""
+    selector_value_source: str = "dependency-name"
 
     @model_validator(mode="after")
     def validate_lifecycle_policy(self) -> "ManagedResourceSpec":
+        if self.selector_value_source not in {
+            "dependency-name",
+            "owner-name",
+        }:
+            raise ValueError(
+                "selector_value_source must be dependency-name or owner-name"
+            )
         if (
             self.scope == ResourceScope.CLUSTER
             and self.ownership == OwnershipPolicy.OWNER_REFERENCE

@@ -395,9 +395,13 @@ def render_read_only_function(
     if resource.selector_label and resource.selector_dependency_kind:
         dependency = ir.resource(resource.selector_dependency_kind)
         dependency_expression = (
-            source_expression(dependency.name.source_path)
-            if dependency
-            else '""'
+            "instance.Name"
+            if resource.selector_value_source == "owner-name"
+            else (
+                source_expression(dependency.name.source_path)
+                if dependency
+                else '""'
+            )
         )
         dependency_suffix = (
             dependency.name.fallback_template.replace(
@@ -807,9 +811,13 @@ def render_external_watch_functions(
         if resource.selector_label and resource.selector_dependency_kind:
             dependency = ir.resource(resource.selector_dependency_kind)
             dependency_expression = (
-                source_expression(dependency.name.source_path)
-                if dependency
-                else '""'
+                "instance.Name"
+                if resource.selector_value_source == "owner-name"
+                else (
+                    source_expression(dependency.name.source_path)
+                    if dependency
+                    else '""'
+                )
             )
             dependency_suffix = (
                 dependency.name.fallback_template.replace(

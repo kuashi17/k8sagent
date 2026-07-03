@@ -53,6 +53,32 @@ def model(resources, spec_fields, status_fields, field_mappings=None):
 
 
 class ControllerIRBuilderTest(unittest.TestCase):
+    def test_deployment_owned_pod_observer_uses_owner_label(self) -> None:
+        value = model(
+            ["Deployment", "Service"],
+            ["image", "replicas", "port"],
+            ["readyReplicas", "serviceName", "podName"],
+        )
+        value["controller"].update(
+            {
+                "observedResources": ["Pod"],
+                "resourcePolicies": [
+                    {
+                        "kind": "Pod",
+                        "strategy": "read-only",
+                        "ownership": "none",
+                        "deletionPolicy": "retain",
+                    }
+                ],
+            }
+        )
+
+        pod = build_controller_ir(value).resource("Pod")
+
+        self.assertEqual(pod.selector_label, "operator.sample.io/owner")
+        self.assertEqual(pod.selector_dependency_kind, "Deployment")
+        self.assertEqual(pod.selector_value_source, "owner-name")
+
     def test_requirement_policy_can_make_deployment_read_only(self) -> None:
         value = model(
             [],

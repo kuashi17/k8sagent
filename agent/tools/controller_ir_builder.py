@@ -73,6 +73,7 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
                 catalog.primitives_by_name(),
             )
         resources.append(apply_resource_policy(resource, policies.get(str(raw_kind))))
+    resources = adapt_observed_resource_relationships(resources)
     if unsupported:
         supported = ", ".join(
             sorted(item.kind for item in catalog.resources)
@@ -123,6 +124,27 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
             )
         ),
     )
+
+
+def adapt_observed_resource_relationships(
+    resources: list[ManagedResourceSpec],
+) -> list[ManagedResourceSpec]:
+    """Bind generic observed children to the managed parent in this IR."""
+    kinds = {item.kind for item in resources}
+    if "Pod" not in kinds or "Job" in kinds or "Deployment" not in kinds:
+        return resources
+    return [
+        item.model_copy(
+            update={
+                "selector_label": "operator.sample.io/owner",
+                "selector_dependency_kind": "Deployment",
+                "selector_value_source": "owner-name",
+            }
+        )
+        if item.kind == "Pod" and item.strategy == ReconcileStrategy.READ_ONLY
+        else item
+        for item in resources
+    ]
 
 
 def apply_resource_policy(

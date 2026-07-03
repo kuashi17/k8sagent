@@ -45,6 +45,35 @@ def model(resources, spec_fields, status_fields):
 
 
 class ControllerRendererTest(unittest.TestCase):
+    def test_deployment_pod_observer_uses_custom_resource_owner_label(self) -> None:
+        value = model(
+            ["Deployment", "Service"],
+            ["image", "replicas", "port"],
+            ["phase", "readyReplicas", "serviceName", "podName", "message"],
+        )
+        value["controller"].update(
+            {
+                "observedResources": ["Pod"],
+                "resourcePolicies": [
+                    {
+                        "kind": "Pod",
+                        "strategy": "read-only",
+                        "ownership": "none",
+                        "deletionPolicy": "retain",
+                    }
+                ],
+            }
+        )
+
+        rendered = render_controller(value)
+
+        self.assertIn(
+            'client.MatchingLabels{"operator.sample.io/owner": dependencyName}',
+            rendered,
+        )
+        self.assertIn("dependencyName := instance.Name", rendered)
+        self.assertIn("instance.Status.PodName", rendered)
+
     def test_job_owned_pod_is_selected_and_watched_by_job_label(self) -> None:
         value = model(
             ["Job"],
