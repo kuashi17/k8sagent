@@ -177,14 +177,22 @@ def build_validation_contract(
             StatusProjectionContract(
                 resource=token,
                 name=name,
-                sourcePath=mapping.source_path,
+                sourcePath=(
+                    "metadata.name"
+                    if mapping.transform == "resource-name"
+                    else mapping.source_path
+                ),
                 statusPath=mapping.target_path,
             )
             for mapping in resource.status_mappings
-            if mapping.transform != "resource-name"
-            and mapping.source_path == "status.readyReplicas"
-            and resource.kind == "Deployment"
-            and len(ir.renderable_resources()) == 1
+            if (
+                mapping.transform == "resource-name"
+                or (
+                    mapping.source_path == "status.readyReplicas"
+                    and resource.kind == "Deployment"
+                    and len(ir.renderable_resources()) == 1
+                )
+            )
         )
         resource_assertions = initial_assertions_for(
             resource, sample_spec, name

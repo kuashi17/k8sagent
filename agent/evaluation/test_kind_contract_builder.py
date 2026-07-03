@@ -12,12 +12,13 @@ from agent.tools.controller_ir_builder import build_controller_ir
 
 
 def build_ir(
-    resource: str,
+    resource: str | list[str],
     spec_fields: list[dict[str, str]],
     *,
     read_only: bool = False,
     status_fields: list[dict[str, str]] | None = None,
 ):
+    resources = [resource] if isinstance(resource, str) else resource
     controller = (
         {
             "managedResources": [],
@@ -32,7 +33,7 @@ def build_ir(
             ],
         }
         if read_only
-        else {"managedResources": [resource]}
+        else {"managedResources": resources}
     )
     model = normalize_spec(
         {
@@ -61,6 +62,42 @@ def build_ir(
 
 
 class KindContractBuilderTest(unittest.TestCase):
+    def test_multi_resource_names_are_verified_as_status_projections(self) -> None:
+        ir = build_ir(
+            ["Deployment", "Service"],
+            [
+                {"name": "image", "type": "string"},
+                {"name": "replicas", "type": "int32"},
+                {"name": "port", "type": "int32"},
+            ],
+            status_fields=[
+                {"name": "phase", "type": "string"},
+                {"name": "deploymentName", "type": "string"},
+                {"name": "serviceName", "type": "string"},
+            ],
+        )
+        contract = build_validation_contract(
+            ir,
+            {
+                "metadata": {"name": "web-sample"},
+                "spec": {"image": "nginx", "replicas": 1, "port": 8080},
+            },
+            "genericpolicies",
+            "policy.sample.io",
+        )
+
+        projections = {
+            (item.resource, item.sourcePath, item.statusPath)
+            for item in contract.statusProjections
+        }
+        self.assertEqual(
+            projections,
+            {
+                ("deployment", "metadata.name", "status.deploymentName"),
+                ("service", "metadata.name", "status.serviceName"),
+            },
+        )
+
     def test_read_only_deployment_contract_probes_external_watch_and_denies_writes(
         self,
     ) -> None:

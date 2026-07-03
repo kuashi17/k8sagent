@@ -784,6 +784,7 @@ def has_mutation_intent(line: str) -> bool:
         token in line
         for token in (
             "생성",
+            "만들",
             "관리",
             "갱신",
             "변경",
@@ -803,6 +804,7 @@ def has_resource_mutation_intent(line: str) -> bool:
         token in line
         for token in (
             "생성",
+            "만들",
             "관리",
             "갱신",
             "변경",
@@ -844,7 +846,7 @@ def resource_roles_for_line(
         r"\1, ",
         line,
     )
-    for clause in re.split(r"\s*,\s*", role_scoped_line):
+    for clause in re.split(r"(?:\s*,\s*|[.!?]\s*)", role_scoped_line):
         resources = extract_k8s_resources(clause)
         if not resources:
             continue
@@ -886,7 +888,16 @@ def resource_roles_for_line(
 def requests_retention(line: str) -> bool:
     return "삭제" in line and any(
         token in line
-        for token in ("않습니다", "않는다", "하지 마", "하면 안", "유지", "보호", "retain")
+        for token in (
+            "않습니다",
+            "않는다",
+            "하지 마",
+            "하면 안",
+            "유지",
+            "보호",
+            "남겨",
+            "retain",
+        )
     )
 
 
@@ -902,7 +913,7 @@ def find_after_heading(text: str, heading: str) -> str:
 def extract_k8s_resources(line: str) -> list[str]:
     resources: list[str] = []
     for alias, canonical in RESOURCE_ALIASES.items():
-        pattern = rf"(?<![A-Za-z0-9]){re.escape(alias)}(?:과|와|를|을|는|은|의|에|으로|로|,|\s|$)"
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(alias)}(?:과|와|를|을|는|은|만|의|에|으로|로|,|\s|$)"
         if re.search(pattern, line, re.I):
             resources.append(resource_kind(canonical))
     resources.extend(

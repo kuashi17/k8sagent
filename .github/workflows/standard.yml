@@ -24,6 +24,12 @@ jobs:
           restore-keys: agent-llm-plans-standard-
       - run: python3 -m py_compile $(git ls-files '*.py')
       - run: python3 scripts/run-regression-tests.py --suite standard --output-dir evaluation/results/regression/ci-standard --history-file .ci-history/standard.json
+      - name: Uncached Local LLM semantic consistency
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: >-
+          python3 agent/evaluation/local_llm_consistency_runner.py
+          --runs 3
+          --output-dir evaluation/results/regression/ci-standard/local-llm-consistency
       - uses: actions/cache/save@v5
         if: always()
         with:

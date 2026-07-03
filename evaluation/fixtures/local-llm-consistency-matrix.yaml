@@ -1,0 +1,37 @@
+cases:
+  - id: managed-deployment
+    requirement: evaluation/fixtures/requirements/app-service-lifecycle.txt
+    expected:
+      kind: AppService
+      managedResources: [Deployment]
+      observedResources: []
+      missingInformation: []
+      rejectedTools: []
+      decision: succeeded
+      errorCode: ''
+      llmPlannerUsed: true
+
+  - id: read-only-deployment
+    requirement: evaluation/fixtures/requirements/deployment-health.txt
+    expected:
+      kind: DeploymentHealth
+      managedResources: []
+      observedResources: [Deployment]
+      missingInformation: []
+      rejectedTools: []
+      decision: succeeded
+      errorCode: ''
+      llmPlannerUsed: true
+
+  - id: ambiguous-field-types
+    requirement: evaluation/fixtures/requirements/invalid-example-ambiguous.txt
+    expected:
+      kind: InvalidExample
+      managedResources: [Deployment]
+      observedResources: []
+      missingInformation: ['field type: spec.count', 'field type: spec.options']
+      validatedTools: []
+      rejectedTools: []
+      decision: clarification-required
+      errorCode: INVALID_FIELD_TYPE
+      llmPlannerUsed: false
