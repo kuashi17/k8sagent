@@ -252,6 +252,38 @@ def present_kind_validation_result(
         if limitation:
             limitations.append(limitation)
     compile_result = result.get("compile") or {}
+    cluster_name = str(deployment.get("clusterName") or "")
+    namespace = str(deployment.get("namespace") or "default")
+    context = f"kind-{cluster_name}" if cluster_name else ""
+    custom = validator.get("customResource") or {}
+    resource_tokens = [
+        f"{custom.get('resource')}/{custom.get('name')}"
+    ] if custom.get("resource") and custom.get("name") else []
+    resource_tokens.extend(
+        f"{item.get('resource')}/{item.get('name')}"
+        for item in validator.get("managedResources") or []
+        if item.get("resource") and item.get("name")
+    )
+    command_prefix = (
+        f"kubectl --context {context} -n {namespace}"
+        if context
+        else f"kubectl -n {namespace}"
+    )
+    kubectl_commands = []
+    if resource_tokens:
+        kubectl_commands.append(
+            {
+                "label": "생성된 리소스 한 번에 보기",
+                "command": f"{command_prefix} get {' '.join(resource_tokens)}",
+            }
+        )
+    kubectl_commands.extend(
+        {
+            "label": f"{token} 상세 YAML 보기",
+            "command": f"{command_prefix} get {token} -o yaml",
+        }
+        for token in resource_tokens
+    )
     return KindValidationView(
         succeeded=succeeded,
         title=(
@@ -268,7 +300,7 @@ def present_kind_validation_result(
             )
         ),
         kind=str(compile_result.get("kind") or ""),
-        cluster_name=str(deployment.get("clusterName") or ""),
+        cluster_name=cluster_name,
         managed_resources=[
             f"{item.get('resource')}/{item.get('name')}"
             for item in validator.get("managedResources") or []
@@ -283,6 +315,7 @@ def present_kind_validation_result(
         ),
         resource_yaml=resources,
         limitations=limitations,
+        kubectl_commands=kubectl_commands,
     )
 
 

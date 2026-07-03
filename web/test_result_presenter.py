@@ -32,6 +32,7 @@ class ResultPresenterTest(unittest.TestCase):
                             "compile": {"kind": "ConfigBundle"},
                             "deploymentSummary": {
                                 "clusterName": "web-example",
+                                "namespace": "config-system",
                                 "runtimeEvidence": {
                                     "idempotency": {"status": "passed"}
                                 },
@@ -70,6 +71,11 @@ class ResultPresenterTest(unittest.TestCase):
         self.assertEqual(result.managed_resources, ["configmap/sample-config"])
         self.assertEqual(result.evidence[0]["status"], "passed")
         self.assertIn("kind: ConfigMap", result.resource_yaml[0]["yaml"])
+        self.assertEqual(
+            result.kubectl_commands[0]["command"],
+            "kubectl --context kind-web-example -n config-system "
+            "get configmap/sample-config",
+        )
 
     def test_log_analysis_uses_dedicated_beginner_result(self) -> None:
         result = present_log_analysis_result(

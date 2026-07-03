@@ -85,6 +85,22 @@
     <pre>{{ kind_validation_view.custom_resource_status | tojson(indent=2) }}</pre>
   </section>
   {% endif %}
+  {% if kind_validation_view.kubectl_commands %}
+  <section class="card">
+    <p class="eyebrow">터미널에서 직접 확인하기</p>
+    <h2>아래 명령을 WSL 터미널에서 실행하세요</h2>
+    <p class="muted">복사 버튼을 누른 뒤 VS Code의 새 터미널에 붙여넣으면 됩니다.</p>
+    {% for item in kind_validation_view.kubectl_commands %}
+    <div class="command-example">
+      <div class="command-example-heading">
+        <strong>{{ item.label }}</strong>
+        <button type="button" class="text-button copy-command" data-copy-target="kubectl-command-{{ loop.index }}">복사</button>
+      </div>
+      <pre id="kubectl-command-{{ loop.index }}">{{ item.command }}</pre>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
   {% for item in kind_validation_view.resource_yaml %}
   <section class="card">
     <p class="eyebrow">실제 생성된 Kubernetes 리소스</p>

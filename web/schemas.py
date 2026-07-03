@@ -156,6 +156,7 @@ class KindValidationView(WebModel):
     custom_resource_status: dict[str, Any] = Field(default_factory=dict)
     resource_yaml: list[dict[str, str]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    kubectl_commands: list[dict[str, str]] = Field(default_factory=list)
 
 
 def checkbox(value: Any) -> bool:

@@ -11,6 +11,17 @@
     });
   });
 
+  document.querySelectorAll(".copy-command").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const target = document.getElementById(button.dataset.copyTarget);
+      if (!target) return;
+      await navigator.clipboard.writeText(target.textContent.trim());
+      const original = button.textContent;
+      button.textContent = "복사됨";
+      window.setTimeout(() => { button.textContent = original; }, 1200);
+    });
+  });
+
   const requirementForm = document.getElementById("requirement-form");
   requirementForm?.addEventListener("submit", () => {
     const submit = document.getElementById("primary-submit");

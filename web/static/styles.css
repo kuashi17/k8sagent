@@ -608,6 +608,28 @@ label small {
   padding: 4px;
 }
 
+.command-example {
+  margin-top: 18px;
+}
+
+.command-example-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.command-example pre {
+  margin: 0;
+  max-height: none;
+}
+
+.copy-command {
+  color: var(--primary-dark);
+  font-weight: 800;
+}
+
 .danger-text {
   color: var(--danger);
 }
