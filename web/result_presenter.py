@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from agent.error_registry import get_error_definition
 from agent.tools.capability_drafter import load_proposal, proposal_digest
-from web.schemas import LogAnalysisView, RunResultView
+from web.schemas import KindValidationView, LogAnalysisView, RunResultView
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +170,8 @@ def present_log_analysis_result(job: dict[str, Any]) -> LogAnalysisView:
         and analyzer.get("exitCode") == 0
         and not errors
     )
+
+
     fallback_used = not bool(summary.get("llmPlannerUsed"))
     return LogAnalysisView(
         succeeded=succeeded,
@@ -197,6 +201,88 @@ def present_log_analysis_result(job: dict[str, Any]) -> LogAnalysisView:
         warnings=strings(summary.get("warnings")),
         errors=errors,
         deterministic=fallback_used,
+    )
+
+
+def present_kind_validation_result(
+    job: dict[str, Any],
+) -> KindValidationView:
+    payload = job.get("kindValidation") or {}
+    results = payload.get("results") or []
+    result = results[0] if results else {}
+    deployment = result.get("deploymentSummary") or {}
+    checks = deployment.get("checks") or {}
+    validator = deployment.get("validator") or {}
+    runtime = (
+        deployment.get("runtimeEvidence")
+        or result.get("runtimeEvidence")
+        or {}
+    )
+    succeeded = bool(
+        job.get("state") == "succeeded"
+        and payload.get("status") == "passed"
+        and result.get("status") == "passed"
+    )
+    evidence = [
+        {
+            "name": name,
+            "status": str((details or {}).get("status") or "unknown"),
+        }
+        for name, details in runtime.items()
+    ]
+    resources = []
+    for item in checks.get("managedResources") or []:
+        metadata = item.get("metadata") or {}
+        resources.append(
+            {
+                "title": (
+                    f"{item.get('kind') or 'Resource'} / "
+                    f"{metadata.get('name') or ''}"
+                ),
+                "yaml": yaml.safe_dump(
+                    item,
+                    allow_unicode=True,
+                    sort_keys=False,
+                ),
+            }
+        )
+    limitations = []
+    for key in ("lifecycleUpdate", "immutableChange"):
+        limitation = str((checks.get(key) or {}).get("limitation") or "")
+        if limitation:
+            limitations.append(limitation)
+    compile_result = result.get("compile") or {}
+    return KindValidationView(
+        succeeded=succeeded,
+        title=(
+            "Kubernetes 검증을 완료했습니다."
+            if succeeded
+            else "Kubernetes 검증을 완료하지 못했습니다."
+        ),
+        summary=(
+            "실제 kind 클러스터에서 생성·변경·삭제 동작을 확인했습니다."
+            if succeeded
+            else str(
+                result.get("error")
+                or "실행 로그에서 실패 원인을 확인해 주세요."
+            )
+        ),
+        kind=str(compile_result.get("kind") or ""),
+        cluster_name=str(deployment.get("clusterName") or ""),
+        managed_resources=[
+            f"{item.get('resource')}/{item.get('name')}"
+            for item in validator.get("managedResources") or []
+        ],
+        observed_resources=[
+            f"{item.get('resource')}/{item.get('name')}"
+            for item in validator.get("observedResources") or []
+        ],
+        evidence=evidence,
+        custom_resource_status=dict(
+            checks.get("customResourceStatus") or {}
+        ),
+        resource_yaml=resources,
+        limitations=limitations,
     )
 
 

@@ -99,6 +99,50 @@ class WorkflowService:
             metadata={"sourceLogDir": self.relative(source)},
         )
 
+    def submit_kind_validation(
+        self,
+        source_job_id: str,
+        jobs: Any,
+    ) -> dict[str, Any]:
+        source = jobs.get(source_job_id)
+        metadata = (source or {}).get("metadata") or {}
+        if (
+            not source
+            or source.get("state") != "succeeded"
+            or source.get("jobType") != "requirement"
+            or metadata.get("mode") != "execute"
+        ):
+            raise ValueError(
+                "코드 생성과 검증을 완료한 작업만 Kubernetes에서 검증할 수 있습니다."
+            )
+        requirement = self.resolve_repo_path(
+            str(metadata.get("requirementPath") or "")
+        )
+        if not requirement.is_file():
+            raise ValueError("원본 요구사항 파일을 찾을 수 없습니다.")
+        for existing in jobs.list(100):
+            existing_metadata = existing.get("metadata") or {}
+            if (
+                existing.get("jobType") == "kind-validation"
+                and existing_metadata.get("sourceJobId") == source_job_id
+                and existing.get("state")
+                in {"queued", "running", "succeeded"}
+            ):
+                return existing
+        return jobs.submit(
+            "kind-validation",
+            [
+                "python3",
+                "agent/evaluation/profileless_kind_runner.py",
+                "--requirement",
+                self.relative(requirement),
+            ],
+            metadata={
+                "sourceJobId": source_job_id,
+                "requirementPath": self.relative(requirement),
+            },
+        )
+
     def build_requirement_command(
         self,
         request: RequirementRunRequest,

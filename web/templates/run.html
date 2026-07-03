@@ -9,7 +9,7 @@
     <div class="progress-heading">
       <div>
         <p class="eyebrow">Agent가 작업 중입니다</p>
-        <h1 id="job-title">{% if is_log_analysis %}로그를 확인하고 있습니다.{% else %}요구사항을 확인하고 있습니다.{% endif %}</h1>
+        <h1 id="job-title">{% if is_log_analysis %}로그를 확인하고 있습니다.{% elif is_kind_validation %}Kubernetes에서 검증하고 있습니다.{% else %}요구사항을 확인하고 있습니다.{% endif %}</h1>
       </div>
       <span class="status status-{{ job.state }}" id="job-state">{{ state_labels.get(job.state, job.state) }}</span>
     </div>
@@ -25,6 +25,11 @@
       <li data-phase="generation"><span>2</span>원인 분류</li>
       <li data-phase="validation"><span>3</span>근거 확인</li>
       <li data-phase="completed"><span>4</span>해결 방법 정리</li>
+      {% elif is_kind_validation %}
+      <li data-phase="planning"><span>1</span>프로젝트 준비</li>
+      <li data-phase="generation"><span>2</span>Controller 배포</li>
+      <li data-phase="validation"><span>3</span>Lifecycle 검증</li>
+      <li data-phase="completed"><span>4</span>리소스 결과 정리</li>
       {% else %}
       <li data-phase="planning"><span>1</span>요구사항과 계획</li>
       <li data-phase="generation"><span>2</span>파일 생성</li>
@@ -46,6 +51,56 @@
       <pre id="job-stdout">{{ job.stdoutTail }}</pre>
       <pre id="job-stderr">{{ job.stderrTail }}</pre>
     </details>
+  </section>
+  {% elif is_kind_validation %}
+  <nav class="result-steps" aria-label="Kubernetes 검증 진행 단계">
+    <span>✓ 코드 생성</span>
+    <span>✓ kind 배포</span>
+    <strong>✓ Lifecycle 검증</strong>
+  </nav>
+  <section class="result-hero {% if kind_validation_view.succeeded %}result-success{% else %}result-failure{% endif %}">
+    <p class="eyebrow">{{ "검증 완료" if kind_validation_view.succeeded else "확인 필요" }}</p>
+    <h1>{{ kind_validation_view.title }}</h1>
+    <p class="lead">{{ kind_validation_view.summary }}</p>
+  </section>
+  <section class="result-grid">
+    <article class="card result-card">
+      <p class="eyebrow">검증 대상</p>
+      <h2>{{ kind_validation_view.kind }}</h2>
+      <p>클러스터: <code>{{ kind_validation_view.cluster_name }}</code></p>
+      {% for item in kind_validation_view.managed_resources %}<p><code>{{ item }}</code></p>{% endfor %}
+    </article>
+    <article class="card result-card">
+      <p class="eyebrow">Lifecycle 증거</p>
+      <ul class="clean-list">
+        {% for item in kind_validation_view.evidence %}
+        <li>{{ item.name }} · <strong>{{ item.status }}</strong></li>
+        {% endfor %}
+      </ul>
+    </article>
+  </section>
+  {% if kind_validation_view.custom_resource_status %}
+  <section class="card">
+    <p class="eyebrow">Custom Resource 상태</p>
+    <pre>{{ kind_validation_view.custom_resource_status | tojson(indent=2) }}</pre>
+  </section>
+  {% endif %}
+  {% for item in kind_validation_view.resource_yaml %}
+  <section class="card">
+    <p class="eyebrow">실제 생성된 Kubernetes 리소스</p>
+    <h2>{{ item.title }}</h2>
+    <pre>{{ item.yaml }}</pre>
+  </section>
+  {% endfor %}
+  {% if kind_validation_view.limitations %}
+  <section class="alert alert-warning result-alert">
+    <strong>환경 제한사항</strong>
+    <ul>{% for item in kind_validation_view.limitations %}<li>{{ item }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+  <section class="decision-card">
+    <div><h2>Kubernetes 확인이 끝났습니다.</h2><p>실제 리소스와 검증 근거를 위에서 확인할 수 있습니다.</p></div>
+    <a href="/" class="button-link">새 Operator 만들기</a>
   </section>
   {% else %}
   {% if is_log_analysis %}
@@ -293,10 +348,14 @@
     <button class="secondary-button" type="button" id="retry-job">다시 시도</button>
     {% else %}
     <div>
-      <h2>작업이 끝났습니다.</h2>
-      <p>새로운 요구사항을 입력하거나 아래 개발자 상세에서 실행 근거를 확인할 수 있습니다.</p>
+      <h2>{% if job.metadata.mode == "execute" %}Kubernetes에서도 확인할까요?{% else %}작업이 끝났습니다.{% endif %}</h2>
+      <p>{% if job.metadata.mode == "execute" %}별도 승인 후 로컬 kind 클러스터에 배포하여 생성·변경·삭제 동작을 자동으로 검증합니다.{% else %}새로운 요구사항을 입력하거나 아래 개발자 상세에서 실행 근거를 확인할 수 있습니다.{% endif %}</p>
     </div>
-    <a href="/" class="button-link">새 Operator 만들기</a>
+    {% if job.metadata.mode == "execute" %}
+    <form method="post" action="/runs/job/{{ job.jobId }}/kind-validate">
+      <button class="primary-button" type="submit">로컬 Kubernetes에 배포하고 확인하기</button>
+    </form>
+    {% else %}<a href="/" class="button-link">새 Operator 만들기</a>{% endif %}
     {% endif %}
   </section>
 

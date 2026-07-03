@@ -22,6 +22,18 @@ class WorkflowServiceTest(unittest.TestCase):
         def get(self, job_id: str) -> dict:
             return self.parent if job_id == self.parent.get("jobId") else {}
 
+    class KindJobs(Jobs):
+        def list(self, limit=100):
+            return []
+
+        def submit(self, job_type, command, metadata=None):
+            return {
+                "jobId": "kind-job",
+                "jobType": job_type,
+                "command": command,
+                "metadata": metadata or {},
+            }
+
     def test_execute_command_requires_contract_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -44,6 +56,38 @@ class WorkflowServiceTest(unittest.TestCase):
 
         self.assertIn("--execute", command)
         self.assertIn("execute", command)
+
+    def test_completed_execute_job_can_start_profileless_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            requirement = root / "requirement.txt"
+            requirement.write_text(
+                "Create a ConfigBundle Operator.",
+                encoding="utf-8",
+            )
+            service = WorkflowService(root, root / "logs", profiles)
+            jobs = self.KindJobs(
+                {
+                    "jobId": "source-job",
+                    "jobType": "requirement",
+                    "state": "succeeded",
+                    "metadata": {
+                        "mode": "execute",
+                        "requirementPath": "requirement.txt",
+                    },
+                }
+            )
+
+            result = service.submit_kind_validation("source-job", jobs)
+
+        self.assertEqual(result["jobType"], "kind-validation")
+        self.assertIn(
+            "agent/evaluation/profileless_kind_runner.py",
+            result["command"],
+        )
+        self.assertEqual(result["metadata"]["sourceJobId"], "source-job")
 
     def test_profile_path_cannot_escape_profile_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

@@ -13,12 +13,64 @@ from agent.tools.capability_drafter import ProposalModel, proposal_digest
 from agent.tools.capability_discovery import CapabilityDiscoveryResult
 from agent.tools.resource_catalog import ResourceCapabilityDefinition
 from web.result_presenter import (
+    present_kind_validation_result,
     present_log_analysis_result,
     present_run_result,
 )
 
 
 class ResultPresenterTest(unittest.TestCase):
+    def test_kind_validation_exposes_runtime_resources(self) -> None:
+        result = present_kind_validation_result(
+            {
+                "state": "succeeded",
+                "kindValidation": {
+                    "status": "passed",
+                    "results": [
+                        {
+                            "status": "passed",
+                            "compile": {"kind": "ConfigBundle"},
+                            "deploymentSummary": {
+                                "clusterName": "web-example",
+                                "runtimeEvidence": {
+                                    "idempotency": {"status": "passed"}
+                                },
+                                "validator": {
+                                    "managedResources": [
+                                        {
+                                            "resource": "configmap",
+                                            "name": "sample-config",
+                                        }
+                                    ]
+                                },
+                                "checks": {
+                                    "managedResources": [
+                                        {
+                                            "apiVersion": "v1",
+                                            "kind": "ConfigMap",
+                                            "metadata": {
+                                                "name": "sample-config"
+                                            },
+                                            "data": {"sample": "value"},
+                                        }
+                                    ],
+                                    "customResourceStatus": {
+                                        "phase": "Ready"
+                                    },
+                                },
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+
+        self.assertTrue(result.succeeded)
+        self.assertEqual(result.kind, "ConfigBundle")
+        self.assertEqual(result.managed_resources, ["configmap/sample-config"])
+        self.assertEqual(result.evidence[0]["status"], "passed")
+        self.assertIn("kind: ConfigMap", result.resource_yaml[0]["yaml"])
+
     def test_log_analysis_uses_dedicated_beginner_result(self) -> None:
         result = present_log_analysis_result(
             {

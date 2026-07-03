@@ -144,5 +144,19 @@ class LogAnalysisView(WebModel):
     deterministic: bool = False
 
 
+class KindValidationView(WebModel):
+    succeeded: bool
+    title: str
+    summary: str
+    kind: str = ""
+    cluster_name: str = ""
+    managed_resources: list[str] = Field(default_factory=list)
+    observed_resources: list[str] = Field(default_factory=list)
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    custom_resource_status: dict[str, Any] = Field(default_factory=dict)
+    resource_yaml: list[dict[str, str]] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
 def checkbox(value: Any) -> bool:
     return str(value or "").lower() in {"1", "true", "yes", "on"}

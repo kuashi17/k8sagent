@@ -73,6 +73,27 @@ class JobManagerTest(unittest.TestCase):
                 self.assertTrue((job_dir / "workspace").is_dir())
                 self.assertTrue((job_dir / "artifacts").is_dir())
 
+    def test_kind_validation_uses_job_specific_results_and_cluster(self) -> None:
+        command = isolate_job_command(
+            "kind-validation",
+            [
+                "python3",
+                "agent/evaluation/profileless_kind_runner.py",
+                "--requirement",
+                "requirement.txt",
+            ],
+            "logs/web/jobs/20260703-120000-abcd1234",
+        )
+
+        self.assertEqual(
+            command[command.index("--output-dir") + 1],
+            "logs/web/jobs/20260703-120000-abcd1234/artifacts",
+        )
+        self.assertEqual(
+            command[command.index("--cluster-name") + 1],
+            "web-abcd1234",
+        )
+
     def test_linked_approval_journey_separates_human_wait(self) -> None:
         timings = build_journey_timings(
             {

@@ -30,6 +30,7 @@ from agent.llm.client import LLMUnavailable, warm_up_model  # noqa: E402
 from web.job_manager import JobManager, TERMINAL_STATES  # noqa: E402
 from web.result_presenter import (  # noqa: E402
     developer_details,
+    present_kind_validation_result,
     present_log_analysis_result,
     present_run_result,
 )
@@ -142,6 +143,18 @@ async def analyze_log(request: Request) -> HTMLResponse:
     )
 
 
+@app.post("/runs/job/{job_id}/kind-validate")
+async def validate_in_kind(job_id: str) -> RedirectResponse:
+    try:
+        job = workflows.submit_kind_validation(job_id, jobs)
+    except ValueError:
+        return RedirectResponse(f"/runs/job/{job_id}", status_code=303)
+    return RedirectResponse(
+        f"/runs/job/{job['jobId']}",
+        status_code=303,
+    )
+
+
 @app.get("/runs/job/{job_id}", response_class=HTMLResponse)
 async def view_job(request: Request, job_id: str) -> HTMLResponse:
     try:
@@ -159,14 +172,20 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
     )
     terminal = job.get("state") in TERMINAL_STATES
     is_log_analysis = job.get("jobType") == "log-analysis"
+    is_kind_validation = job.get("jobType") == "kind-validation"
     result_view = (
         present_run_result(job)
-        if terminal and not is_log_analysis
+        if terminal and not is_log_analysis and not is_kind_validation
         else None
     )
     log_analysis_view = (
         present_log_analysis_result(job)
         if terminal and is_log_analysis
+        else None
+    )
+    kind_validation_view = (
+        present_kind_validation_result(job)
+        if terminal and is_kind_validation
         else None
     )
     return templates.TemplateResponse(
@@ -179,6 +198,8 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
             "result_view": result_view,
             "log_analysis_view": log_analysis_view,
             "is_log_analysis": is_log_analysis,
+            "kind_validation_view": kind_validation_view,
+            "is_kind_validation": is_kind_validation,
             "developer": developer_details(job) if terminal else {},
             "requirement_text": requirement_text,
             "profiles": list_profiles(),

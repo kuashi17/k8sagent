@@ -49,8 +49,9 @@ class JobManager:
         job_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex[:8]
         job_dir = self.root / job_id
         job_dir.mkdir(parents=True)
-        if job_type == "requirement":
+        if job_type in {"requirement", "kind-validation"}:
             (job_dir / "artifacts").mkdir()
+        if job_type == "requirement":
             (job_dir / "workspace").mkdir()
         command = isolate_job_command(
             job_type,
@@ -120,6 +121,13 @@ class JobManager:
             "safety": read_json(self.repo_root / agent_log_dir / "safety-evaluation.json") if agent_log_dir else {},
             "recovery": (summary.get("recovery") or {}) if isinstance(summary, dict) else {},
         }
+        if status.get("jobType") == "kind-validation":
+            result["kindValidation"] = read_json(
+                self.repo_root
+                / str(status.get("jobDir") or "")
+                / "artifacts"
+                / "profileless-kind-results.json"
+            )
         parent_status = None
         parent_summary: dict[str, Any] = {}
         parent_id = str(
@@ -370,6 +378,17 @@ def isolate_job_command(
 ) -> list[str]:
     """Bind mutable Agent outputs to one Web job directory."""
     isolated = [str(item) for item in command]
+    if job_type == "kind-validation":
+        isolated = replace_option(
+            isolated,
+            "--output-dir",
+            str(Path(job_dir) / "artifacts"),
+        )
+        return replace_option(
+            isolated,
+            "--cluster-name",
+            "web-" + Path(job_dir).name[-8:],
+        )
     if job_type != "requirement" or "agent/langchain_agent.py" not in isolated:
         return isolated
     isolated = replace_option(
@@ -495,7 +514,10 @@ def rollback_policy(
     job_type: str,
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    if job_type == "requirement" and metadata.get("kindDeploy"):
+    if (
+        (job_type == "requirement" and metadata.get("kindDeploy"))
+        or job_type == "kind-validation"
+    ):
         return {
             "mode": "manual-approval",
             "automatic": False,
