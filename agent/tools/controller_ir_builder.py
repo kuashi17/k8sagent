@@ -73,7 +73,10 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
                 catalog.primitives_by_name(),
             )
         resources.append(apply_resource_policy(resource, policies.get(str(raw_kind))))
-    resources = adapt_observed_resource_relationships(resources)
+    resources = adapt_observed_resource_relationships(
+        resources,
+        resources_by_name,
+    )
     if unsupported:
         supported = ", ".join(
             sorted(item.kind for item in catalog.resources)
@@ -128,23 +131,40 @@ def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
 
 def adapt_observed_resource_relationships(
     resources: list[ManagedResourceSpec],
+    catalog_by_name: dict[str, ResourceCapabilityDefinition],
 ) -> list[ManagedResourceSpec]:
-    """Bind generic observed children to the managed parent in this IR."""
-    kinds = {item.kind for item in resources}
-    if "Pod" not in kinds or "Job" in kinds or "Deployment" not in kinds:
-        return resources
-    return [
-        item.model_copy(
-            update={
-                "selector_label": "operator.sample.io/owner",
-                "selector_dependency_kind": "Deployment",
-                "selector_value_source": "owner-name",
-            }
-        )
-        if item.kind == "Pod" and item.strategy == ReconcileStrategy.READ_ONLY
-        else item
+    """Resolve observed-resource selectors from catalog relationship rules."""
+    parents = {
+        item.kind: item
         for item in resources
-    ]
+        if item.strategy != ReconcileStrategy.READ_ONLY
+    }
+    adapted = []
+    for item in resources:
+        definition = catalog_by_name.get(item.kind)
+        binding = next(
+            (
+                candidate
+                for candidate in (
+                    definition.selectorBindings if definition else []
+                )
+                if candidate.parentKind in parents
+            ),
+            None,
+        )
+        if item.strategy != ReconcileStrategy.READ_ONLY or binding is None:
+            adapted.append(item)
+            continue
+        adapted.append(
+            item.model_copy(
+                update={
+                    "selector_label": binding.label,
+                    "selector_dependency_kind": binding.parentKind,
+                    "selector_value_source": binding.valueSource,
+                }
+            )
+        )
+    return adapted
 
 
 def apply_resource_policy(

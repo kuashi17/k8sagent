@@ -79,6 +79,32 @@ class ControllerIRBuilderTest(unittest.TestCase):
         self.assertEqual(pod.selector_dependency_kind, "Deployment")
         self.assertEqual(pod.selector_value_source, "owner-name")
 
+    def test_statefulset_owned_pod_observer_uses_catalog_binding(self) -> None:
+        value = model(
+            ["StatefulSet", "Service"],
+            ["image", "replicas", "port"],
+            ["readyReplicas", "podName"],
+        )
+        value["controller"].update(
+            {
+                "observedResources": ["Pod"],
+                "resourcePolicies": [
+                    {
+                        "kind": "Pod",
+                        "strategy": "read-only",
+                        "ownership": "none",
+                        "deletionPolicy": "retain",
+                    }
+                ],
+            }
+        )
+
+        pod = build_controller_ir(value).resource("Pod")
+
+        self.assertEqual(pod.selector_label, "operator.sample.io/owner")
+        self.assertEqual(pod.selector_dependency_kind, "StatefulSet")
+        self.assertEqual(pod.selector_value_source, "owner-name")
+
     def test_requirement_policy_can_make_deployment_read_only(self) -> None:
         value = model(
             [],

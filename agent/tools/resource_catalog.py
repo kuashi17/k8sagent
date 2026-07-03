@@ -136,6 +136,21 @@ class CatalogBehaviorBinding(CatalogModel):
     paths: dict[str, str] = Field(default_factory=dict)
 
 
+class CatalogSelectorBinding(CatalogModel):
+    parentKind: str
+    label: str
+    valueSource: str = "dependency-name"
+
+    @model_validator(mode="after")
+    def validate_value_source(self) -> "CatalogSelectorBinding":
+        if self.valueSource not in {"dependency-name", "owner-name"}:
+            raise ValueError(
+                "selector binding valueSource must be dependency-name "
+                "or owner-name"
+            )
+        return self
+
+
 class ResourceCapabilityDefinition(CatalogModel):
     kind: str
     aliases: list[str] = Field(default_factory=list)
@@ -164,6 +179,9 @@ class ResourceCapabilityDefinition(CatalogModel):
     dependencyTargetPath: str = ""
     selectorLabel: str = ""
     selectorDependencyKind: str = ""
+    selectorBindings: list[CatalogSelectorBinding] = Field(
+        default_factory=list
+    )
     behaviorBindings: list[CatalogBehaviorBinding] = Field(
         default_factory=list
     )

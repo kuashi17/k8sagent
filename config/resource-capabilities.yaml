@@ -400,8 +400,10 @@ resources:
     strategy: read-only
     ownership: none
     deletionPolicy: retain
-    selectorLabel: job-name
-    selectorDependencyKind: Job
+    selectorBindings:
+      - {parentKind: Job, label: job-name, valueSource: dependency-name}
+      - {parentKind: Deployment, label: operator.sample.io/owner, valueSource: owner-name}
+      - {parentKind: StatefulSet, label: operator.sample.io/owner, valueSource: owner-name}
     statusMappings:
       - {field: podName, source: metadata.name, resourceName: true}
 
