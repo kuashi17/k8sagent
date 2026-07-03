@@ -63,6 +63,19 @@
     <h1>{{ kind_validation_view.title }}</h1>
     <p class="lead">{{ kind_validation_view.summary }}</p>
   </section>
+  {% if not kind_validation_view.succeeded %}
+  <section class="alert alert-error result-alert">
+    <strong>{{ kind_validation_view.error_message or "Kubernetes 검증 중 문제가 발생했습니다." }}</strong>
+    {% if kind_validation_view.error_code %}<p>오류 코드: <code>{{ kind_validation_view.error_code }}</code></p>{% endif %}
+    {% if kind_validation_view.failed_step %}<p>실패 단계: <code>{{ kind_validation_view.failed_step }}</code></p>{% endif %}
+    {% if kind_validation_view.recovery_steps %}
+    <ol>{% for item in kind_validation_view.recovery_steps %}<li>{{ item }}</li>{% endfor %}</ol>
+    {% endif %}
+    {% if kind_validation_view.retryable and job.attempt < job.maxAttempts %}
+    <button class="secondary-button" type="button" id="retry-job">환경 확인 후 다시 시도</button>
+    {% endif %}
+  </section>
+  {% endif %}
   <section class="result-grid">
     <article class="card result-card">
       <p class="eyebrow">검증 대상</p>
@@ -385,6 +398,15 @@
 
   <details class="card developer-details">
     <summary>개발자용 실행 근거와 원본 로그</summary>
+    {% if job.jobType == "requirement" %}
+    <h3>이번 작업에 적용된 설정</h3>
+    <ul>
+      <li>실행 단계: {{ "Operator 코드 생성 및 검증" if job.metadata.mode == "execute" else "안전한 계획 생성" }}</li>
+      <li>평가 방식: {{ job.metadata.runLevel or "fast" }}</li>
+      <li>참고 Profile: {{ job.metadata.profile or "사용 안 함 — 요구사항 기준 자동 생성" }}</li>
+      <li>초기 Kubernetes 배포: {{ "포함" if job.metadata.kindDeploy else "포함하지 않음 — 완료 후 별도 검증 가능" }}</li>
+    </ul>
+    {% endif %}
     {% if developer.agent_report %}<h3>Agent Report</h3><pre>{{ developer.agent_report }}</pre>{% endif %}
     {% if developer.safety_json %}<h3>Safety Evaluation</h3><pre>{{ developer.safety_json }}</pre>{% endif %}
     {% if developer.evidence_json %}<h3>Evidence Trace</h3><pre>{{ developer.evidence_json }}</pre>{% endif %}

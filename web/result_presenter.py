@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from agent.error_registry import get_error_definition
+from agent.error_taxonomy import infer_tool_error
 from agent.tools.capability_drafter import load_proposal, proposal_digest
 from web.schemas import KindValidationView, LogAnalysisView, RunResultView
 
@@ -223,6 +224,18 @@ def present_kind_validation_result(
         and payload.get("status") == "passed"
         and result.get("status") == "passed"
     )
+    failure = infer_tool_error(
+        {
+            "deploymentSummary": deployment,
+            "stderr": str(result.get("error") or job.get("stderrTail") or ""),
+            "stdout": str(job.get("stdoutTail") or ""),
+        },
+        tool="kind_deployment",
+    )
+    error_code = "" if succeeded else str(failure.get("errorCode") or "")
+    error_definition = (
+        get_error_definition(error_code) if error_code else None
+    )
     evidence = [
         {
             "name": name,
@@ -316,7 +329,42 @@ def present_kind_validation_result(
         resource_yaml=resources,
         limitations=limitations,
         kubectl_commands=kubectl_commands,
+        error_code=error_code,
+        error_message=(
+            error_definition.userMessage if error_definition else ""
+        ),
+        failed_step=str(
+            deployment.get("failedStep")
+            or failure.get("stage")
+            or ""
+        ),
+        retryable=bool(
+            error_definition.retryable if error_definition else False
+        ),
+        recovery_steps=kind_recovery_steps(error_code),
     )
+
+
+def kind_recovery_steps(error_code: str) -> list[str]:
+    return {
+        "DOCKER_DAEMON_UNAVAILABLE": [
+            "Docker Desktop 또는 Docker daemon을 실행합니다.",
+            "터미널에서 docker info가 성공하는지 확인합니다.",
+            "환경이 준비되면 아래 다시 시도 버튼을 누릅니다.",
+        ],
+        "KIND_CONNECTION_FAILED": [
+            "kind와 kubectl이 설치되어 있는지 확인합니다.",
+            "kind get clusters와 kubectl cluster-info를 실행합니다.",
+            "연결이 복구되면 아래 다시 시도 버튼을 누릅니다.",
+        ],
+        "COMMAND_TIMEOUT": [
+            "Docker와 Kubernetes 리소스 사용량을 확인합니다.",
+            "실행 중인 불필요한 kind 클러스터를 정리한 뒤 다시 시도합니다.",
+        ],
+    }.get(
+        error_code,
+        ["실패 단계와 원본 로그를 확인한 뒤 다시 시도합니다."],
+    ) if error_code else []
 
 
 def beginner_text(value: str) -> str:

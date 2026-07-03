@@ -157,6 +157,11 @@ class KindValidationView(WebModel):
     resource_yaml: list[dict[str, str]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     kubectl_commands: list[dict[str, str]] = Field(default_factory=list)
+    error_code: str = ""
+    error_message: str = ""
+    failed_step: str = ""
+    retryable: bool = False
+    recovery_steps: list[str] = Field(default_factory=list)
 
 
 def checkbox(value: Any) -> bool:

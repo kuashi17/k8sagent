@@ -77,6 +77,31 @@ class ResultPresenterTest(unittest.TestCase):
             "get configmap/sample-config",
         )
 
+    def test_kind_docker_failure_has_beginner_recovery(self) -> None:
+        result = present_kind_validation_result(
+            {
+                "state": "failed",
+                "stderrTail": "Cannot connect to the Docker daemon",
+                "kindValidation": {
+                    "status": "failed",
+                    "results": [
+                        {
+                            "status": "failed",
+                            "deploymentSummary": {
+                                "status": "failed",
+                                "failedStep": "docker-info",
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+
+        self.assertFalse(result.succeeded)
+        self.assertEqual(result.error_code, "DOCKER_DAEMON_UNAVAILABLE")
+        self.assertTrue(result.retryable)
+        self.assertIn("docker info", " ".join(result.recovery_steps))
+
     def test_log_analysis_uses_dedicated_beginner_result(self) -> None:
         result = present_log_analysis_result(
             {

@@ -146,7 +146,10 @@ class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
                         result_page.text,
                     )
                     self.assertIn("코드 및 테스트 검증", result_page.text)
-                    self.assertNotIn("Operator 코드 생성 및 검증", result_page.text)
+                    self.assertNotIn(
+                        ">Operator 코드 생성 및 검증</button>",
+                        result_page.text,
+                    )
 
                     requirements = list(
                         (root / "logs" / "web" / "requirement").glob(

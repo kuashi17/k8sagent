@@ -277,6 +277,14 @@ textarea {
   font-weight: 750;
 }
 
+.example-button small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
 .example-button:hover {
   border-color: var(--primary);
   background: var(--surface-soft);
