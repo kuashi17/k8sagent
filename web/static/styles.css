@@ -172,10 +172,6 @@ a {
 .field-help,
 .muted,
 label small,
-.advanced-settings > p {
-  color: var(--muted);
-}
-
 .field-help {
   margin-bottom: 12px;
 }
@@ -351,7 +347,6 @@ button,
   color: var(--success);
 }
 
-.advanced-settings,
 .support-tools {
   margin-top: 24px;
   border-top: 1px solid var(--line);
@@ -363,15 +358,10 @@ summary {
   font-weight: 800;
 }
 
-.settings-grid,
 .result-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-}
-
-.settings-grid {
-  margin-top: 18px;
 }
 
 label {
@@ -383,47 +373,6 @@ label small {
   display: block;
   margin-top: 6px;
   font-weight: 450;
-}
-
-.switch-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.switch-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 13px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  font-weight: 500;
-}
-
-.switch-row input {
-  width: auto;
-  min-height: auto;
-  margin-top: 5px;
-}
-
-.switch-row strong,
-.switch-row small {
-  display: block;
-}
-
-.danger-setting {
-  border-color: #f1c7cf;
-}
-
-.execution-confirmation {
-  display: none;
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.execution-confirmation.visible {
-  display: flex;
 }
 
 .how-it-works {
@@ -840,7 +789,6 @@ pre {
     padding: 20px;
   }
 
-  .settings-grid,
   .result-grid,
   .writing-hints,
   .steps,

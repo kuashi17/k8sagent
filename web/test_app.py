@@ -181,7 +181,8 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("안전한 계획 만들기", response.text)
-        self.assertIn("<summary>개발자 설정</summary>", response.text)
+        self.assertNotIn("개발자 설정", response.text)
+        self.assertNotIn("참고 Profile", response.text)
         self.assertIn("막막하다면 예시로 시작하세요", response.text)
         self.assertIn(
             "한 번에 계획을 만들려면 아래 네 가지를 포함해 주세요.",
