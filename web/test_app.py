@@ -184,6 +184,8 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<summary>개발자 설정</summary>", response.text)
         self.assertIn("막막하다면 예시로 시작하세요", response.text)
         self.assertIn(">웹 서비스</button>", response.text)
+        self.assertIn("API는 config.sample.io/v1alpha1입니다.", response.text)
+        self.assertIn("data: map[string]string", response.text)
         self.assertNotIn("TrainingJob", response.text)
         self.assertNotIn("requirements/appconfig.txt", response.text)
         self.assertNotIn("계획 확인 없이 바로 실행", response.text)

@@ -39,7 +39,7 @@
         <span>막막하다면 예시로 시작하세요</span>
         <button type="button" class="example-button" data-requirement-example="WebApp이라는 리소스를 관리하는 Operator를 만들어 주세요. image, replicas, port를 입력받아 Deployment와 Service를 생성하고 변경 사항을 반영해 주세요. 현재 준비된 replica 수와 상태 메시지도 표시해 주세요.">웹 서비스</button>
         <button type="button" class="example-button" data-requirement-example="ScheduledTask라는 리소스를 관리하는 Operator를 만들어 주세요. schedule, image, command를 입력받아 CronJob을 생성하고 값이 바뀌면 반영해 주세요. 마지막 실행 상태도 표시해 주세요.">예약 작업</button>
-        <button type="button" class="example-button" data-requirement-example="ConfigBundle이라는 리소스를 관리하는 Operator를 만들어 주세요. data와 targetName을 입력받아 ConfigMap을 생성하고 변경 내용을 반영해 주세요. 삭제할 때 생성한 ConfigMap도 함께 정리해 주세요.">설정 관리</button>
+        <button type="button" class="example-button" data-requirement-example="ConfigBundle이라는 Custom Resource를 관리하는 Operator를 만들어 주세요.&#10;&#10;API는 config.sample.io/v1alpha1입니다.&#10;&#10;spec:&#10;- data: map[string]string&#10;- targetName: string&#10;&#10;status:&#10;- phase: string&#10;- configMapName: string&#10;- message: string&#10;&#10;Controller는 ConfigMap을 생성하고 spec.data와 spec.targetName의 변경 내용을 반영해 주세요. ConfigMap이 직접 수정되면 spec 기준으로 복구하고, ConfigBundle을 삭제할 때 생성한 ConfigMap도 함께 삭제해 주세요.">설정 관리</button>
       </div>
 
       <input type="hidden" name="mode" value="dry-run">
