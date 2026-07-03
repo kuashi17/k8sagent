@@ -117,10 +117,10 @@ class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
                         plan_page.text,
                     )
                     self.assertIn(
-                        "아직 실제 파일이나 클러스터를 변경하지 않았습니다",
+                        "아직 Operator 프로젝트나 Kubernetes 클러스터를 변경하지 않았습니다",
                         plan_page.text,
                     )
-                    self.assertIn("이 계획대로 만들기", plan_page.text)
+                    self.assertIn("Operator 코드 생성 및 검증", plan_page.text)
 
                     execute_response = await client.post(
                         "/run-requirement",
@@ -146,7 +146,7 @@ class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
                         result_page.text,
                     )
                     self.assertIn("코드 및 테스트 검증", result_page.text)
-                    self.assertNotIn("이 계획대로 만들기", result_page.text)
+                    self.assertNotIn("Operator 코드 생성 및 검증", result_page.text)
 
                     requirements = list(
                         (root / "logs" / "web" / "requirement").glob(

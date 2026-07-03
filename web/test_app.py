@@ -268,8 +268,11 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("WebService 계획이 준비됐습니다", response.text)
-        self.assertIn("이 계획대로 만들기", response.text)
-        self.assertIn("아직 실제 파일이나 클러스터를 변경하지 않았습니다", response.text)
+        self.assertIn("Operator 코드 생성 및 검증", response.text)
+        self.assertIn(
+            "아직 Operator 프로젝트나 Kubernetes 클러스터를 변경하지 않았습니다",
+            response.text,
+        )
         self.assertIn("개발자용 실행 근거와 원본 로그", response.text)
 
     async def test_running_job_uses_beginner_facing_status_labels(self) -> None:
