@@ -14,3 +14,4 @@ requirements:
   - evaluation/fixtures/requirements/autoscaled-workload.txt
   - evaluation/fixtures/requirements/deployment-health.txt
   - evaluation/fixtures/requirements/multi-resource-status.txt
+  - evaluation/fixtures/requirements/storage-claim-lifecycle.txt
