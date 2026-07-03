@@ -168,6 +168,34 @@ class ResultPresenterTest(unittest.TestCase):
             ["요구사항 구조화"],
         )
 
+    def test_not_required_capability_artifact_keeps_execute_action(self) -> None:
+        result = present_run_result(
+            {
+                "state": "succeeded",
+                "jobType": "requirement",
+                "summary": {
+                    "agentMode": "dry-run",
+                    "agentResult": {
+                        "status": "capability-awaiting-approval",
+                        "succeeded": True,
+                        "canExecute": False,
+                        "technicalDetails": {
+                            "kind": "ConfigBundle",
+                            "managedResources": ["ConfigMap"],
+                        },
+                    },
+                    "generatedFiles": {
+                        "capabilityProposal": (
+                            "artifacts/configbundle-capability-proposal.yaml"
+                        )
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(result.capability_proposal, "")
+        self.assertTrue(result.can_execute)
+
     def test_pending_capability_is_exposed_as_separate_review(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from agent.contracts import AgentResult
@@ -35,7 +36,7 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
         or ""
     )
     approvals = []
-    if proposal_path:
+    if proposal_path and capability_proposal_is_pending(tool_results):
         approvals.append(
             {
                 "type": "capability",
@@ -103,6 +104,22 @@ def build_agent_result(summary: dict[str, Any]) -> dict[str, Any]:
         }
     )
     return result.to_dict()
+
+
+def capability_proposal_is_pending(
+    tool_results: list[dict[str, Any]],
+) -> bool:
+    for result in tool_results:
+        if result.get("tool") != "capability_drafter":
+            continue
+        for line in reversed(str(result.get("stdout") or "").splitlines()):
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload.get("status") == "pending-approval"
+    return False
 
 
 def result_status(

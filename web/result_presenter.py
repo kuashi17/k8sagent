@@ -136,7 +136,13 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         ),
         code_explanation=dict(technical.get("codeExplanation") or {}),
         can_execute=bool(
-            shared.get("canExecute")
+            (
+                shared.get("canExecute")
+                or (
+                    shared.get("status") == "capability-awaiting-approval"
+                    and not proposal_path
+                )
+            )
             if shared
             else (
                 succeeded

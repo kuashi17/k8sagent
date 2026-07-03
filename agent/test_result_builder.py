@@ -96,7 +96,12 @@ class AgentResultBuilderTest(unittest.TestCase):
                 "generatedFiles": {
                     "capabilityProposal": "generated/capability.yaml"
                 },
-                "toolResults": [],
+                "toolResults": [
+                    {
+                        "tool": "capability_drafter",
+                        "stdout": '{"status": "pending-approval"}',
+                    }
+                ],
                 "finalLLM": {"output": {}},
                 "warnings": [],
                 "errors": [],
@@ -111,6 +116,35 @@ class AgentResultBuilderTest(unittest.TestCase):
             ["capability", "recovery"],
         )
         self.assertFalse(result["canExecute"])
+
+    def test_catalog_capability_does_not_require_approval(self) -> None:
+        result = build_agent_result(
+            {
+                "agentMode": "dry-run",
+                "requirementSummary": {
+                    "kind": "ConfigBundle",
+                    "managedResources": ["ConfigMap"],
+                },
+                "generatedFiles": {
+                    "capabilityProposal": "generated/capability.yaml"
+                },
+                "toolResults": [
+                    {
+                        "tool": "capability_drafter",
+                        "stdout": '{"status": "not-required"}',
+                    }
+                ],
+                "finalLLM": {"output": {}},
+                "warnings": [],
+                "errors": [],
+                "nextRecommendedActions": [],
+                "recovery": {},
+            }
+        )
+
+        self.assertEqual(result["status"], "planned")
+        self.assertEqual(result["approvalRequests"], [])
+        self.assertTrue(result["canExecute"])
 
 
 if __name__ == "__main__":
