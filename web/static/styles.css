@@ -210,6 +210,14 @@ label small,
   font-size: 12px;
 }
 
+.writing-hints b {
+  color: var(--text);
+}
+
+.writing-hints code {
+  font-size: 11px;
+}
+
 textarea,
 input,
 select {
