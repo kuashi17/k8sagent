@@ -218,6 +218,25 @@ label small,
   font-size: 11px;
 }
 
+.beginner-note {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--primary);
+  border-radius: 10px;
+  background: #f8fbfa;
+}
+
+.beginner-note p,
+.beginner-note ul {
+  margin: 6px 0 0;
+}
+
+.beginner-note ul {
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 textarea,
 input,
 select {

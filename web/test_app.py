@@ -191,6 +191,8 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("입력값과 타입", response.text)
         self.assertIn("CRD 이름과", response.text)
         self.assertIn("Reconcile 코드와 최소 RBAC 권한", response.text)
+        self.assertIn("처음이라면 이렇게 이해하세요", response.text)
+        self.assertIn("phase: Ready", response.text)
         self.assertIn(">웹 서비스</button>", response.text)
         self.assertIn("API는 apps.sample.io/v1alpha1입니다.", response.text)
         self.assertIn("readyReplicas: int32", response.text)
