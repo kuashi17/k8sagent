@@ -516,12 +516,6 @@ def fake_supported_calls(context: dict[str, Any]) -> dict[str, Any]:
             "arguments": {"project": context["targetProjectDir"], "targets": ["generate", "manifests", "test"]},
             "call": lambda: {},
         },
-        "e2e_runner": {
-            "mutating": True,
-            "requiredArgs": ["input"],
-            "arguments": {"input": generated["operatorSpec"], "profile": context["selectedProfile"]["path"], "execute": True},
-            "call": lambda: {},
-        },
     }
 
 

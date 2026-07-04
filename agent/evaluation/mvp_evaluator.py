@@ -197,7 +197,7 @@ def validation_result(record: dict[str, Any]) -> dict[str, Any]:
                         "attemptCount": 1,
                         "exitCode": step.get("exitCode"),
                     }
-        if tool.get("tool") == "e2e_runner" and results["e2e"]["attemptCount"] == 0:
+        if tool.get("tool") == "kind_deployment" and results["e2e"]["attemptCount"] == 0:
             results["e2e"] = {
                 "firstAttempt": "succeeded" if tool.get("exitCode") == 0 else "failed",
                 "attemptCount": 1,

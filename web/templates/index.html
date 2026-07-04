@@ -19,10 +19,10 @@
       <label class="question-label" for="requirement_text">
         Operator가 해야 할 일을 설명해 주세요
       </label>
-      <p class="field-help">
-        한 번에 계획을 만들려면 아래 네 가지를 포함해 주세요.
-      </p>
-      <ul class="writing-hints" aria-label="요구사항 작성 도움말">
+      <details class="requirement-guide">
+        <summary>한 번에 계획을 만드는 데 필요한 4가지 보기</summary>
+        <p class="field-help">필수 정보가 빠지면 Agent가 코드 생성 전에 필요한 내용을 질문합니다.</p>
+        <ul class="writing-hints" aria-label="요구사항 작성 도움말">
         <li>
           <strong>리소스 이름과 API</strong>
           <span><b>무엇:</b> 만들 Custom Resource의 이름과 주소입니다.<br><b>용도:</b> CRD 이름과 <code>kubectl</code> API 경로를 결정합니다.<br><b>정하는 법:</b> 프로젝트에서 사용할 고유한 주소이며, 예제의 <code>sample.io</code>를 조직이나 프로젝트 이름으로 바꿔 사용할 수 있습니다.<br>예: WebApp, apps.sample.io/v1alpha1</span>
@@ -39,8 +39,8 @@
           <strong>표시할 status와 삭제 방식</strong>
           <span><b>무엇:</b> 사용자에게 보여줄 현재 상태와 삭제 시 처리 방법입니다.<br><b>용도:</b> status 갱신과 리소스의 생명주기를 결정합니다.<br><b>삭제 예:</b> “WebApp 삭제 시 Deployment도 함께 삭제” 또는 “StorageClaim을 삭제해도 기존 PVC는 남겨두기”<br>상태 예: phase:string</span>
         </li>
-      </ul>
-      <div class="beginner-note">
+        </ul>
+        <div class="beginner-note">
         <strong>처음이라면 이렇게 이해하세요</strong>
         <p><code>spec</code>은 사용자가 원하는 값을 입력하는 곳이고, <code>status</code>는 Controller가 확인한 실제 결과를 기록하는 곳입니다.</p>
         <ul>
@@ -49,7 +49,8 @@
           <li><code>enabled:bool</code> → <code>enabled: true</code>처럼 참·거짓을 저장합니다.</li>
           <li><code>phase:string</code> → Controller가 <code>phase: Ready</code>처럼 현재 상태를 기록합니다.</li>
         </ul>
-      </div>
+        </div>
+      </details>
       <textarea
         id="requirement_text"
         name="requirement_text"

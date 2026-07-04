@@ -20,6 +20,23 @@ from web.result_presenter import (
 
 
 class ResultPresenterTest(unittest.TestCase):
+    def test_clarification_result_requests_requirement_revision(self) -> None:
+        result = present_run_result(
+            {
+                "state": "succeeded",
+                "jobType": "requirement",
+                "summary": {
+                    "agentMode": "dry-run",
+                    "runStatus": "clarification-required",
+                    "requirementSummary": {"kind": "WebApp"},
+                    "finalLLM": {"output": {}},
+                },
+            }
+        )
+
+        self.assertTrue(result.needs_clarification)
+        self.assertFalse(result.can_execute)
+
     def test_kind_validation_exposes_runtime_resources(self) -> None:
         result = present_kind_validation_result(
             {

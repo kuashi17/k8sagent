@@ -101,7 +101,7 @@ flowchart TD
     G --> H3["scaffold_runner.py"]
     G --> H4["artifact_patcher.py"]
     G --> H5["validation: make generate/manifests/test"]
-    G --> H6["e2e_runner.py"]
+    G --> H6["kind_deployment_runner.py"]
     G --> H7["log_analyzer.py"]
 
     H1 --> I["generated/operator-spec.yaml"]
@@ -139,7 +139,7 @@ flowchart TD
 | 6 | scaffold execute | `kubebuilder init`, `kubebuilder create api`, `make generate`, `make manifests`, `make test` 실행 | `workspace/generated-operators/<operator>` |
 | 7 | 산출물 보정 | `artifact_patcher.py`가 spec/status 필드, sample YAML, RBAC marker 반영 | API 타입, sample YAML, RBAC marker |
 | 8 | make 검증 | `make generate`, `make manifests`, `make test`로 컴파일/manifest 검증 | 검증 로그 |
-| 9 | e2e 검증 | kind 클러스터에서 CRD 설치, CR 생성, 하위 리소스 생성 확인 | `logs/e2e/<timestamp>/summary.json` |
+| 9 | kind 검증 | kind 클러스터에서 CRD 설치, CR 생성, lifecycle과 권한 확인 | profileless kind 결과 JSON |
 | 10 | 로그 분석 | `log_analyzer.py`와 LLM이 실패/경고/성공을 설명 | `analysis.md`, `agent-report.md` |
 | 11 | 실패 복구 계획 | LLM recovery plan을 policy validator가 검증 | `validated-recovery-plan.json` |
 
@@ -179,7 +179,7 @@ flowchart TD
    - scaffold_runner
    - artifact_patcher
    - validation
-   - e2e_runner
+   - kind_deployment
    - log_analyzer
 
 6. 최종 LLM 평가
@@ -210,7 +210,6 @@ flowchart TD
 | Controller Renderer | `agent/tools/controller_renderer.py` | profile 없는 generalized spec | ConfigMap, Secret, PVC, CronJob, Deployment/Service, Namespace reconcile 코드 | `artifact_patcher --execute` 경유 |
 | Controller IR | `agent/tools/controller_ir.py`, `controller_ir_builder.py` | generalized spec | scope, strategy, capability, ownership, deletion, mapping이 명시된 IR | profileless patch 로그에 `controller-ir.json` 기록 |
 | Validation Tool | `agent/tools/langchain_wrappers.py` 내부 | project, targets | `make generate/manifests/test` 결과 | 빌드 산출물 생성 가능 |
-| E2E Runner | `agent/tools/e2e_runner.py` | project, sample, profile | kind e2e 결과 | `--execute`일 때만 클러스터 조작 |
 | Kind Deployment | `agent/tools/kind_deployment_runner.py` | profile capability, project | Controller Deployment와 lifecycle 검증 | `--kind-deploy --execute`일 때만 실제 배포 |
 | Tool Validator | `agent/tool_validator.py` | LLM JSON, Tool plan, arguments | validated/rejected/deferred calls | schema, allowlist, mode, path 검증 |
 | Execution Engine | `agent/execution_engine.py` | validated Tool plan, capability context | ordered Tool results and timings | resume, 실행 순서, 첫 실패 중단 |
@@ -472,14 +471,13 @@ python3 agent/langchain_agent.py \
 | 계층 | 역할 | 현재 예 |
 | --- | --- | --- |
 | Core Agent | Operator 종류와 무관한 공통 절차를 수행 | `spec_generator.py`, `command_planner.py`, `scaffold_runner.py` |
-| Profile/Example | 특정 Operator 패턴의 sample, patch, e2e, warning 규칙을 정의 | `profiles/trainingjob.yaml`, `profiles/rediscache.yaml` |
+| Profile/Example | 특정 Operator 패턴의 sample과 kind 검증 설정을 정의 | `profiles/trainingjob.yaml`, `profiles/rediscache.yaml` |
 
 TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증용 profile입니다. RedisCache는 StatefulSet/Service 기반 Operator로 확장하기 위한 예시 profile입니다.
 
 범용 생성과 lifecycle 검증은 행동 IR, resource catalog,
-`kind_deployment_runner.py`와 validator 계약을 재사용합니다. legacy
-`e2e_runner.py`의 Job/Pod/PVC 검증은 `job-workload-v1` profile을 명시한 경우에만
-노출되며 특정 Custom Resource 이름이나 CRD를 기본값으로 사용하지 않습니다.
+`kind_deployment_runner.py`와 `managed-resources` validator 계약을 재사용합니다.
+리소스별 구형 e2e adapter는 제거했으며 profile도 동일한 공통 검증 경계를 사용합니다.
 
 전체 파이프라인은 다음과 같습니다.
 
@@ -626,54 +624,35 @@ python3 agent/tools/artifact_patcher.py \
 
 실행 로그와 summary는 `logs/patch/<timestamp>/` 아래에 저장됩니다.
 
-생성된 Operator가 실제 Kubernetes 클러스터에서 동작하는지 kind 기반 e2e runner로 확인할 수 있습니다. 기본 동작은 dry-run입니다.
+생성된 Operator가 실제 Kubernetes 클러스터에서 동작하는지는 Web 결과 화면의
+`Kubernetes에서 확인` 또는 공통 kind runner로 검증합니다. Docker daemon, kind,
+kubectl이 준비되어 있어야 하며 Web에서는 실패 원인과 재시도 가능 여부를 안내합니다.
 
 ```bash
-python3 agent/tools/e2e_runner.py \
-  --profile profiles/trainingjob.yaml \
+python3 agent/tools/kind_deployment_runner.py \
   --project workspace/generated-operators/trainingjob-operator \
   --cluster-name trainingjob-e2e \
   --sample workspace/generated-operators/trainingjob-operator/config/samples/ml_v1alpha1_trainingjob.yaml \
+  --validator managed-resources \
+  --validator-config '{"resource":"trainingjob"}' \
   --dry-run
 ```
 
-실제 kind 클러스터와 kubectl 명령을 사용하려면 `--execute`를 명시합니다.
+실제 kind 클러스터 검증은 `--dry-run`을 제거해 실행합니다.
 
 ```bash
-python3 agent/tools/e2e_runner.py \
-  --profile profiles/trainingjob.yaml \
+python3 agent/tools/kind_deployment_runner.py \
   --project workspace/generated-operators/trainingjob-operator \
   --cluster-name trainingjob-e2e \
   --sample workspace/generated-operators/trainingjob-operator/config/samples/ml_v1alpha1_trainingjob.yaml \
-  --execute
+  --validator managed-resources \
+  --validator-config '{"resource":"trainingjob"}'
 ```
 
-기존 sample 리소스를 지우고 새 Job spec을 깨끗하게 검증하려면 `--clean`을 함께 사용합니다. 기본적으로 PVC는 유지하며, PVC까지 삭제하려면 `--delete-pvc`를 추가합니다.
+일반적인 사용에서는 validator JSON을 직접 작성할 필요가 없습니다. Agent와 Web이
+생성된 Controller IR에서 검증 계약을 만들고 작업별 artifacts에 결과를 격리합니다.
 
-```bash
-python3 agent/tools/e2e_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --profile profiles/trainingjob.yaml \
-  --clean \
-  --dry-run
-```
-
-```bash
-python3 agent/tools/e2e_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --profile profiles/trainingjob.yaml \
-  --clean \
-  --execute
-```
-
-legacy e2e adapter는 특정 리소스 기본값을 추측하지 않습니다. 반드시
-`e2e.validator: job-workload-v1` 계약이 있는 profile을 `--profile`로
-전달해야 합니다. 다른 관리 리소스는 공통 `kind_deployment_runner.py`와
-profile별 validator를 사용합니다.
-
-e2e 로그와 summary는 `logs/e2e/<timestamp>/` 아래에 저장됩니다.
-
-저장된 scaffold, patch, e2e 로그는 log analyzer로 요약할 수 있습니다. analyzer는 `summary.json`을 먼저 읽고, 실패 단계가 있으면 해당 stdout/stderr 로그를 함께 확인하여 실패 원인과 수정 방향을 Markdown으로 생성합니다.
+저장된 scaffold, patch, kind 로그는 log analyzer로 요약할 수 있습니다. analyzer는 `summary.json`을 먼저 읽고, 실패 단계가 있으면 해당 stdout/stderr 로그를 함께 확인하여 실패 원인과 수정 방향을 Markdown으로 생성합니다.
 
 ```bash
 python3 agent/tools/log_analyzer.py \
@@ -1144,7 +1123,7 @@ image load, cluster 준비, install/deploy, readiness, RBAC, lifecycle 검증 �
 RBAC 허용 목록과 wildcard 거부, 삭제 정책, finalizer, observedGeneration/Conditions를
 동일한 차원으로 기록합니다. Quick CI의 `legacy-usage` gate는
 `config/legacy-path-policy.yaml`에 승인되지 않은 legacy 참조가 추가되는 것을 막고
-참조 개수를 artifact로 남깁니다.
+참조 개수를 artifact로 남깁니다. 현재 구형 Job 전용 e2e adapter 참조는 0개입니다.
 
 Full CI는 runtime evidence로 capability별 `stable`, `beta`, `experimental`을
 산출해 `capability-matrix.json`에 저장합니다. Web job은 별도로 제출·queue·실행·전체
@@ -1175,7 +1154,7 @@ GitHub Actions 분리:
 
 `full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
 
-profileless kind matrix는 10개 요구사항에서 Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC, ServiceAccount, Role, ClusterRole의 공통 lifecycle과 조합형 workload primitive를 검증합니다. read-only Deployment 시나리오는 외부 리소스 변경 watch, status 반영, 쓰기 RBAC 거부와 retain 삭제 정책을 확인합니다. ClusterRole 시나리오는 전체 API group 기반 finalizer 등록, cluster-scoped 리소스의 명시적 삭제, finalizer 제거 후 Custom Resource 삭제, restore까지 실제 kind에서 확인합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
+profileless kind matrix는 13개 요구사항에서 ConfigMap, Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC, ServiceAccount, Role, ClusterRole의 공통 lifecycle과 조합형 workload primitive를 검증합니다. read-only Deployment 시나리오는 외부 리소스 변경 watch, status 반영, 쓰기 RBAC 거부와 retain 삭제 정책을 확인합니다. ClusterRole 시나리오는 전체 API group 기반 finalizer 등록, cluster-scoped 리소스의 명시적 삭제, finalizer 제거 후 Custom Resource 삭제, restore까지 실제 kind에서 확인합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
 
 빠른 정책/캐시 검증:
 
@@ -1249,7 +1228,7 @@ python3 agent/evaluation/profileless_compile_runner.py \
   --output-dir evaluation/results/profileless-compile/local
 ```
 
-현재 matrix의 14개 요구사항마다 `spec 생성 → capability 확인 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. kind matrix의 모든 요구사항을 compile matrix에 포함해 runtime 검증에서 scaffold와 compile을 반복하지 않습니다. aliased workload fixture는 `variables`, `limits`, `claimRef`처럼 primitive의 기본 필드명과 다른 입력도 명시된 target 동작을 기준으로 추론하는지 확인합니다. NetworkPolicy, ServiceAccount, Role, ClusterRole, HorizontalPodAutoscaler는 catalog 항목만으로 추가한 일반화 증거입니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
+현재 compile matrix의 17개 요구사항마다 `spec 생성 → capability 확인 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. kind matrix의 모든 요구사항을 compile matrix에 포함해 runtime 검증에서 scaffold와 compile을 반복하지 않습니다. aliased workload fixture는 `variables`, `limits`, `claimRef`처럼 primitive의 기본 필드명과 다른 입력도 명시된 target 동작을 기준으로 추론하는지 확인합니다. NetworkPolicy, ServiceAccount, Role, ClusterRole, HorizontalPodAutoscaler는 catalog 항목만으로 추가한 일반화 증거입니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
 
 생성된 profileless Operator matrix를 실제 kind에서 lifecycle까지 확인:
 

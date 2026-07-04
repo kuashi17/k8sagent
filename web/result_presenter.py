@@ -76,6 +76,15 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         discovery_errors,
     ) = capability_review(summary)
     result_status = str(shared.get("status") or "")
+    if not result_status:
+        if summary.get("runStatus") == "clarification-required":
+            result_status = "clarification-required"
+        elif errors:
+            result_status = "failed"
+        elif summary.get("agentMode") == "dry-run":
+            result_status = "planned"
+        else:
+            result_status = "succeeded"
     failure_context = summary.get("failureContext") or {}
     error_code = str(failure_context.get("errorCode") or "")
     error_contract = get_error_definition(error_code) if error_code else None
@@ -151,6 +160,7 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
                 succeeded
                 and summary.get("agentMode") == "dry-run"
                 and job.get("jobType") == "requirement"
+                and result_status == "planned"
             )
         ),
         capability_proposal=proposal_path,
@@ -158,6 +168,7 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
         capability_resources=proposal_resources,
         capability_discovery=discovery,
         capability_discovery_errors=discovery_errors,
+        needs_clarification=result_status == "clarification-required",
     )
 
 

@@ -12,7 +12,6 @@ from agent.error_taxonomy import normalize_tool_result
 from agent.tool_validator import validate_planned_tool_calls
 from agent.tools import langchain_wrappers as tools
 from agent.tools.resource_catalog import load_resource_catalog
-from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 
 
 TOOL_ORDER = {
@@ -22,7 +21,6 @@ TOOL_ORDER = {
     "scaffold_runner": 30,
     "artifact_patcher": 40,
     "validation": 50,
-    "e2e_runner": 60,
     "kind_deployment": 70,
 }
 
@@ -232,22 +230,6 @@ def build_supported_calls(
             ),
         },
     }
-    legacy_e2e = selected_profile.get("e2e") or {}
-    if profile_path and legacy_e2e.get("validator") == JOB_WORKLOAD_VALIDATOR:
-        supported_calls["e2e_runner"] = {
-            "mutating": True,
-            "requiredArgs": ["input", "profile"],
-            "arguments": {
-                "input": generated["operatorSpec"],
-                "profile": profile_path,
-                "execute": mutating_execute,
-            },
-            "call": lambda: tools.e2e_runner(
-                generated["operatorSpec"],
-                profile_path,
-                execute=mutating_execute,
-            ),
-        }
     kind_deployment = selected_profile.get("kindDeployment") or {}
     if context.get("kindDeploymentRequested") and kind_deployment.get("enabled"):
         supported_calls["kind_deployment"] = build_kind_deployment_call(

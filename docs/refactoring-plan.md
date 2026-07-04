@@ -14,7 +14,7 @@
 | `agent/tools/command_planner.py` | Kubebuilder 명령 계획 생성 | 범용 core | 없음 |
 | `agent/tools/scaffold_runner.py` | scaffold, preflight, generate/manifests/test 실행 | 범용 core | 환경 호환용 Makefile/test patch가 정책으로 섞임 |
 | `agent/tools/artifact_patcher.py` | API 타입, sample, RBAC marker 보정 | 부분 범용 | sample 기본값, Job/Pod/PVC RBAC 보강, PVC/path/image 추론 |
-| `agent/tools/e2e_runner.py` | legacy Job workload e2e | profile 계약 adapter | `job-workload-v1`이 선언한 CRD, Job 이름, Pod label, GPU/PVC/env 검증 |
+| `agent/tools/kind_deployment_runner.py` | 공통 kind lifecycle | 범용 core | IR 기반 managed/observed resource 검증 |
 | `agent/tools/log_analyzer.py` | summary/log 분석 리포트 생성 | 부분 범용 | TrainingJob 재실행 명령과 e2e 단계명 일부 하드코딩 |
 
 ## Core로 유지할 부분
@@ -41,13 +41,10 @@
 
 ## 리팩터링 우선순위
 
-### 1. `e2e_runner.py` — 1차 완료
+### 1. 공통 kind runner — 완료
 
-가장 TrainingJob 특화가 강한 파일입니다.
-
-현재는 특정 CR/CRD fallback을 제거했습니다. Pydantic으로 검증된
-`job-workload-v1` profile이 있을 때만 Agent Tool capability에 노출되며,
-그 밖의 리소스는 공통 `kind_deployment_runner.py`로 검증합니다.
+구형 TrainingJob 전용 runner를 제거하고 모든 profile과 profileless 요구사항을
+공통 `kind_deployment_runner.py`와 `managed-resources` 계약으로 통합했습니다.
 
 분리 목표:
 
@@ -75,7 +72,7 @@ summary/log 분석은 core로 유지하되, TrainingJob 단계명과 재실행 �
 ## 1차 리팩터링 목표
 
 - `profiles/trainingjob.yaml`과 `profiles/rediscache.yaml`을 profile 정의의 출발점으로 사용
-- `e2e_runner.py`가 검증된 profile 계약만 읽도록 강제 (완료)
+- 구형 Job 전용 runner와 profile 계약 제거 (완료)
 - TrainingJob Job spec validation 규칙을 profile 파일로 이전 (완료)
 - README와 ARCHITECTURE에 core/profile 구분 명확화
 

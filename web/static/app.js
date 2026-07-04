@@ -23,6 +23,11 @@
   const requirementInput = document.getElementById("requirement_text");
   document.querySelectorAll("[data-requirement-example]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (
+        requirementInput.value.trim()
+        && requirementInput.value !== button.dataset.requirementExample
+        && !window.confirm("작성 중인 내용이 예제로 바뀝니다. 계속할까요?")
+      ) return;
       requirementInput.value = button.dataset.requirementExample;
       requirementInput.focus();
       requirementInput.setSelectionRange(

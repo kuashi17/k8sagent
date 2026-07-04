@@ -30,7 +30,7 @@ User requirement
 - `command_planner.py`: 스펙을 Kubebuilder 실행 계획으로 변환
 - `scaffold_runner.py`: scaffold dry-run, preflight, execute 수행
 - `artifact_patcher.py`: API 타입, sample YAML, RBAC marker 보정
-- `e2e_runner.py`: kind 기반 e2e 검증
+- `kind_deployment_runner.py`: 공통 kind lifecycle 검증
 - `log_analyzer.py`: 실행 로그와 summary 분석
 
 Agent 계층은 이 도구를 직접 대체하지 않는다. 대신 각 도구를 Tool로 감싸고, 요구사항과 검색 문서를 바탕으로 어떤 도구를 어떤 순서로 호출할지 결정한다.

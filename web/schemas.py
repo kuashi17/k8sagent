@@ -128,6 +128,7 @@ class RunResultView(WebModel):
     capability_resources: list[str] = Field(default_factory=list)
     capability_discovery: list[str] = Field(default_factory=list)
     capability_discovery_errors: list[str] = Field(default_factory=list)
+    needs_clarification: bool = False
 
 
 class LogAnalysisView(WebModel):

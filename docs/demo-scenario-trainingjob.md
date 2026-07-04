@@ -164,14 +164,12 @@ make test
 
 - 생성 결과가 실제 Kubebuilder 검증 명령을 통과하는지 확인합니다.
 
-## 8. clean e2e 실행
+## 8. 공통 kind lifecycle 실행
 
 ```bash
-python3 agent/tools/e2e_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --profile profiles/trainingjob.yaml \
-  --clean \
-  --execute
+python3 agent/evaluation/profileless_kind_runner.py \
+  --requirement requirements/trainingjob.txt \
+  --output-dir evaluation/results/demo-trainingjob
 ```
 
 기대 결과:

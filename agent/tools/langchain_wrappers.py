@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 from agent.error_taxonomy import normalize_tool_result
-from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 
 try:  # Optional dependency for future real LangChain Agent execution.
     from langchain_core.tools import Tool
@@ -139,39 +138,6 @@ def artifact_patcher(
     ]
     if profile:
         command.extend(["--profile", profile])
-    command.append("--execute" if execute else "--dry-run")
-    return run_command(command)
-
-
-def e2e_runner(
-    input_spec: str | None = None,
-    profile: str | None = None,
-    project: str | None = None,
-    cluster_name: str | None = None,
-    sample: str | None = None,
-    *,
-    clean: bool = False,
-    delete_pvc: bool = False,
-    execute: bool = False,
-) -> dict[str, Any]:
-    if not profile:
-        raise ValueError(
-            f"e2e_runner requires a profile with the {JOB_WORKLOAD_VALIDATOR} contract"
-        )
-    command = ["python3", "agent/tools/e2e_runner.py"]
-    if input_spec:
-        command.extend(["--input", input_spec])
-    command.extend(["--profile", profile])
-    if project:
-        command.extend(["--project", project])
-    if cluster_name:
-        command.extend(["--cluster-name", cluster_name])
-    if sample:
-        command.extend(["--sample", sample])
-    if clean:
-        command.append("--clean")
-    if delete_pvc:
-        command.append("--delete-pvc")
     command.append("--execute" if execute else "--dry-run")
     return run_command(command)
 

@@ -110,12 +110,10 @@ python3 scripts/run-regression-tests.py --suite full
 6. RAG 품질은 fixture 확대와 reranker 성능 측정이 더 필요하다.
 7. Jenkins, Harbor, Argo CD 연계는 아직 문서/확장 단계다.
 
-## Legacy 유지 결정
+## Legacy 정리 결과
 
-`job-workload-v1` 호환 adapter의 참조 4개는 이번 릴리스에서 유지한다. generic
-managed-resources validator가 Job/Pod/PVC의 기존 profile 계약을 완전히 대체할 때
-adapter, profile 선언과 전용 테스트를 함께 제거한다. Quick CI는 현재 상한 4개와
-목표 0개를 강제하므로 신규 legacy 참조는 허용하지 않는다.
+Job 전용 호환 adapter와 관련 계약·테스트를 제거했습니다. profile과 profileless
+경로 모두 generic `managed-resources` validator를 사용하며 추적 참조는 0개입니다.
 
 ## 내부 fixture의 위치
 

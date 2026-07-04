@@ -9,7 +9,7 @@ metadata:
 
 For a new Operator requirement, call `spec_generator` to create `generated/<kind>-operator-spec.yaml`, then call
 `command_planner` to create `generated/<kind>-command-plan.md`, then call `scaffold_runner` in dry-run mode. Do not call
-`artifact_patcher`, `e2e_runner`, or destructive commands before the scaffold exists and the user explicitly requests
+`artifact_patcher`, `kind_deployment`, or destructive commands before the scaffold exists and the user explicitly requests
 execution.
 
 ## Execute Tool Plan

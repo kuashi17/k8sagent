@@ -319,6 +319,19 @@
   </section>
   {% endif %}
 
+  {% if result_view.needs_clarification %}
+  <section class="card">
+    <p class="eyebrow">요구사항 보완</p>
+    <h2>부족한 내용을 추가해서 다시 계획해 보세요</h2>
+    <p class="muted">위 질문에 대한 답을 기존 문장에 추가하면 됩니다.</p>
+    <form method="post" action="/run-requirement" id="clarification-form">
+      <textarea name="requirement_text" aria-label="보완할 요구사항">{{ requirement_text }}</textarea>
+      <input type="hidden" name="mode" value="dry-run">
+      <button class="primary-button" type="submit">보완한 내용으로 다시 계획</button>
+    </form>
+  </section>
+  {% endif %}
+
   {% if result_view.capability_proposal %}
   <section class="card capability-review">
     <p class="eyebrow">별도 승인 필요</p>

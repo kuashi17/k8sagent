@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 
 mode = sys.argv[sys.argv.index("--mode") + 1]
+requirement_path = Path(sys.argv[sys.argv.index("--requirement") + 1])
+requirement_text = requirement_path.read_text(encoding="utf-8")
 log_dir = Path("logs") / "agent" / f"journey-{mode}"
 log_dir.mkdir(parents=True, exist_ok=True)
 tools = ["spec_generator", "command_planner"]
@@ -49,6 +51,12 @@ summary = {
         "output": {"beginnerSummary": "안전한 작업 흐름을 완료했습니다."}
     },
 }
+if "정보가 부족" in requirement_text:
+    summary["runStatus"] = "clarification-required"
+    summary["missingInformation"] = ["domain", "group", "version"]
+    summary["nextRecommendedActions"] = [
+        "API domain, group, version을 추가해 주세요."
+    ]
 (log_dir / "summary.json").write_text(
     json.dumps(summary, ensure_ascii=False), encoding="utf-8"
 )
@@ -66,6 +74,50 @@ print(f"Agent logs: {log_dir}", flush=True)
 
 
 class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
+    async def test_incomplete_requirement_can_be_edited_and_replanned(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "agent").mkdir()
+            (root / "profiles").mkdir()
+            agent = root / "agent" / "langchain_agent.py"
+            agent.write_text(textwrap.dedent(FAKE_AGENT), encoding="utf-8")
+            manager = JobManager(
+                root,
+                root / "logs" / "web" / "jobs",
+                execution_mode="external",
+            )
+            workflows = WorkflowService(
+                root,
+                root / "logs" / "web",
+                root / "profiles",
+            )
+            requirement = "정보가 부족한 Deployment Operator를 만들고 싶습니다."
+
+            with patch("web.app.jobs", manager), patch(
+                "web.app.workflows", workflows
+            ), patch("web.app.REPO_ROOT", root), patch(
+                "web.app.PROFILE_DIR", root / "profiles"
+            ):
+                async with AsyncClient(
+                    transport=ASGITransport(app=app),
+                    base_url="http://testserver",
+                ) as client:
+                    response = await client.post(
+                        "/run-requirement",
+                        data={"requirement_text": requirement},
+                        follow_redirects=False,
+                    )
+                    job = manager.claim_next("journey-worker")
+                    self.assertIsNotNone(job)
+                    manager.run_claimed(job)
+
+                    page = await client.get(response.headers["location"])
+
+            self.assertIn("부족한 내용을 추가해서 다시 계획", page.text)
+            self.assertIn(requirement, page.text)
+            self.assertIn("보완한 내용으로 다시 계획", page.text)
+            self.assertNotIn(">Operator 코드 생성 및 검증</button>", page.text)
+
     async def test_plan_review_execute_and_result_flow(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

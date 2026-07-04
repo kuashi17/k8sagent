@@ -45,7 +45,8 @@
 
 scaffold가 생성되면 `artifact_patcher.py`가 스펙을 기준으로 API 타입, sample YAML, RBAC marker를 보정하고 `make generate`, `make manifests`, `make test`를 실행합니다.
 
-마지막으로 `e2e_runner.py`가 kind 클러스터에서 clean e2e를 실행합니다. 기존 테스트 리소스를 삭제하고, CRD를 설치하고, Controller를 실행하고, sample TrainingJob을 생성한 뒤 Kubernetes Job이 생성되는지 확인합니다.
+마지막으로 공통 kind runner가 CRD와 Controller를 배포하고 sample Custom Resource의
+생성·수정·drift 복구·삭제 lifecycle을 validator 계약에 따라 확인합니다.
 
 ## clean e2e 성공 결과 설명
 
@@ -140,8 +141,8 @@ python3 agent/langchain_agent.py \
 
 ## 향후 확장 계획
 
-범용 lifecycle은 공통 kind runner와 validator로 분리되었고, legacy Job e2e는
-명시적인 `job-workload-v1` profile 계약으로 격리되었습니다.
+범용 lifecycle은 공통 kind runner와 validator로 통합됐고 구형 Job 전용 e2e
+adapter는 제거됐습니다.
 
 우선순위는 다음과 같습니다.
 

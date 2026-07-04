@@ -21,10 +21,9 @@ def build_requirement_safety_evaluation(
         "scaffold_runner",
         "artifact_patcher",
         "validation",
-        "e2e_runner",
         "kind_deployment",
     ]
-    mutating_tools = {"scaffold_runner", "artifact_patcher", "e2e_runner", "kind_deployment"}
+    mutating_tools = {"scaffold_runner", "artifact_patcher", "kind_deployment"}
     validated = execution.get("validatedToolCalls") or []
     rejected = execution.get("rejectedToolCalls") or []
     deferred = execution.get("deferredToolCalls") or []

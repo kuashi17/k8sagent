@@ -74,20 +74,17 @@ export PATH="/home/ch0618/k8sagent/.tools/bin:$PATH"
 
 ### 기존 리소스 정리 필요 여부
 
-clean e2e는 기존 리소스를 자동 정리한다.
+공통 kind 검증은 격리된 namespace와 lifecycle 정리를 사용한다.
 
 ```bash
-python3 agent/tools/e2e_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --profile profiles/trainingjob.yaml \
-  --clean \
-  --dry-run
+python3 agent/evaluation/profileless_kind_runner.py \
+  --requirement requirements/trainingjob.txt \
+  --output-dir evaluation/results/demo-trainingjob
 ```
 
 성공 기준:
 
-- 삭제 예정 리소스와 재생성 계획을 확인할 수 있다.
-- PVC는 기본적으로 유지되며, PVC까지 지우려면 `--delete-pvc`를 사용한다.
+- 생성·수정·삭제 정책과 runtime evidence를 결과 JSON에서 확인할 수 있다.
 
 ## 2. 시연 순서 체크리스트
 
@@ -208,14 +205,12 @@ cd /home/ch0618/k8sagent
 - 세 명령 모두 성공
 - CRD/RBAC manifest와 Go test 통과 확인
 
-### 9. e2e_runner clean execute
+### 9. 공통 kind lifecycle 실행
 
 ```bash
-python3 agent/tools/e2e_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --profile profiles/trainingjob.yaml \
-  --clean \
-  --execute
+python3 agent/evaluation/profileless_kind_runner.py \
+  --requirement requirements/trainingjob.txt \
+  --output-dir evaluation/results/demo-trainingjob
 ```
 
 체크:

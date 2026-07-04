@@ -38,7 +38,7 @@ flowchart TD
     W --> T3["scaffold_runner"]
     W --> T4["artifact_patcher"]
     W --> T5["validation"]
-    W --> T6["e2e_runner"]
+    W --> T6["kind_deployment"]
     W --> T7["log_analyzer"]
 ```
 
@@ -186,4 +186,3 @@ logs/agent/<timestamp>/agent-report.md
 이 프로젝트는 “Operator 개발 절차를 아는 AI 진행자”와
 “실제 Kubebuilder 작업을 수행하는 자동화 Tool”을 연결한 구조입니다.
 ```
-

@@ -1,4 +1,5 @@
 requirements:
+  - requirements/appconfig.txt
   - requirements/redis-cache.txt
   - requirements/web-service.txt
   - requirements/secret-sync.txt

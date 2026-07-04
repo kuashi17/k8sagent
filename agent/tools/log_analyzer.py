@@ -307,29 +307,9 @@ def count_steps(steps: list[dict[str, Any]]) -> dict[str, int]:
 
 def recommended_command(summary: dict[str, Any], log_dir: Path) -> str:
     if "clusterName" in summary or "context" in summary:
-        command = ["python3", "agent/tools/e2e_runner.py"]
-        input_path = summary.get("input")
-        profile_path = nested_get(summary, ["profileConfig", "profilePath"])
-        if not profile_path:
-            return insufficient_rerun_info()
-        if input_path:
-            command.extend(["--input", str(input_path)])
-        else:
-            project = summary.get("projectDir")
-            cluster = summary.get("clusterName")
-            sample = summary.get("sample")
-            if not (project and cluster and sample):
-                return insufficient_rerun_info()
-            command.extend(["--project", str(project), "--cluster-name", str(cluster), "--sample", str(sample)])
-        command.extend(["--profile", str(profile_path)])
-        if summary.get("clean"):
-            command.append("--clean")
-        if summary.get("deletePvc"):
-            command.append("--delete-pvc")
-        if summary.get("skipPvc"):
-            command.append("--skip-pvc")
-        command.append("--execute")
-        return shell_join(command)
+        # Historical cluster summaries do not contain the validator contract
+        # required by the generic kind runner. Never invent an unsafe rerun.
+        return insufficient_rerun_info()
 
     if "targetDir" in summary or "workspace" in summary:
         input_path = summary.get("input")

@@ -33,15 +33,24 @@ def load_capability_support() -> dict[str, CapabilitySupport]:
     evidence_run = data.get("evidenceRun")
     last_validated = str(data.get("lastValidatedAt") or "")
     evidence_source = str(data.get("evidenceSource") or "")
+    resource_evidence = data.get("resourceEvidence") or {}
     limitations = data.get("limitations") or {}
     return {
         str(resource): CapabilitySupport(
             resource=str(resource),
             level=str(level),
-            evidenceRun=int(evidence_run) if evidence_run else None,
-            lastValidatedAt=last_validated,
+            evidenceRun=evidence_run_for(
+                resource_evidence.get(resource), evidence_run
+            ),
+            lastValidatedAt=str(
+                (resource_evidence.get(resource) or {}).get("lastValidatedAt")
+                or last_validated
+            ),
             evidence={
-                "source": evidence_source,
+                "source": str(
+                    (resource_evidence.get(resource) or {}).get("source")
+                    or evidence_source
+                ),
                 "criteria": grade_criteria(str(level)),
             },
             limitations=[
@@ -51,6 +60,14 @@ def load_capability_support() -> dict[str, CapabilitySupport]:
         )
         for resource, level in (data.get("levels") or {}).items()
     }
+
+
+def evidence_run_for(resource: Any, default: Any) -> int | None:
+    if isinstance(resource, dict) and "evidenceRun" in resource:
+        value = resource.get("evidenceRun")
+    else:
+        value = default
+    return int(value) if value else None
 
 
 def support_for(resources: list[str]) -> list[dict[str, Any]]:

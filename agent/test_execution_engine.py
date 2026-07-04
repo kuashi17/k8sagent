@@ -15,7 +15,6 @@ from agent.execution_engine import (
     order_validated_tool_calls,
     execution_result,
 )
-from agent.tools.e2e_profile_contract import JOB_WORKLOAD_VALIDATOR
 
 
 def context(target: str = "workspace/generated-operators/example") -> dict:
@@ -108,24 +107,6 @@ class ExecutionEngineTest(unittest.TestCase):
         self.assertNotIn("kind_deployment", build_supported_calls(ctx, "dry-run", False))
         ctx["kindDeploymentRequested"] = True
         self.assertIn("kind_deployment", build_supported_calls(ctx, "dry-run", False))
-
-    def test_legacy_e2e_requires_explicit_validator_contract(self) -> None:
-        ctx = context()
-        self.assertNotIn(
-            "e2e_runner",
-            build_supported_calls(ctx, "dry-run", False),
-        )
-
-        ctx["selectedProfile"]["e2e"] = {
-            "validator": JOB_WORKLOAD_VALIDATOR
-        }
-        supported = build_supported_calls(ctx, "dry-run", False)
-
-        self.assertIn("e2e_runner", supported)
-        self.assertEqual(
-            supported["e2e_runner"]["requiredArgs"],
-            ["input", "profile"],
-        )
 
     def test_known_capability_never_uses_proposal_approval(self) -> None:
         dry_run = build_supported_calls(context(), "dry-run", False)

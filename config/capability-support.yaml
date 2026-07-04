@@ -2,8 +2,12 @@ version: 1
 evidenceRun: 28321990364
 lastValidatedAt: '2026-06-28T21:24:24+09:00'
 evidenceSource: full-ci-runtime-evidence
+resourceEvidence:
+  ConfigMap:
+    evidenceRun:
+    lastValidatedAt: '2026-07-03T15:38:50+09:00'
+    source: web-profileless-kind
 limitations:
-  ConfigMap: [No profileless kind evidence is recorded.]
   PersistentVolumeClaim:
     - Safe mutable drift evidence is not available.
     - storageClassName and access modes are immutable; changing them requires an explicit recreate or retain decision.
@@ -14,7 +18,7 @@ limitations:
   HorizontalPodAutoscaler: [No profileless kind evidence is recorded.]
   Pod: [No profileless kind evidence is recorded.]
 levels:
-  ConfigMap: experimental
+  ConfigMap: stable
   Secret: stable
   PersistentVolumeClaim: beta
   CronJob: stable
