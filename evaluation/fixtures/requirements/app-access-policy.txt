@@ -1,0 +1,30 @@
+AppAccessPolicy Operator를 만들어 주세요.
+
+API는 security.sample.io/v1alpha1입니다.
+Custom Resource 이름은 AppAccessPolicy입니다.
+
+spec은 다음 값을 가집니다.
+- appSelector: map[string]string
+- allowedFromNamespace: string
+- allowedPort: int32
+- protocol: string
+
+status는 다음 값을 가집니다.
+- phase: string
+- networkPolicyName: string
+- message: string
+
+Controller는 NetworkPolicy를 생성하고 관리한다.
+- spec.appSelector -> NetworkPolicy.spec.podSelector.matchLabels
+- spec.allowedFromNamespace -> NetworkPolicy.spec.ingress[0].from[0].namespaceSelector.matchExpressions[0].values[0]
+- spec.allowedPort -> NetworkPolicy.spec.ingress[0].ports[0].port
+- spec.protocol -> NetworkPolicy.spec.ingress[0].ports[0].protocol
+
+NetworkPolicy가 외부에서 변경되면 spec 기준으로 복구한다.
+AppAccessPolicy가 삭제되면 NetworkPolicy도 함께 삭제한다.
+Deployment, Pod, Service는 생성하거나 관리하지 않는다.
+
+검증 명령:
+- make generate
+- make manifests
+- make test

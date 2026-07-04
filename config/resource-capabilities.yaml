@@ -317,9 +317,23 @@ resources:
         podSelector:
           matchLabels: {}
         policyTypes: [Ingress]
+        ingress:
+          - from:
+              - namespaceSelector:
+                  matchExpressions:
+                    - key: kubernetes.io/metadata.name
+                      operator: In
+                      values: [default]
+            ports:
+              - port: 1
+                protocol: TCP
     fieldMappings:
       - {source: podSelectorLabels, target: spec.podSelector.matchLabels, transform: string-map}
+      - {source: appSelector, target: spec.podSelector.matchLabels, transform: string-map}
       - {source: policyTypes, target: spec.policyTypes, transform: string-slice}
+      - {source: allowedFromNamespace, target: "spec.ingress[0].from[0].namespaceSelector.matchExpressions[0].values[0]"}
+      - {source: allowedPort, target: "spec.ingress[0].ports[0].port", transform: int64}
+      - {source: protocol, target: "spec.ingress[0].ports[0].protocol"}
     statusMappings:
       - {field: networkPolicyName, source: metadata.name, resourceName: true}
 

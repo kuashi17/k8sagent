@@ -36,6 +36,7 @@ RESOURCE_API_GROUPS = {
     "deployments": "apps",
     "jobs": "batch",
     "namespaces": "",
+    "networkpolicies": "networking.k8s.io",
     "persistentvolumeclaims": "",
     "pods": "",
     "secrets": "",
@@ -56,6 +57,8 @@ RESOURCE_ALIASES = {
     "jobs": "jobs",
     "namespace": "namespaces",
     "namespaces": "namespaces",
+    "networkpolicy": "networkpolicies",
+    "networkpolicies": "networkpolicies",
     "persistentvolumeclaim": "persistentvolumeclaims",
     "persistentvolumeclaims": "persistentvolumeclaims",
     "pvc": "persistentvolumeclaims",
@@ -829,8 +832,43 @@ def has_read_intent(line: str) -> bool:
 def is_negative_mutation(line: str) -> bool:
     return has_resource_mutation_intent(line) and any(
         token in line
-        for token in ("않습니다", "않는다", "안 됩니다", "안 됩니다", "하지 마", "하면 안")
+        for token in (
+            "않습니다",
+            "않는다",
+            "안 됩니다",
+            "하지 않",
+            "하지 말",
+            "하면 안",
+            "금지",
+            "제외",
+        )
     )
+
+
+def negative_mutation_resources(line: str) -> list[str]:
+    """Return resources governed by an explicit mutation prohibition.
+
+    The scope intentionally includes comma-separated resources before the
+    negative verb, while excluding a positive tail such as
+    "Service를 생성하지 말고 NetworkPolicy만 관리".
+    """
+    denied: list[str] = []
+    pattern = re.compile(
+        r"(?P<operation>생성|만들|관리|수정|변경|갱신|삭제|patch)"
+        r"(?:하거나\s*)?(?:하지\s*(?:않|말|마)|하면\s*안|금지|제외)",
+        re.I,
+    )
+    for match in pattern.finditer(line):
+        prefix = re.split(r"[.!?]\s*", line[: match.start()])[-1]
+        if match.group("operation") == "삭제" and not any(
+            token in prefix
+            for token in ("생성", "만들", "관리", "수정", "변경", "갱신", "patch")
+        ):
+            # "삭제하지 마세요" is a retain policy for a managed resource,
+            # not a prohibition on managing the resource itself.
+            continue
+        denied.extend(extract_k8s_resources(prefix))
+    return unique(denied)
 
 
 def resource_roles_for_line(
@@ -838,7 +876,8 @@ def resource_roles_for_line(
 ) -> tuple[list[str], list[str], list[str]]:
     managed: list[str] = []
     observed: list[str] = []
-    denied: list[str] = []
+    denied: list[str] = negative_mutation_resources(line)
+    denied_set = set(denied)
     # Keep read and write intents local when beginners describe a pipeline in
     # one sentence: "Deployment를 읽고 ConfigMap에 기록".
     role_scoped_line = re.sub(
@@ -850,17 +889,22 @@ def resource_roles_for_line(
         resources = extract_k8s_resources(clause)
         if not resources:
             continue
-        if is_negative_mutation(clause):
-            denied.extend(resources)
+        allowed_resources = [
+            resource for resource in resources if resource not in denied_set
+        ]
+        if not allowed_resources:
             if has_read_intent(clause):
                 observed.extend(resources)
             continue
+        if is_negative_mutation(clause) and not denied_set:
+            denied.extend(allowed_resources)
+            continue
         if has_read_intent(clause):
-            observed.extend(resources)
+            observed.extend(allowed_resources)
             continue
         if not has_resource_mutation_intent(clause):
             continue
-        for resource in resources:
+        for resource in allowed_resources:
             if (
                 resource == "Pod"
                 and not re.search(
@@ -940,6 +984,7 @@ def resource_kind(resource: str) -> str:
         "deployments": "Deployment",
         "jobs": "Job",
         "namespaces": "Namespace",
+        "networkpolicies": "NetworkPolicy",
         "persistentvolumeclaims": "PVC",
         "pods": "Pod",
         "secrets": "Secret",

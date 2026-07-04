@@ -338,3 +338,32 @@ cases:
         - {resource: Deployment, strategy: read-only, ownership: none, deletionPolicy: retain}
       rbac: {deployments: [get, list, watch]}
       forbiddenRbac: {deployments: [create, update, patch, delete]}
+
+  - id: network-policy-with-explicit-exclusions
+    requirement: |
+      AppAccessPolicy Operator를 만들어 주세요.
+      API는 security.sample.io/v1alpha1입니다.
+      Custom Resource 이름은 AppAccessPolicy입니다.
+      spec은 다음 값을 가집니다.
+      - appSelector: map[string]string
+      - allowedFromNamespace: string
+      - allowedPort: int32
+      - protocol: string
+      status는 다음 값을 가집니다.
+      - phase: string
+      - networkPolicyName: string
+      - message: string
+      Controller는 NetworkPolicy를 생성하고 변경 내용을 반영해야 합니다.
+      외부에서 NetworkPolicy가 변경되면 spec 기준으로 복구해야 합니다.
+      불필요하게 Deployment, Pod, Service를 생성하지 말고 NetworkPolicy만 관리해야 합니다.
+    expected:
+      api: {domain: sample.io, group: security, version: v1alpha1, kind: AppAccessPolicy}
+      managedResources: [NetworkPolicy]
+      observedResources: []
+      forbiddenResources: [Service, Deployment, Pod]
+      rbac:
+        networkpolicies: [get, list, watch, create, update, patch, delete]
+      forbiddenRbac:
+        services: [get, list, watch, create, update, patch, delete]
+        deployments: [get, list, watch, create, update, patch, delete]
+        pods: [get, list, watch, create, update, patch, delete]

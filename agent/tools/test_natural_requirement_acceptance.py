@@ -199,6 +199,54 @@ message: string
         self.assertEqual(spec["controller"]["observedResources"], ["Deployment"])
         self.assertFalse(any(item["resource"] == "services" for item in spec["rbac"]["resources"]))
 
+    def test_network_policy_excludes_unwanted_workloads(self) -> None:
+        spec = generated("""
+AppAccessPolicy Operator를 만들어 주세요.
+API는 security.sample.io/v1alpha1입니다.
+Custom Resource 이름은 AppAccessPolicy입니다.
+spec은 다음 값을 가집니다.
+- appSelector: map[string]string
+- allowedFromNamespace: string
+- allowedPort: int32
+- protocol: string
+status는 다음 값을 가집니다.
+- phase: string
+- networkPolicyName: string
+- message: string
+Controller는 AppAccessPolicy를 기준으로 Kubernetes NetworkPolicy를 생성해야 합니다.
+NetworkPolicy는 appSelector에 해당하는 Pod로 들어오는 ingress 트래픽만 허용해야 합니다.
+allowedFromNamespace 값에 해당하는 namespace에서 오는 트래픽만 허용해야 합니다.
+allowedPort와 protocol 값이 NetworkPolicy ingress rule에 반영되어야 합니다.
+AppAccessPolicy의 allowedPort나 protocol이 변경되면 NetworkPolicy도 갱신되어야 합니다.
+외부에서 NetworkPolicy가 변경되면 AppAccessPolicy spec 기준으로 다시 복구해야 합니다.
+AppAccessPolicy가 삭제되면 생성된 NetworkPolicy도 함께 삭제되어야 합니다.
+불필요하게 Deployment, Pod, Service를 생성하지 말고 NetworkPolicy만 관리해야 합니다.
+""")
+        self.assertEqual(
+            spec["api"],
+            {
+                "domain": "sample.io",
+                "group": "security",
+                "version": "v1alpha1",
+                "kind": "AppAccessPolicy",
+            },
+        )
+        self.assertEqual(
+            spec["controller"]["managedResources"],
+            ["NetworkPolicy"],
+        )
+        self.assertEqual(spec["controller"]["observedResources"], [])
+        self.assertEqual(
+            rbac(spec, "networkpolicies"),
+            ["get", "list", "watch", "create", "update", "patch", "delete"],
+        )
+        resources = {
+            item["resource"] for item in spec["rbac"]["resources"]
+        }
+        self.assertTrue(
+            {"services", "deployments", "pods"}.isdisjoint(resources)
+        )
+
     def test_unknown_kind_is_kept_for_discovery(self) -> None:
         spec = generated("""
 DataPipeline이라는 Custom Resource를 만들고 싶습니다.

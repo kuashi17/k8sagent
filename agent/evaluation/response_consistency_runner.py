@@ -78,6 +78,21 @@ def canonical_contract(text: str, source: Path) -> dict[str, Any]:
 def compare_expected(actual: dict[str, Any], expected: dict[str, Any]) -> list[dict[str, Any]]:
     failures: list[dict[str, Any]] = []
     for key, value in expected.items():
+        if key == "forbiddenResources":
+            present = sorted(
+                set(actual.get("managedResources") or [])
+                | set(actual.get("observedResources") or [])
+            )
+            forbidden = sorted(set(present) & set(value))
+            if forbidden:
+                failures.append(
+                    {
+                        "field": "forbiddenResources",
+                        "expected": [],
+                        "actual": forbidden,
+                    }
+                )
+            continue
         if key == "forbiddenRbac":
             for resource, verbs in value.items():
                 present = sorted(set(actual["rbac"].get(resource, [])) & set(verbs))
