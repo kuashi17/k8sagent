@@ -379,10 +379,10 @@
       <input type="hidden" name="approval_parent_job_id" value="{{ job.jobId }}">
       {% if result_view.has_experimental_capability %}
       <div class="alert alert-warning experimental-review">
-        <strong>experimental 관리 기능입니다.</strong>
-        <p>실제 kind lifecycle 증거가 아직 없으므로 생성 코드와 권한 범위를 검토한 뒤 실행하세요.</p>
+        <strong>{{ result_view.experimental_resources|join(", ") }} 관리 패턴은 아직 실험 단계입니다.</strong>
+        <p>새 Custom Resource를 만드는 것 자체가 실험 단계라는 뜻은 아닙니다. 이 Kubernetes 리소스 유형은 실제 kind lifecycle 검증 증거가 아직 부족하므로 생성 코드와 RBAC 권한을 검토한 뒤 실행하세요.</p>
         <label class="capability-confirm">
-          <span>experimental 단계의 제한사항을 확인했습니다.</span>
+          <span>이 관리 패턴의 검증 제한사항을 확인했습니다.</span>
           <input type="checkbox" name="confirm_experimental" required>
         </label>
       </div>
@@ -397,7 +397,7 @@
       {% endif %}
       {% if selected_kind_deploy %}<input type="hidden" name="kind_deploy" value="on">{% endif %}
       {% if selected_resume_existing %}<input type="hidden" name="resume_existing" value="on">{% endif %}
-      <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약 확인 후 코드 생성 및 검증{% elif result_view.has_experimental_capability %}검토 후 experimental 코드 생성 및 검증{% else %}Operator 코드 생성 및 검증{% endif %}</button>
+      <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약 확인 후 코드 생성 및 검증{% elif result_view.has_experimental_capability %}검토 후 {{ result_view.experimental_resources|join(", ") }} 코드 생성 및 검증{% else %}Operator 코드 생성 및 검증{% endif %}</button>
     </form>
     {% elif not result_view.succeeded and job.attempt < job.maxAttempts %}
     <div>

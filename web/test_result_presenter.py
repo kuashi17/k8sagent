@@ -47,6 +47,40 @@ class ResultPresenterTest(unittest.TestCase):
 
         self.assertTrue(result.can_execute)
         self.assertTrue(result.has_experimental_capability)
+        self.assertEqual(
+            result.experimental_resources,
+            ["NetworkPolicy"],
+        )
+
+    def test_new_custom_resource_with_stable_pattern_has_no_warning(self) -> None:
+        result = present_run_result(
+            {
+                "state": "succeeded",
+                "jobType": "requirement",
+                "summary": {
+                    "agentMode": "dry-run",
+                    "agentResult": {
+                        "status": "planned",
+                        "succeeded": True,
+                        "canExecute": True,
+                        "technicalDetails": {
+                            "kind": "CustomerPortal",
+                            "managedResources": ["Deployment"],
+                            "capabilitySupport": [
+                                {
+                                    "resource": "Deployment",
+                                    "level": "stable",
+                                }
+                            ],
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(result.kind, "CustomerPortal")
+        self.assertFalse(result.has_experimental_capability)
+        self.assertEqual(result.experimental_resources, [])
 
     def test_clarification_result_requests_requirement_revision(self) -> None:
         result = present_run_result(

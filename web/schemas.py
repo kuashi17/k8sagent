@@ -125,6 +125,7 @@ class RunResultView(WebModel):
     next_actions: list[str] = Field(default_factory=list)
     capability_support: list[dict[str, Any]] = Field(default_factory=list)
     has_experimental_capability: bool = False
+    experimental_resources: list[str] = Field(default_factory=list)
     beginner_explanation: list[str] = Field(default_factory=list)
     code_explanation: dict[str, Any] = Field(default_factory=dict)
     can_execute: bool = False

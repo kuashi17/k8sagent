@@ -353,9 +353,17 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("마지막 계약 검증:", response.text)
         self.assertIn("실제 kind lifecycle 검증: 아직 없음", response.text)
         self.assertIn('name="confirm_experimental"', response.text)
+        self.assertIn(
+            "NetworkPolicy 관리 패턴은 아직 실험 단계",
+            response.text,
+        )
+        self.assertIn(
+            "새 Custom Resource를 만드는 것 자체가 실험 단계라는 뜻은 아닙니다",
+            response.text,
+        )
         self.assertLess(
             response.text.index(
-                "experimental 단계의 제한사항을 확인했습니다."
+                "이 관리 패턴의 검증 제한사항을 확인했습니다."
             ),
             response.text.index('name="confirm_experimental"'),
         )
@@ -364,7 +372,7 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
             response.text,
         )
         self.assertIn(
-            "검토 후 experimental 코드 생성 및 검증",
+            "검토 후 NetworkPolicy 코드 생성 및 검증",
             response.text,
         )
         self.assertIn("현재 생성된 계획 파일 3개", response.text)

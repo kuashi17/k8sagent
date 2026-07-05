@@ -151,6 +151,12 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             for item in capability_support
             if isinstance(item, dict)
         ),
+        experimental_resources=[
+            str(item.get("resource") or "관리 리소스")
+            for item in capability_support
+            if isinstance(item, dict)
+            and str(item.get("level")) == "experimental"
+        ],
         beginner_explanation=strings(
             technical.get("beginnerExplanation")
         ),
