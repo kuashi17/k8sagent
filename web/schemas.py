@@ -22,6 +22,7 @@ class RequirementRunRequest(WebModel):
     capability_proposal: str = ""
     capability_approval: str = ""
     confirm_capability: bool = False
+    confirm_experimental: bool = False
     approval_parent_job_id: str = Field(
         default="",
         pattern=r"^[0-9A-Za-z-]*$",
@@ -83,6 +84,9 @@ class RequirementRunRequest(WebModel):
                 "confirm_capability": checkbox(
                     form.get("confirm_capability")
                 ),
+                "confirm_experimental": checkbox(
+                    form.get("confirm_experimental")
+                ),
                 "approval_parent_job_id": str(
                     form.get("approval_parent_job_id") or ""
                 ).strip(),
@@ -120,6 +124,7 @@ class RunResultView(WebModel):
     error_retryable: bool = False
     next_actions: list[str] = Field(default_factory=list)
     capability_support: list[dict[str, Any]] = Field(default_factory=list)
+    has_experimental_capability: bool = False
     beginner_explanation: list[str] = Field(default_factory=list)
     code_explanation: dict[str, Any] = Field(default_factory=dict)
     can_execute: bool = False

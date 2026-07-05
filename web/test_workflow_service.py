@@ -57,6 +57,50 @@ class WorkflowServiceTest(unittest.TestCase):
         self.assertIn("--execute", command)
         self.assertIn("execute", command)
 
+    def test_experimental_execute_requires_parent_review_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            service = WorkflowService(root, root / "logs", profiles)
+            parent = {
+                "jobId": "plan-job",
+                "jobType": "requirement",
+                "state": "succeeded",
+                "metadata": {"mode": "dry-run"},
+                "summary": {
+                    "agentResult": {
+                        "technicalDetails": {
+                            "capabilitySupport": [
+                                {
+                                    "resource": "NetworkPolicy",
+                                    "level": "experimental",
+                                }
+                            ]
+                        }
+                    }
+                },
+            }
+            jobs = self.KindJobs(parent)
+            request = RequirementRunRequest(
+                requirement_text="Create an AppAccessPolicy Operator.",
+                mode="execute",
+                confirm_execute=True,
+                approval_parent_job_id="plan-job",
+            )
+
+            with self.assertRaisesRegex(ValueError, "experimental"):
+                service.submit_requirement(request, jobs)
+
+            approved = request.model_copy(
+                update={"confirm_experimental": True}
+            )
+            submitted = service.submit_requirement(approved, jobs)
+
+        self.assertTrue(
+            submitted["metadata"]["experimentalConfirmed"]
+        )
+
     def test_completed_execute_job_can_start_profileless_kind(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

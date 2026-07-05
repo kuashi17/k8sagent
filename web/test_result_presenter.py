@@ -20,6 +20,34 @@ from web.result_presenter import (
 
 
 class ResultPresenterTest(unittest.TestCase):
+    def test_experimental_capability_requires_distinct_review(self) -> None:
+        result = present_run_result(
+            {
+                "state": "succeeded",
+                "jobType": "requirement",
+                "summary": {
+                    "agentMode": "dry-run",
+                    "agentResult": {
+                        "status": "planned",
+                        "succeeded": True,
+                        "canExecute": True,
+                        "technicalDetails": {
+                            "kind": "AppAccessPolicy",
+                            "capabilitySupport": [
+                                {
+                                    "resource": "NetworkPolicy",
+                                    "level": "experimental",
+                                }
+                            ],
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertTrue(result.can_execute)
+        self.assertTrue(result.has_experimental_capability)
+
     def test_clarification_result_requests_requirement_revision(self) -> None:
         result = present_run_result(
             {

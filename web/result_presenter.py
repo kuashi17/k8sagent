@@ -109,6 +109,9 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             else "실패한 단계와 다음 조치를 확인해 주세요."
         )
     ))
+    capability_support = list(
+        technical.get("capabilitySupport") or []
+    )
     return RunResultView(
         state=state,
         succeeded=succeeded,
@@ -142,7 +145,12 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             beginner_strings(technical.get("nextActions"))
             or beginner_strings(summary.get("nextRecommendedActions"))
         ),
-        capability_support=list(technical.get("capabilitySupport") or []),
+        capability_support=capability_support,
+        has_experimental_capability=any(
+            str(item.get("level")) == "experimental"
+            for item in capability_support
+            if isinstance(item, dict)
+        ),
         beginner_explanation=strings(
             technical.get("beginnerExplanation")
         ),

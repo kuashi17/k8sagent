@@ -263,7 +263,14 @@
       {% for item in result_view.capability_support %}
       <li>
         <strong>{{ item.resource }}</strong> · {{ item.level }} — {{ item.explanation }}
-        {% if item.lastValidatedAt %}<br><span class="muted">마지막 검증 {{ item.lastValidatedAt }} · evidence run {{ item.evidenceRun }}</span>{% endif %}
+        {% if item.lastValidatedAt %}
+          {% if item.level == "experimental" %}
+          <br><span class="muted">마지막 계약 검증: {{ item.lastValidatedAt }}</span>
+          <br><span class="muted">실제 kind lifecycle 검증: 아직 없음</span>
+          {% else %}
+          <br><span class="muted">마지막 runtime 검증: {{ item.lastValidatedAt }}{% if item.evidenceRun %} · evidence run {{ item.evidenceRun }}{% endif %}</span>
+          {% endif %}
+        {% endif %}
         {% if item.limitations %}<ul>{% for limitation in item.limitations %}<li>제한: {{ limitation }}</li>{% endfor %}</ul>{% endif %}
       </li>
       {% endfor %}
@@ -370,6 +377,16 @@
       <input type="hidden" name="run_level" value="{{ selected_run_level }}">
       <input type="hidden" name="confirm_execute" value="on">
       <input type="hidden" name="approval_parent_job_id" value="{{ job.jobId }}">
+      {% if result_view.has_experimental_capability %}
+      <div class="alert alert-warning">
+        <strong>experimental 관리 기능입니다.</strong>
+        <p>실제 kind lifecycle 증거가 아직 없으므로 생성 코드와 권한 범위를 검토한 뒤 실행하세요.</p>
+      </div>
+      <label class="capability-confirm">
+        <input type="checkbox" name="confirm_experimental" required>
+        experimental 단계의 제한사항을 확인했습니다.
+      </label>
+      {% endif %}
       {% if result_view.capability_proposal %}
       <input type="hidden" name="capability_proposal" value="{{ result_view.capability_proposal }}">
       <input type="hidden" name="capability_approval" value="{{ result_view.capability_approval }}">
@@ -380,7 +397,7 @@
       {% endif %}
       {% if selected_kind_deploy %}<input type="hidden" name="kind_deploy" value="on">{% endif %}
       {% if selected_resume_existing %}<input type="hidden" name="resume_existing" value="on">{% endif %}
-      <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약 확인 후 코드 생성 및 검증{% else %}Operator 코드 생성 및 검증{% endif %}</button>
+      <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약 확인 후 코드 생성 및 검증{% elif result_view.has_experimental_capability %}검토 후 experimental 코드 생성 및 검증{% else %}Operator 코드 생성 및 검증{% endif %}</button>
     </form>
     {% elif not result_view.succeeded and job.attempt < job.maxAttempts %}
     <div>

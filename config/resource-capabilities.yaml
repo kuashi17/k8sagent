@@ -310,6 +310,7 @@ resources:
 
   - kind: NetworkPolicy
     apiVersion: networking.k8s.io/v1
+    plural: networkpolicies
     suffix: network-policy
     nameFields: [networkPolicyName, policyName]
     baseObject:

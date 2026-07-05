@@ -41,6 +41,22 @@ class WorkflowService:
                 raise ValueError(
                     "승인 대기 시간을 연결할 완료된 계획 작업을 찾을 수 없습니다."
                 )
+            support = (
+                (((parent.get("summary") or {}).get("agentResult") or {})
+                .get("technicalDetails") or {})
+                .get("capabilitySupport") or []
+            )
+            experimental = [
+                str(item.get("resource") or "관리 리소스")
+                for item in support
+                if isinstance(item, dict)
+                and item.get("level") == "experimental"
+            ]
+            if experimental and not request.confirm_experimental:
+                raise ValueError(
+                    "experimental 관리 기능의 제한사항을 확인하고 "
+                    "별도 승인해 주세요: " + ", ".join(experimental)
+                )
         if request.capability_proposal:
             self.validate_capability_approval(request, jobs)
         if request.kind_deploy and not profile:
@@ -75,6 +91,7 @@ class WorkflowService:
                 "kindDeploy": request.kind_deploy,
                 "resumeExisting": request.resume_existing,
                 "approvalParentJobId": request.approval_parent_job_id,
+                "experimentalConfirmed": request.confirm_experimental,
             },
         )
 
