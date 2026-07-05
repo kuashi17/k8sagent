@@ -113,6 +113,51 @@ class FakeCompletedJobs(FakeJobs):
         ]
 
 
+class FakeExperimentalJobs(FakeCompletedJobs):
+    def result(self, job_id):
+        result = super().result(job_id)
+        if not result:
+            return result
+        result["summary"]["agentResult"] = {
+            "status": "planned",
+            "succeeded": True,
+            "canExecute": True,
+            "technicalDetails": {
+                "kind": "AppAccessPolicy",
+                "managedResources": ["NetworkPolicy"],
+                "beginnerExplanation": [
+                    "AppAccessPolicy 변경을 감지합니다."
+                ],
+                "codeExplanation": {
+                    "firstFiles": [
+                        "artifacts/appaccesspolicy-operator-spec.yaml",
+                        "workspace/appaccesspolicy_controller.go",
+                        "workspace/appaccesspolicy_types.go",
+                        "artifacts/appaccesspolicy-command-plan.md",
+                    ]
+                },
+                "generatedArtifacts": [
+                    "artifacts/appaccesspolicy-operator-spec.yaml",
+                    "artifacts/appaccesspolicy-command-plan.md",
+                    "artifacts/appaccesspolicy-capability-proposal.yaml",
+                ],
+                "capabilitySupport": [
+                    {
+                        "resource": "NetworkPolicy",
+                        "level": "experimental",
+                        "explanation": "계약 검증 단계입니다.",
+                        "lastValidatedAt": "2026-06-28T21:24:24+09:00",
+                        "evidenceRun": 28321990364,
+                        "limitations": [
+                            "No profileless kind evidence is recorded."
+                        ],
+                    }
+                ],
+            },
+        }
+        return result
+
+
 class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
     async def request(self, method, path, **kwargs):
         async with AsyncClient(
@@ -294,6 +339,26 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
             response.text,
         )
         self.assertIn("개발자용 실행 근거와 원본 로그", response.text)
+        self.assertNotIn("confirm_experimental", response.text)
+        self.assertNotIn("experimental 코드 생성", response.text)
+
+    async def test_experimental_plan_has_distinct_evidence_and_approval(self) -> None:
+        with patch("web.app.jobs", FakeExperimentalJobs()):
+            response = await self.request(
+                "GET",
+                "/runs/job/20260619-async0001",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("마지막 계약 검증:", response.text)
+        self.assertIn("실제 kind lifecycle 검증: 아직 없음", response.text)
+        self.assertIn('name="confirm_experimental"', response.text)
+        self.assertIn(
+            "검토 후 experimental 코드 생성 및 검증",
+            response.text,
+        )
+        self.assertIn("현재 생성된 계획 파일 3개", response.text)
+        self.assertIn("코드 생성 후 먼저 볼 파일", response.text)
 
     async def test_running_job_uses_beginner_facing_status_labels(self) -> None:
         with patch("web.app.jobs", FakeJobs()):

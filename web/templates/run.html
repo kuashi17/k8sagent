@@ -287,7 +287,7 @@
     <h3>리소스는 어떻게 연결되나요?</h3>
     <ul class="clean-list">{% for item in result_view.code_explanation.relationships %}<li>{{ item }}</li>{% endfor %}</ul>
     {% endif %}
-    <h3>먼저 볼 파일</h3>
+    <h3>{% if result_view.can_execute %}코드 생성 후 먼저 볼 파일{% else %}먼저 볼 파일{% endif %}</h3>
     <ol>{% for item in result_view.code_explanation.firstFiles %}<li><code>{{ item }}</code></li>{% endfor %}</ol>
     {% endif %}
   </section>
@@ -302,7 +302,7 @@
 
   {% if result_view.generated_artifacts %}
   <details class="card artifact-details">
-    <summary>생성하거나 확인할 파일 {{ result_view.generated_artifacts|length }}개</summary>
+    <summary>{% if result_view.can_execute %}현재 생성된 계획 파일{% else %}생성하거나 확인할 파일{% endif %} {{ result_view.generated_artifacts|length }}개</summary>
     <ul class="artifact-list">
       {% for path in result_view.generated_artifacts %}<li><code>{{ path }}</code></li>{% endfor %}
     </ul>
