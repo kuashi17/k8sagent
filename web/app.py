@@ -36,6 +36,7 @@ from web.result_presenter import (  # noqa: E402
     present_log_analysis_result,
     present_run_result,
 )
+from web.runtime_environment import configure_docker_cli  # noqa: E402
 from web.schemas import LogAnalysisRequest, RequirementRunRequest  # noqa: E402
 from web.workflow_service import WorkflowService  # noqa: E402
 
@@ -79,6 +80,15 @@ app.mount(
 templates = Jinja2Templates(directory=REPO_ROOT / "web" / "templates")
 jobs = JobManager(REPO_ROOT, JOB_ROOT)
 workflows = WorkflowService(REPO_ROOT, LOG_ROOT, PROFILE_DIR)
+
+
+@app.on_event("startup")
+def prepare_local_runtime() -> None:
+    result = configure_docker_cli()
+    print(
+        "Docker CLI runtime: "
+        f"source={result['source']} docker={result['docker'] or 'unavailable'}"
+    )
 
 
 @app.on_event("startup")
