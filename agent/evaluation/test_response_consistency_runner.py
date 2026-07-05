@@ -36,9 +36,9 @@ status:\nphase: string
         matrix = Path("evaluation/fixtures/response-consistency-matrix.yaml")
         result = run_matrix(matrix, 3)
         self.assertEqual(result["status"], "passed")
-        self.assertEqual(result["summary"]["cases"], 21)
-        self.assertEqual(result["summary"]["consistentCases"], 21)
-        self.assertEqual(result["summary"]["equivalentGroups"], 1)
+        self.assertEqual(result["summary"]["cases"], 22)
+        self.assertEqual(result["summary"]["consistentCases"], 22)
+        self.assertEqual(result["summary"]["equivalentGroups"], 2)
 
 
 if __name__ == "__main__":

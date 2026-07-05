@@ -1,6 +1,8 @@
 equivalenceGroups:
   - id: appservice-structured-vs-natural
     cases: [structured-deployment, natural-deployment]
+  - id: app-access-policy-multiline-vs-collapsed
+    cases: [network-policy-with-explicit-exclusions, network-policy-collapsed]
 
 cases:
   - id: structured-deployment
@@ -367,3 +369,16 @@ cases:
         services: [get, list, watch, create, update, patch, delete]
         deployments: [get, list, watch, create, update, patch, delete]
         pods: [get, list, watch, create, update, patch, delete]
+
+  - id: network-policy-collapsed
+    requirement: >-
+      AppAccessPolicy Operator를 만들어 주세요. API는 security.sample.io/v1alpha1입니다. Custom Resource 이름은 AppAccessPolicy입니다. 사용자가 입력할 spec 필드는 다음과 같습니다. - appSelector: map[string]string - allowedFromNamespace: string - allowedPort: int32 - protocol: string kubectl로 확인할 status 필드는 다음과 같습니다. - phase: string - networkPolicyName: string - message: string Controller는 AppAccessPolicy를 기준으로 Kubernetes NetworkPolicy를 생성하고 갱신해야 합니다. NetworkPolicy는 appSelector에 해당하는 Pod로 들어오는 ingress 트래픽만 허용해야 합니다. allowedFromNamespace 값에 해당하는 namespace에서 오는 트래픽만 허용해야 합니다. allowedPort와 protocol 값이 NetworkPolicy ingress rule에 반영되어야 합니다. 외부에서 NetworkPolicy가 변경되면 AppAccessPolicy spec 기준으로 다시 복구해야 합니다. AppAccessPolicy가 삭제되면 생성된 NetworkPolicy도 함께 삭제되어야 합니다. Deployment, Pod, Service, Job, PVC는 생성하지 마세요. NetworkPolicy만 관리해야 합니다.
+    expected:
+      api: {domain: sample.io, group: security, version: v1alpha1, kind: AppAccessPolicy}
+      specFields: {appSelector: 'map[string]string', allowedFromNamespace: string, allowedPort: int32, protocol: string}
+      statusFields: {phase: string, networkPolicyName: string, message: string}
+      managedResources: [NetworkPolicy]
+      observedResources: []
+      forbiddenResources: [Deployment, Pod, Service, Job, PVC]
+      rbac:
+        networkpolicies: [get, list, watch, create, update, patch, delete]

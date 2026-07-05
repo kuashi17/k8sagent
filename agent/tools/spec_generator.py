@@ -310,6 +310,15 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
     fields: list[dict[str, Any]] = []
     uncertain: list[str] = []
     for line in block.splitlines():
+        if len(
+            re.findall(
+                r"(?:^|\s)[-*+]\s*[a-z][A-Za-z0-9]*\s*:",
+                line,
+            )
+        ) > 1:
+            # A browser or copied Markdown may collapse the complete bullet
+            # list into one line. Parse it with the multi-entry matcher below.
+            continue
         match = re.match(
             r"\s*(?:[-*+]\s*)?([a-z][A-Za-z0-9]*)\s*:\s*(.+?)\s*$",
             line,
@@ -341,6 +350,31 @@ def parse_fields(text: str, section: str, warnings: list[str]) -> list[dict[str,
                 "needsConfirmation": needs_confirmation,
             }
         )
+
+    if not fields and block:
+        type_pattern = "|".join(
+            re.escape(value)
+            for value in sorted(
+                SUPPORTED_FIELD_TYPES,
+                key=len,
+                reverse=True,
+            )
+        )
+        for match in re.finditer(
+            rf"(?:^|\s)[-*+]\s*([a-z][A-Za-z0-9]*)\s*:\s*"
+            rf"({type_pattern})(?=\s+(?:[-*+]\s*)|\s*$)",
+            block,
+        ):
+            name, field_type = match.groups()
+            fields.append(
+                {
+                    "name": name,
+                    "type": normalize_type(field_type),
+                    "description": "",
+                    "typeInferred": False,
+                    "needsConfirmation": False,
+                }
+            )
 
     if not fields:
         inline_pattern = rf"{section}\s*에는\s+(.+?)을\s*포함한다"
@@ -394,7 +428,12 @@ def parse_controller(text: str, warnings: list[str]) -> dict[str, Any]:
         item = re.sub(r"^\s*[-*+]\s*", "", raw_line).strip()
         managed_resources.extend(extract_k8s_resources(item))
 
-    for raw_line in text.splitlines():
+    controller_lines = [
+        sentence
+        for raw_line in text.splitlines()
+        for sentence in re.split(r"(?<=[.!?])\s+", raw_line)
+    ]
+    for raw_line in controller_lines:
         line = raw_line.strip().strip(".")
         item = line[2:].strip() if line.startswith("- ") else line
         if not item:
@@ -604,6 +643,21 @@ def find_section_block(text: str, section: str) -> str:
     structured = find_heading_block(text, (f"{section} Fields", section))
     if structured:
         return structured
+    inline_heading = re.search(
+        rf"(?:사용자가\s+입력할\s+|kubectl로\s+확인할\s+)?"
+        rf"{section}\s*필드는\s*다음과\s*같습니다\.\s*",
+        text,
+        re.I,
+    )
+    if inline_heading:
+        tail = text[inline_heading.end() :]
+        end_pattern = (
+            r"(?:kubectl로\s+확인할\s+)?status\s*필드는"
+            if section.lower() == "spec"
+            else r"(?:Controller|컨트롤러)(?:는|가|를|를\s+)"
+        )
+        end = re.search(end_pattern, tail, re.I)
+        return tail[: end.start()] if end else tail
     lines = text.splitlines()
     for index, line in enumerate(lines):
         lowered = line.lower()
