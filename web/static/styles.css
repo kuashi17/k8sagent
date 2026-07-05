@@ -767,6 +767,12 @@ label small {
   margin: 4px 0 14px;
 }
 
+.experimental-review .capability-confirm {
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
+}
+
 .capability-confirm {
   display: flex;
   align-items: flex-start;
