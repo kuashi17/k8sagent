@@ -5,7 +5,7 @@
   <a href="/" class="back-link">← 처음으로</a>
 
   {% if not terminal %}
-  <section class="card progress-card" id="job-panel" data-job-id="{{ job.jobId }}">
+  <section class="card progress-card" id="job-panel" data-job-id="{{ job.jobId }}" data-started-at="{{ job.startedAt or job.createdAt }}">
     <div class="progress-heading">
       <div>
         <p class="eyebrow">Agent가 작업 중입니다</p>
@@ -38,7 +38,10 @@
       {% endif %}
     </ol>
     <div class="current-task" aria-live="polite">
-      <small>현재 단계</small>
+      <div class="current-task-heading">
+        <small>현재 단계</small>
+        <span id="job-elapsed">경과 시간 계산 중…</span>
+      </div>
       <strong id="job-phase">{{ phase_labels.get(job.phase, job.phase) }}</strong>
     </div>
     <div class="run-actions">

@@ -589,6 +589,21 @@ label small {
   display: block;
 }
 
+.current-task-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 3px;
+}
+
+.current-task-heading #job-elapsed {
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
 .current-task small {
   color: var(--muted);
 }

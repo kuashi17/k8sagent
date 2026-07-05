@@ -73,6 +73,8 @@
     const stdout = document.getElementById("job-stdout");
     const stderr = document.getElementById("job-stderr");
     const cancel = document.getElementById("cancel-job");
+    const elapsed = document.getElementById("job-elapsed");
+    let startedAt = parseTimestamp(panel.dataset.startedAt);
 
     const stateLabels = {
       queued: "대기 중",
@@ -98,7 +100,27 @@
       completed: [100, "결과를 정리했습니다.", "결과 정리 완료"],
     };
 
+    function parseTimestamp(value) {
+      const parsed = Date.parse(value || "");
+      return Number.isNaN(parsed) ? Date.now() : parsed;
+    }
+
+    function formatElapsed(milliseconds) {
+      const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      if (hours) return `${hours}시간 ${minutes}분 ${seconds}초 경과`;
+      if (minutes) return `${minutes}분 ${seconds}초 경과`;
+      return `${seconds}초 경과`;
+    }
+
+    function updateElapsed() {
+      if (elapsed) elapsed.textContent = formatElapsed(Date.now() - startedAt);
+    }
+
     function renderJob(job) {
+      if (job.startedAt) startedAt = parseTimestamp(job.startedAt);
       state.textContent = stateLabels[job.state] || job.state;
       state.className = `status status-${job.state}`;
       const info = phaseInfo[job.phase] || [15, "Agent가 작업을 진행하고 있습니다.", "작업 진행"];
@@ -110,6 +132,9 @@
       stdout.scrollTop = stdout.scrollHeight;
       if (job.terminal) window.location.reload();
     }
+
+    updateElapsed();
+    window.setInterval(updateElapsed, 1000);
 
     cancel?.addEventListener("click", async () => {
       cancel.disabled = true;

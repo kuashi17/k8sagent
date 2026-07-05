@@ -293,7 +293,7 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("command: []string", response.text)
         self.assertIn("API는 config.sample.io/v1alpha1입니다.", response.text)
         self.assertIn("data: map[string]string", response.text)
-        self.assertIn("app.js?v=20260704-1", response.text)
+        self.assertIn("app.js?v=20260705-4", response.text)
         self.assertIn("<details class=\"requirement-guide\">", response.text)
         self.assertNotIn("TrainingJob", response.text)
         self.assertNotIn("requirements/appconfig.txt", response.text)
@@ -455,6 +455,11 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(">진행 중</span>", response.text)
         self.assertIn("요구사항 분석과 계획 생성", response.text)
         self.assertNotIn(">LLM planning</strong>", response.text)
+        self.assertIn('id="job-elapsed"', response.text)
+        self.assertIn(
+            'data-started-at="2026-06-19T00:00:00+09:00"',
+            response.text,
+        )
 
 
 if __name__ == "__main__":
