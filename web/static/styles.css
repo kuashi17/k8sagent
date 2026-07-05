@@ -753,7 +753,44 @@ label small {
 }
 
 .execute-form {
+  display: grid;
+  flex: 0 1 440px;
+  gap: 12px;
+  width: min(100%, 440px);
+}
+
+.execute-form > .alert {
+  margin: 0;
+}
+
+.experimental-review p {
+  margin: 4px 0 14px;
+}
+
+.capability-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgb(164 117 0 / 25%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 58%);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.capability-confirm input {
   flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
+}
+
+.execute-form .primary-button {
+  width: 100%;
 }
 
 .developer-details {

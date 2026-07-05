@@ -378,21 +378,21 @@
       <input type="hidden" name="confirm_execute" value="on">
       <input type="hidden" name="approval_parent_job_id" value="{{ job.jobId }}">
       {% if result_view.has_experimental_capability %}
-      <div class="alert alert-warning">
+      <div class="alert alert-warning experimental-review">
         <strong>experimental 관리 기능입니다.</strong>
         <p>실제 kind lifecycle 증거가 아직 없으므로 생성 코드와 권한 범위를 검토한 뒤 실행하세요.</p>
+        <label class="capability-confirm">
+          <input type="checkbox" name="confirm_experimental" required>
+          <span>experimental 단계의 제한사항을 확인했습니다.</span>
+        </label>
       </div>
-      <label class="capability-confirm">
-        <input type="checkbox" name="confirm_experimental" required>
-        experimental 단계의 제한사항을 확인했습니다.
-      </label>
       {% endif %}
       {% if result_view.capability_proposal %}
       <input type="hidden" name="capability_proposal" value="{{ result_view.capability_proposal }}">
       <input type="hidden" name="capability_approval" value="{{ result_view.capability_approval }}">
       <label class="capability-confirm">
         <input type="checkbox" name="confirm_capability" required>
-        위 관리 리소스 지원 계약을 별도로 확인하고 승인합니다.
+        <span>위 관리 리소스 지원 계약을 별도로 확인하고 승인합니다.</span>
       </label>
       {% endif %}
       {% if selected_kind_deploy %}<input type="hidden" name="kind_deploy" value="on">{% endif %}
