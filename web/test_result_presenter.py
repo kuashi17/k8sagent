@@ -169,6 +169,15 @@ class ResultPresenterTest(unittest.TestCase):
                             "deploymentSummary": {
                                 "status": "failed",
                                 "failedStep": "docker-info",
+                                "clusterName": "web-failed",
+                                "validator": {
+                                    "managedResources": [
+                                        {
+                                            "resource": "networkpolicy",
+                                            "name": "sample-policy",
+                                        }
+                                    ]
+                                },
                             },
                         }
                     ],
@@ -178,8 +187,14 @@ class ResultPresenterTest(unittest.TestCase):
 
         self.assertFalse(result.succeeded)
         self.assertEqual(result.error_code, "DOCKER_DAEMON_UNAVAILABLE")
+        self.assertEqual(result.outcome, "infrastructure-failed")
         self.assertTrue(result.retryable)
         self.assertIn("docker info", " ".join(result.recovery_steps))
+        self.assertFalse(result.capability_evidence_eligible)
+        self.assertEqual(
+            result.kubectl_commands[0]["label"],
+            "일부 생성되었을 수 있는 리소스 확인",
+        )
 
     def test_log_analysis_uses_dedicated_beginner_result(self) -> None:
         result = present_log_analysis_result(

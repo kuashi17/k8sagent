@@ -311,19 +311,35 @@ def present_kind_validation_result(
     if resource_tokens:
         kubectl_commands.append(
             {
-                "label": "생성된 리소스 한 번에 보기",
+                "label": (
+                    "생성된 리소스 한 번에 보기"
+                    if succeeded
+                    else "일부 생성되었을 수 있는 리소스 확인"
+                ),
                 "command": f"{command_prefix} get {' '.join(resource_tokens)}",
             }
         )
     kubectl_commands.extend(
         {
-            "label": f"{token} 상세 YAML 보기",
+            "label": (
+                f"{token} 상세 YAML 보기"
+                if succeeded
+                else f"{token} 존재 여부와 YAML 확인"
+            ),
             "command": f"{command_prefix} get {token} -o yaml",
         }
         for token in resource_tokens
     )
+    outcome = (
+        "succeeded"
+        if succeeded
+        else "infrastructure-failed"
+        if error_definition and error_definition.category == "infrastructure"
+        else "validation-failed"
+    )
     return KindValidationView(
         succeeded=succeeded,
+        outcome=outcome,
         title=(
             "Kubernetes 검증을 완료했습니다."
             if succeeded
@@ -348,6 +364,10 @@ def present_kind_validation_result(
             for item in validator.get("observedResources") or []
         ],
         evidence=evidence,
+        capability_evidence_eligible=(
+            succeeded
+            and any(item.get("status") == "passed" for item in evidence)
+        ),
         custom_resource_status=dict(
             checks.get("customResourceStatus") or {}
         ),

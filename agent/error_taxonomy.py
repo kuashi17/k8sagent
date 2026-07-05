@@ -106,7 +106,11 @@ def infer_tool_error(
     )
     lowered = text.lower()
     code = ErrorCode.UNKNOWN
-    if "cannot connect to the docker daemon" in lowered or "docker daemon" in lowered:
+    if (
+        failed_step == "docker-info"
+        or "cannot connect to the docker daemon" in lowered
+        or "docker daemon" in lowered
+    ):
         code = ErrorCode.DOCKER_DAEMON_UNAVAILABLE
     elif "timed out" in lowered or "timeout" in lowered:
         code = ErrorCode.COMMAND_TIMEOUT

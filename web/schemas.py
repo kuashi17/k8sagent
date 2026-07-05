@@ -153,6 +153,11 @@ class LogAnalysisView(WebModel):
 
 class KindValidationView(WebModel):
     succeeded: bool
+    outcome: Literal[
+        "succeeded",
+        "validation-failed",
+        "infrastructure-failed",
+    ] = "validation-failed"
     title: str
     summary: str
     kind: str = ""
@@ -160,6 +165,7 @@ class KindValidationView(WebModel):
     managed_resources: list[str] = Field(default_factory=list)
     observed_resources: list[str] = Field(default_factory=list)
     evidence: list[dict[str, Any]] = Field(default_factory=list)
+    capability_evidence_eligible: bool = False
     custom_resource_status: dict[str, Any] = Field(default_factory=dict)
     resource_yaml: list[dict[str, str]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)

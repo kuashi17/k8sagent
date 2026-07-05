@@ -31,6 +31,10 @@ def build_capability_matrix(
         item.kind: [] for item in catalog.resources
     }
     for case in kind_results.get("results") or []:
+        if case.get("status") != "passed":
+            # Failed or interrupted lifecycle runs are diagnostics, not
+            # capability-grade evidence.
+            continue
         requirement = str(case.get("requirement") or "")
         compiled = compile_by_requirement.get(requirement) or {}
         evidence = (

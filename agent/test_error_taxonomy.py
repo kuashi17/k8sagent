@@ -5,10 +5,26 @@ from __future__ import annotations
 import unittest
 
 from agent.error_registry import ERROR_REGISTRY, ErrorCode, get_error_definition
-from agent.error_taxonomy import normalize_tool_result
+from agent.error_taxonomy import infer_tool_error, normalize_tool_result
 
 
 class ErrorTaxonomyTest(unittest.TestCase):
+    def test_docker_info_step_is_structured_without_verbose_stderr(self) -> None:
+        result = infer_tool_error(
+            {
+                "deploymentSummary": {
+                    "failedStep": "docker-info",
+                    "error": "command failed exitCode=1",
+                }
+            },
+            "kind_deployment",
+        )
+
+        self.assertEqual(
+            result["errorCode"],
+            "DOCKER_DAEMON_UNAVAILABLE",
+        )
+
     def test_registry_covers_every_non_empty_error_code(self) -> None:
         expected = {code.value for code in ErrorCode if code is not ErrorCode.NONE}
         self.assertEqual(set(ERROR_REGISTRY), expected)

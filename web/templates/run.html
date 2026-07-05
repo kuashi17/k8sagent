@@ -55,17 +55,23 @@
   {% elif is_kind_validation %}
   <nav class="result-steps" aria-label="Kubernetes 검증 진행 단계">
     <span>✓ 코드 생성</span>
+    {% if kind_validation_view.succeeded %}
     <span>✓ kind 배포</span>
     <strong>✓ Lifecycle 검증</strong>
+    {% else %}
+    <strong>✕ kind 배포 중단</strong>
+    <span>— Lifecycle 미실행</span>
+    {% endif %}
   </nav>
   <section class="result-hero {% if kind_validation_view.succeeded %}result-success{% else %}result-failure{% endif %}">
-    <p class="eyebrow">{{ "검증 완료" if kind_validation_view.succeeded else "확인 필요" }}</p>
+    <p class="eyebrow">{% if kind_validation_view.succeeded %}검증 완료{% elif kind_validation_view.outcome == "infrastructure-failed" %}인프라 확인 필요{% else %}검증 실패{% endif %}</p>
     <h1>{{ kind_validation_view.title }}</h1>
     <p class="lead">{{ kind_validation_view.summary }}</p>
   </section>
   {% if not kind_validation_view.succeeded %}
   <section class="alert alert-error result-alert">
     <strong>{{ kind_validation_view.error_message or "Kubernetes 검증 중 문제가 발생했습니다." }}</strong>
+    <p>결과 상태: <code>{{ kind_validation_view.outcome }}</code></p>
     {% if kind_validation_view.error_code %}<p>오류 코드: <code>{{ kind_validation_view.error_code }}</code></p>{% endif %}
     {% if kind_validation_view.failed_step %}<p>실패 단계: <code>{{ kind_validation_view.failed_step }}</code></p>{% endif %}
     {% if kind_validation_view.recovery_steps %}
@@ -90,6 +96,9 @@
         <li>{{ item.name }} · <strong>{{ item.status }}</strong></li>
         {% endfor %}
       </ul>
+      {% if not kind_validation_view.capability_evidence_eligible %}
+      <p class="muted">실행되지 않은 Lifecycle 항목은 capability 등급의 검증 근거로 기록되지 않습니다.</p>
+      {% endif %}
     </article>
   </section>
   {% if kind_validation_view.custom_resource_status %}
@@ -101,8 +110,8 @@
   {% if kind_validation_view.kubectl_commands %}
   <section class="card">
     <p class="eyebrow">터미널에서 직접 확인하기</p>
-    <h2>아래 명령을 WSL 터미널에서 실행하세요</h2>
-    <p class="muted">복사 버튼을 누른 뒤 사용 중인 터미널에 붙여넣으면 됩니다.</p>
+    <h2>{% if kind_validation_view.succeeded %}아래 명령을 WSL 터미널에서 실행하세요{% else %}일부 생성되었을 수 있는 리소스를 확인하세요{% endif %}</h2>
+    <p class="muted">{% if kind_validation_view.succeeded %}복사 버튼을 누른 뒤 사용 중인 터미널에 붙여넣으면 됩니다.{% else %}아래 이름은 실제 생성 결과가 아니라 계획된 리소스 이름입니다. docker-info 단계에서 중단됐다면 클러스터 context가 없다는 응답이 정상입니다.{% endif %}</p>
     {% for item in kind_validation_view.kubectl_commands %}
     <div class="command-example">
       <div class="command-example-heading">
@@ -128,7 +137,11 @@
   </section>
   {% endif %}
   <section class="decision-card">
+    {% if kind_validation_view.succeeded %}
     <div><h2>Kubernetes 확인이 끝났습니다.</h2><p>실제 리소스와 검증 근거를 위에서 확인할 수 있습니다.</p></div>
+    {% else %}
+    <div><h2>Kubernetes 확인이 중단되었습니다.</h2><p>위 실패 원인에 따라 환경을 복구한 뒤 다시 시도해 주세요.</p></div>
+    {% endif %}
     <a href="/" class="button-link">새 Operator 만들기</a>
   </section>
   {% else %}

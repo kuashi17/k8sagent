@@ -8,6 +8,45 @@ from agent.evaluation.capability_matrix import build_capability_matrix
 
 
 class CapabilityMatrixTest(unittest.TestCase):
+    def test_failed_kind_run_is_not_recorded_as_capability_evidence(self) -> None:
+        result = build_capability_matrix(
+            {
+                "requirements": [
+                    {
+                        "requirement": "requirements/policy.txt",
+                        "managedResources": ["NetworkPolicy"],
+                        "passed": True,
+                    }
+                ]
+            },
+            {
+                "results": [
+                    {
+                        "requirement": "requirements/policy.txt",
+                        "status": "failed",
+                        "deploymentSummary": {
+                            "failedStep": "docker-info",
+                            "runtimeEvidence": {
+                                "idempotency": {"status": "not-run"}
+                            },
+                        },
+                    }
+                ]
+            },
+        )
+
+        policy = next(
+            item
+            for item in result["capabilities"]
+            if item["resource"] == "NetworkPolicy"
+        )
+        self.assertEqual(policy["level"], "experimental")
+        self.assertEqual(policy["evidence"], [])
+        self.assertEqual(
+            policy["limitations"],
+            ["No profileless kind evidence is recorded."],
+        )
+
     def test_catalog_alias_is_merged_into_canonical_resource(self) -> None:
         result = build_capability_matrix(
             {

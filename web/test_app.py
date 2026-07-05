@@ -158,6 +158,50 @@ class FakeExperimentalJobs(FakeCompletedJobs):
         return result
 
 
+class FakeKindFailureJobs(FakeJobs):
+    def result(self, job_id):
+        if job_id != "20260619-async0001":
+            return None
+        return {
+            "jobId": job_id,
+            "jobType": "kind-validation",
+            "state": "failed",
+            "phase": "failed",
+            "commandText": "python3 profileless_kind_runner.py",
+            "metadata": {},
+            "stdoutTail": "",
+            "stderrTail": "command failed exitCode=1",
+            "attempt": 1,
+            "maxAttempts": 2,
+            "kindValidation": {
+                "status": "failed",
+                "results": [
+                    {
+                        "status": "failed",
+                        "error": "FAILED at docker-info",
+                        "compile": {"kind": "AppAccessPolicy"},
+                        "deploymentSummary": {
+                            "failedStep": "docker-info",
+                            "clusterName": "web-failed",
+                            "namespace": "policy-system",
+                            "validator": {
+                                "managedResources": [
+                                    {
+                                        "resource": "networkpolicy",
+                                        "name": "sample-policy",
+                                    }
+                                ]
+                            },
+                            "runtimeEvidence": {
+                                "idempotency": {"status": "not-run"}
+                            },
+                        },
+                    }
+                ],
+            },
+        }
+
+
 class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
     async def request(self, method, path, **kwargs):
         async with AsyncClient(
@@ -377,6 +421,28 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("현재 생성된 계획 파일 3개", response.text)
         self.assertIn("코드 생성 후 먼저 볼 파일", response.text)
+
+    async def test_kind_docker_failure_never_claims_completion(self) -> None:
+        with patch("web.app.jobs", FakeKindFailureJobs()):
+            response = await self.request(
+                "GET",
+                "/runs/job/20260619-async0001",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("infrastructure-failed", response.text)
+        self.assertIn("DOCKER_DAEMON_UNAVAILABLE", response.text)
+        self.assertIn("Kubernetes 확인이 중단되었습니다", response.text)
+        self.assertNotIn("Kubernetes 확인이 끝났습니다", response.text)
+        self.assertIn(
+            "실행되지 않은 Lifecycle 항목은 capability 등급의 검증 근거로 기록되지 않습니다",
+            response.text,
+        )
+        self.assertIn(
+            "일부 생성되었을 수 있는 리소스를 확인하세요",
+            response.text,
+        )
+        self.assertIn("계획된 리소스 이름", response.text)
 
     async def test_running_job_uses_beginner_facing_status_labels(self) -> None:
         with patch("web.app.jobs", FakeJobs()):
