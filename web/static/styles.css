@@ -768,9 +768,14 @@ label small {
 }
 
 .experimental-review .capability-confirm {
+  align-items: center;
   width: fit-content;
   max-width: 100%;
   margin-left: auto;
+}
+
+.experimental-review .capability-confirm input {
+  margin: 0 0 0 4px;
 }
 
 .capability-confirm {

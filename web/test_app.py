@@ -353,6 +353,12 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("마지막 계약 검증:", response.text)
         self.assertIn("실제 kind lifecycle 검증: 아직 없음", response.text)
         self.assertIn('name="confirm_experimental"', response.text)
+        self.assertLess(
+            response.text.index(
+                "experimental 단계의 제한사항을 확인했습니다."
+            ),
+            response.text.index('name="confirm_experimental"'),
+        )
         self.assertIn(
             'class="alert alert-warning experimental-review"',
             response.text,
