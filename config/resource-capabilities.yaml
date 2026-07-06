@@ -169,8 +169,27 @@ resources:
             containers:
               - name: application
                 image: nginx:latest
-                ports:
-                  - containerPort: 1
+    conditionalObjects:
+      - whenSource: spec.port
+        object:
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: application
+                    image: nginx:latest
+                    ports:
+                      - containerPort: 1
+      - whenSource: spec.containerPort
+        object:
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: application
+                    image: nginx:latest
+                    ports:
+                      - containerPort: 1
     labelPaths:
       - spec.selector.matchLabels
       - spec.template.metadata.labels

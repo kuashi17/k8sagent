@@ -244,6 +244,46 @@ class KindDeploymentValidatorTest(unittest.TestCase):
             {"token": "ZHJpZnQ="},
         )
 
+    def test_final_evidence_is_refetched_after_readiness_waits(self) -> None:
+        validator = ManagedResourceValidator(
+            {
+                "resource": "customerportal",
+                "sampleName": "sample",
+                "managedResources": [
+                    {"resource": "deployment", "name": "sample-deployment"}
+                ],
+            }
+        )
+        engine = Mock()
+        engine.checks = {
+            "managedResources": [
+                {"status": {"unavailableReplicas": 1}}
+            ],
+            "customResourceStatus": {"phase": "Progressing"},
+        }
+        validator.wait_present = Mock(
+            side_effect=[
+                {"status": {"readyReplicas": 1, "availableReplicas": 1}},
+                {
+                    "status": {
+                        "phase": "Ready",
+                        "readyReplicas": 1,
+                    }
+                },
+            ]
+        )
+
+        validator.capture_stable_evidence(engine)
+
+        self.assertEqual(
+            engine.checks["managedResources"][0]["status"]["readyReplicas"],
+            1,
+        )
+        self.assertEqual(
+            engine.checks["customResourceStatus"],
+            {"phase": "Ready", "readyReplicas": 1},
+        )
+
     def test_recreate_update_is_driven_by_controller_contract(self) -> None:
         validator = ManagedResourceValidator(
             {

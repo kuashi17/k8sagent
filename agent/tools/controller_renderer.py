@@ -598,6 +598,7 @@ def render_status_function(
     kind = ir.kind
     status_fields = set(ir.status_fields)
     assignments = []
+    condition_assignments = []
     if "phase" in status_fields:
         assignments.append("\tinstance.Status.Phase = phase")
     if "message" in status_fields:
@@ -607,7 +608,7 @@ def render_status_function(
             "\tinstance.Status.ObservedGeneration = instance.Generation"
         )
     if "conditions" in status_fields:
-        assignments.extend(
+        condition_assignments.extend(
             [
                 "\tconditionStatus := metav1.ConditionFalse",
                 '\tif phase == "Ready" { conditionStatus = metav1.ConditionTrue }',
@@ -632,6 +633,20 @@ def render_status_function(
                 assignments.extend(
                     render_direct_status_mapping(resource, mapping, field)
                 )
+    if "readyReplicas" in status_fields and "replicas" in ir.spec_fields:
+        assignments.append(
+            '\tif phase == "Ready" && instance.Status.ReadyReplicas < instance.Spec.Replicas {'
+        )
+        assignments.append('\t\tphase = "Progressing"')
+        assignments.append(
+            '\t\tmessage = "Waiting for managed resources to become ready."'
+        )
+        if "phase" in status_fields:
+            assignments.append("\t\tinstance.Status.Phase = phase")
+        if "message" in status_fields:
+            assignments.append("\t\tinstance.Status.Message = message")
+        assignments.append("\t}")
+    assignments.extend(condition_assignments)
     return f'''func (r *{kind}Reconciler) updateStatus(ctx context.Context, instance *{alias}.{kind}, phase, message string, names map[string]string) error {{
 \tbefore := instance.DeepCopy()
 {chr(10).join(assignments)}

@@ -45,6 +45,50 @@ def model(resources, spec_fields, status_fields):
 
 
 class ControllerRendererTest(unittest.TestCase):
+    def test_deployment_waits_for_ready_replicas_before_ready_condition(self) -> None:
+        rendered = render_controller(
+            model(
+                ["Deployment"],
+                ["image", "replicas"],
+                ["phase", "readyReplicas", "message", "conditions"],
+            )
+        )
+
+        readiness_guard = (
+            'phase == "Ready" && instance.Status.ReadyReplicas '
+            '< instance.Spec.Replicas'
+        )
+        self.assertIn(readiness_guard, rendered)
+        self.assertIn('phase = "Progressing"', rendered)
+        self.assertLess(
+            rendered.index(readiness_guard),
+            rendered.index("meta.SetStatusCondition"),
+        )
+
+    def test_deployment_omits_port_when_requirement_has_no_port(self) -> None:
+        without_port = render_controller(
+            model(
+                ["Deployment"],
+                ["image", "replicas"],
+                ["phase", "readyReplicas", "message"],
+            )
+        )
+        with_port = render_controller(
+            model(
+                ["Deployment"],
+                ["image", "replicas", "port"],
+                ["phase", "readyReplicas", "message"],
+            )
+        )
+
+        self.assertNotIn('"containerPort": 1', without_port)
+        self.assertNotIn('[]interface{}{"spec", "template", "spec", "containers", 0, "ports"}', without_port)
+        self.assertIn('"containerPort": 1', with_port)
+        self.assertIn(
+            '"containerPort"}, int64(instance.Spec.Port)',
+            with_port,
+        )
+
     def test_deployment_pod_observer_uses_custom_resource_owner_label(self) -> None:
         value = model(
             ["Deployment", "Service"],

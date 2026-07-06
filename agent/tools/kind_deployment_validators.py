@@ -662,6 +662,15 @@ class ManagedResourceValidator:
             )
         if projection_results:
             engine.checks["statusProjections"] = projection_results
+        # Projection waits may span a workload rollout. Refresh the Custom
+        # Resource before evaluating phase/conditions so the final evidence
+        # never reuses the pre-rollout snapshot.
+        custom_resource = self.wait_present(
+            engine,
+            self.resource,
+            self.sample_name,
+        )
+        status = custom_resource.get("status") or {}
         if self.status_phases:
             deadline = time.time() + engine.timeout_seconds
             while (
@@ -698,9 +707,6 @@ class ManagedResourceValidator:
                     )
             if last_error is not None:
                 raise last_error
-        engine.checks["managedResources"] = managed
-        engine.checks["observedResources"] = observed
-        engine.checks["customResourceStatus"] = status
         if self.finalizer:
             finalizers = list(
                 (custom_resource.get("metadata") or {}).get(
@@ -730,6 +736,28 @@ class ManagedResourceValidator:
                 self.wait_assertion(engine, item)
                 for item in self.initial_assertions
             ]
+        # Capture display/evidence objects only after every readiness, status,
+        # and desired-state assertion has reached its stable value.
+        self.capture_stable_evidence(engine)
+
+    def capture_stable_evidence(self, engine: DeploymentEngine) -> None:
+        """Refresh final UI/evaluation snapshots after all waits complete."""
+        engine.checks["managedResources"] = [
+            self.wait_present(engine, item["resource"], item["name"])
+            for item in self.managed_resources
+        ]
+        engine.checks["observedResources"] = [
+            self.wait_observed(engine, item)
+            for item in self.observed_resources
+        ]
+        custom_resource = self.wait_present(
+            engine,
+            self.resource,
+            self.sample_name,
+        )
+        engine.checks["customResourceStatus"] = (
+            custom_resource.get("status") or {}
+        )
 
     def verify_lifecycle(self, engine: DeploymentEngine) -> None:
         self.verify_external_watches(engine)

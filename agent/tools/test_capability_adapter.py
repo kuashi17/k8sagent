@@ -13,6 +13,30 @@ from agent.tools.resource_catalog import load_resource_catalog
 
 
 class CapabilityAdapterTest(unittest.TestCase):
+    def test_deployment_port_scaffold_is_only_added_for_port_fields(self) -> None:
+        catalog = load_resource_catalog()
+        definition = catalog.by_name()["Deployment"]
+
+        without_port = adapt_capability(
+            definition,
+            catalog.primitives_by_name(),
+            {"image", "replicas"},
+            [],
+            catalog.by_name(),
+        )
+        with_port = adapt_capability(
+            definition,
+            catalog.primitives_by_name(),
+            {"image", "replicas", "port"},
+            [],
+            catalog.by_name(),
+        )
+
+        base_container = without_port.base_object["spec"]["template"]["spec"]["containers"][0]
+        port_container = with_port.base_object["spec"]["template"]["spec"]["containers"][0]
+        self.assertNotIn("ports", base_container)
+        self.assertEqual(port_container["ports"], [{"containerPort": 1}])
+
     def test_conditional_catalog_object_is_resolved_before_rendering(self) -> None:
         catalog = load_resource_catalog()
         definition = catalog.by_name()["StatefulSet"]
