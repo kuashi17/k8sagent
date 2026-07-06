@@ -73,7 +73,7 @@ def docker_responds(
             env=dict(environment),
             capture_output=True,
             text=True,
-            timeout=8,
+            timeout=20,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
