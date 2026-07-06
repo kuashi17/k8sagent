@@ -6,8 +6,8 @@
     <p class="eyebrow">1단계 · 요구사항 입력</p>
     <h1>어떤 Kubernetes Operator를 만들고 싶으세요?</h1>
     <p class="lead">
-      관리할 리소스와 원하는 동작을 자연어로 적어 주세요. Kubernetes
-      용어를 완벽히 몰라도 Agent가 안전한 계획부터 보여드립니다.
+      관리할 리소스와 원하는 동작을 자연어로 적어 주세요.<br>
+      Kubernetes 용어를 완벽히 몰라도 Agent가 안전한 계획부터 보여드립니다.
     </p>
   </section>
 
@@ -60,10 +60,10 @@
       >{{ default_requirement }}</textarea>
 
       <div class="example-row" id="requirement-help">
-        <span>막막하다면 예시로 시작하세요</span>
-        <button type="button" class="example-button" data-requirement-example="WebApp이라는 Custom Resource를 관리하는 Operator를 만들어 주세요.&#10;&#10;API는 apps.sample.io/v1alpha1입니다.&#10;&#10;spec:&#10;- image: string&#10;- replicas: int32&#10;- port: int32&#10;&#10;status:&#10;- phase: string&#10;- deploymentName: string&#10;- serviceName: string&#10;- readyReplicas: int32&#10;- message: string&#10;&#10;Controller는 Deployment와 Service를 생성하고 image, replicas, port 변경을 반영해 주세요. 외부 변경은 spec 기준으로 복구하고 WebApp을 삭제할 때 생성한 리소스도 함께 삭제해 주세요.">웹 서비스 <small>안정적 · 클러스터 검증 가능</small></button>
-        <button type="button" class="example-button" data-requirement-example="ScheduledTask라는 Custom Resource를 관리하는 Operator를 만들어 주세요.&#10;&#10;API는 batch.sample.io/v1alpha1입니다.&#10;&#10;spec:&#10;- schedule: string&#10;- image: string&#10;- command: []string&#10;- suspend: bool&#10;&#10;status:&#10;- phase: string&#10;- cronJobName: string&#10;- lastScheduleTime: metav1.Time&#10;- message: string&#10;&#10;Controller는 CronJob을 생성하고 schedule, image, command, suspend 변경을 반영해 주세요. ScheduledTask를 삭제할 때 생성한 CronJob도 함께 삭제해 주세요.">예약 작업 <small>안정적 · 클러스터 검증 가능</small></button>
-        <button type="button" class="example-button" data-requirement-example="ConfigBundle이라는 Custom Resource를 관리하는 Operator를 만들어 주세요.&#10;&#10;API는 config.sample.io/v1alpha1입니다.&#10;&#10;spec:&#10;- data: map[string]string&#10;- targetName: string&#10;&#10;status:&#10;- phase: string&#10;- configMapName: string&#10;- message: string&#10;&#10;Controller는 ConfigMap을 생성하고 spec.data와 spec.targetName의 변경 내용을 반영해 주세요. ConfigMap이 직접 수정되면 spec 기준으로 복구하고, ConfigBundle을 삭제할 때 생성한 ConfigMap도 함께 삭제해 주세요.">설정 관리 <small>실험적 · 클러스터 검증 가능</small></button>
+        <span>예시로 시작해보세요.</span>
+        <button type="button" class="example-button" data-requirement-example="WebApp이라는 Custom Resource를 관리하는 Operator를 만들어 주세요.&#10;&#10;API는 apps.sample.io/v1alpha1입니다.&#10;&#10;spec:&#10;- image: string&#10;- replicas: int32&#10;- port: int32&#10;&#10;status:&#10;- phase: string&#10;- deploymentName: string&#10;- serviceName: string&#10;- readyReplicas: int32&#10;- message: string&#10;&#10;Controller는 Deployment와 Service를 생성하고 image, replicas, port 변경을 반영해 주세요. 외부 변경은 spec 기준으로 복구하고 WebApp을 삭제할 때 생성한 리소스도 함께 삭제해 주세요.">웹서비스</button>
+        <button type="button" class="example-button" data-requirement-example="ScheduledTask라는 Custom Resource를 관리하는 Operator를 만들어 주세요.&#10;&#10;API는 batch.sample.io/v1alpha1입니다.&#10;&#10;spec:&#10;- schedule: string&#10;- image: string&#10;- command: []string&#10;- suspend: bool&#10;&#10;status:&#10;- phase: string&#10;- cronJobName: string&#10;- lastScheduleTime: metav1.Time&#10;- message: string&#10;&#10;Controller는 CronJob을 생성하고 schedule, image, command, suspend 변경을 반영해 주세요. ScheduledTask를 삭제할 때 생성한 CronJob도 함께 삭제해 주세요.">예약 작업</button>
+        <button type="button" class="example-button" data-requirement-example="ConfigBundle이라는 Custom Resource를 관리하는 Operator를 만들어 주세요.&#10;&#10;API는 config.sample.io/v1alpha1입니다.&#10;&#10;spec:&#10;- data: map[string]string&#10;- targetName: string&#10;&#10;status:&#10;- phase: string&#10;- configMapName: string&#10;- message: string&#10;&#10;Controller는 ConfigMap을 생성하고 spec.data와 spec.targetName의 변경 내용을 반영해 주세요. ConfigMap이 직접 수정되면 spec 기준으로 복구하고, ConfigBundle을 삭제할 때 생성한 ConfigMap도 함께 삭제해 주세요.">설정 관리</button>
       </div>
 
       <input type="hidden" name="mode" value="dry-run">

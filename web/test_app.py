@@ -272,7 +272,7 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("안전한 계획 만들기", response.text)
         self.assertNotIn("개발자 설정", response.text)
         self.assertNotIn("참고 Profile", response.text)
-        self.assertIn("막막하다면 예시로 시작하세요", response.text)
+        self.assertIn("예시로 시작해보세요.", response.text)
         self.assertIn(
             "한 번에 계획을 만드는 데 필요한 4가지 보기",
             response.text,
@@ -285,8 +285,10 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("기존 PVC는 남겨두기", response.text)
         self.assertIn("처음이라면 이렇게 이해하세요", response.text)
         self.assertIn("phase: Ready", response.text)
-        self.assertIn("웹 서비스 <small>안정적", response.text)
-        self.assertIn("설정 관리 <small>실험적", response.text)
+        self.assertIn(">웹서비스</button>", response.text)
+        self.assertNotIn("클러스터 검증 가능</small>", response.text)
+        self.assertIn(">예약 작업</button>", response.text)
+        self.assertIn(">설정 관리</button>", response.text)
         self.assertIn("API는 apps.sample.io/v1alpha1입니다.", response.text)
         self.assertIn("readyReplicas: int32", response.text)
         self.assertIn("API는 batch.sample.io/v1alpha1입니다.", response.text)
