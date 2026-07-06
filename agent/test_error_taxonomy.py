@@ -76,6 +76,39 @@ class ErrorTaxonomyTest(unittest.TestCase):
             "error",
         )
 
+    def test_common_local_environment_failures_have_distinct_codes(self) -> None:
+        cases = [
+            (
+                "error: context kind-old-cluster does not exist",
+                ErrorCode.KUBECTL_CONTEXT_INVALID,
+            ),
+            (
+                "ollama request failed: connection refused",
+                ErrorCode.OLLAMA_UNAVAILABLE,
+            ),
+            (
+                "listen tcp 0.0.0.0:8000: bind: address already in use",
+                ErrorCode.PORT_CONFLICT,
+            ),
+            (
+                "operation timed out waiting for deployment",
+                ErrorCode.COMMAND_TIMEOUT,
+            ),
+        ]
+
+        for stderr, expected in cases:
+            with self.subTest(expected=expected.value):
+                result = normalize_tool_result(
+                    {"exitCode": 1, "stderr": stderr},
+                    "kind_deployment",
+                )
+                self.assertEqual(result["errorCode"], expected.value)
+                self.assertTrue(result["errorDetails"]["retryable"])
+                self.assertEqual(
+                    result["errorDetails"]["category"],
+                    "infrastructure",
+                )
+
     def test_success_has_no_error_details(self) -> None:
         result = normalize_tool_result(
             {"exitCode": 0, "status": "succeeded"},

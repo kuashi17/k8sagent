@@ -112,6 +112,32 @@ def infer_tool_error(
         or "docker daemon" in lowered
     ):
         code = ErrorCode.DOCKER_DAEMON_UNAVAILABLE
+    elif (
+        "context" in lowered
+        and (
+            "does not exist" in lowered
+            or "not found" in lowered
+            or "no context exists" in lowered
+            or "current-context is not set" in lowered
+        )
+    ):
+        code = ErrorCode.KUBECTL_CONTEXT_INVALID
+    elif (
+        "ollama" in lowered
+        and (
+            "connection refused" in lowered
+            or "failed to connect" in lowered
+            or "unavailable" in lowered
+            or "could not connect" in lowered
+        )
+    ):
+        code = ErrorCode.OLLAMA_UNAVAILABLE
+    elif (
+        "address already in use" in lowered
+        or "port is already allocated" in lowered
+        or "bind: only one usage of each socket address" in lowered
+    ):
+        code = ErrorCode.PORT_CONFLICT
     elif "timed out" in lowered or "timeout" in lowered:
         code = ErrorCode.COMMAND_TIMEOUT
     elif "forbidden" in lowered or failed_step == "rbac-preflight":

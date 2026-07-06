@@ -38,6 +38,7 @@ from web.result_presenter import (  # noqa: E402
 )
 from web.runtime_environment import configure_docker_cli  # noqa: E402
 from web.schemas import LogAnalysisRequest, RequirementRunRequest  # noqa: E402
+from web.state_contract import workflow_state  # noqa: E402
 from web.workflow_service import WorkflowService  # noqa: E402
 
 
@@ -466,6 +467,7 @@ def job_status_payload(job: dict[str, Any]) -> dict[str, Any]:
         "jobId": job.get("jobId"),
         "state": job.get("state"),
         "phase": job.get("phase"),
+        "workflowState": workflow_state(job),
         "exitCode": job.get("exitCode"),
         "createdAt": job.get("createdAt"),
         "startedAt": job.get("startedAt"),

@@ -35,9 +35,12 @@ def canonical_contract(text: str, source: Path) -> dict[str, Any]:
     }
     errors = [str(item) for item in spec.get("errors") or []]
     ambiguous_types = list(summary.get("ambiguousFieldTypes") or [])
+    requirement_conflicts = list(summary.get("requirementConflicts") or [])
     error_code = ""
     if ambiguous_types:
         error_code = ErrorCode.INVALID_FIELD_TYPE.value
+    elif requirement_conflicts:
+        error_code = ErrorCode.REQUIRED_INPUT_MISSING.value
     elif errors:
         error_code = (
             ErrorCode.INVALID_FIELD_TYPE.value
@@ -71,6 +74,7 @@ def canonical_contract(text: str, source: Path) -> dict[str, Any]:
         "rbac": rbac,
         "missingInformation": missing_information(summary, text),
         "ambiguousFieldTypes": ambiguous_types,
+        "requirementConflicts": requirement_conflicts,
         "errorCode": error_code,
     }
 

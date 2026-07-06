@@ -14,7 +14,12 @@ from agent.requirement_analyzer import (
     infer_managed_resources,
     select_profile_hint,
 )
-from agent.tools.spec_generator import parse_api, parse_controller, parse_fields
+from agent.tools.spec_generator import (
+    extract_k8s_resources,
+    parse_api,
+    parse_controller,
+    parse_fields,
+)
 
 
 RetrievalFunction = Callable[[str, int, str], dict[str, Any]]
@@ -110,6 +115,7 @@ def summarize_requirement(text: str) -> dict[str, Any]:
         for item in fields
         if item.get("needsConfirmation")
     ]
+    conflicts = detect_requirement_conflicts(text)
     return {
         "kind": kind,
         "domain": domain,
@@ -121,6 +127,7 @@ def summarize_requirement(text: str) -> dict[str, Any]:
         "specFields": spec_fields,
         "statusFields": status_fields,
         "ambiguousFieldTypes": ambiguous_types,
+        "requirementConflicts": conflicts,
         "shortSummary": (
             f"{kind or 'Unknown'} Operator 요구사항: "
             f"{', '.join(managed) or '관리 리소스 미확인'} 관리 흐름."
@@ -145,6 +152,10 @@ def missing_information(summary: dict[str, Any], text: str) -> list[str]:
     missing.extend(
         f"field type: {item}"
         for item in summary.get("ambiguousFieldTypes") or []
+    )
+    missing.extend(
+        f"conflicting requirement: {item}"
+        for item in summary.get("requirementConflicts") or []
     )
     return missing
 
@@ -175,10 +186,56 @@ def clarifying_questions(
         for item in missing
         if item.startswith("field type: ")
     )
+    questions.extend(
+        f"{item.removeprefix('conflicting requirement: ')} 중 어느 동작을 원하는지 하나로 정해 주세요."
+        for item in missing
+        if item.startswith("conflicting requirement: ")
+    )
     managed = summary.get("managedResources") or []
     if managed and "status fields" in missing:
         questions.append(f"{', '.join(managed)} 상태 중 어떤 값을 status에 반영할까요?")
     return questions
+
+
+def detect_requirement_conflicts(text: str) -> list[str]:
+    """Find explicit write/read and deletion-policy contradictions.
+
+    This gate is intentionally conservative: it only stops combinations that
+    cannot be implemented safely without choosing one of two opposite user
+    instructions. Ordinary exclusions such as "Service는 만들지 마세요"
+    remain valid requirements.
+    """
+    normalized = " ".join(text.split())
+    conflicts: list[str] = []
+    for resource in dict.fromkeys(extract_k8s_resources(normalized)):
+        token = re.escape(resource)
+        repeated_write = re.search(
+            rf"{token}[^.!?]{{0,80}}(?:생성|만들|관리|수정|갱신|변경)[^.!?]{{0,30}}"
+            rf"(?:하지\s*(?:않|말|마)|하면\s*안)[^.!?]{{0,100}}"
+            rf"{token}[^.!?]{{0,50}}(?:생성|만들|관리|수정|갱신|변경|복구)",
+            normalized,
+            re.IGNORECASE,
+        )
+        if repeated_write:
+            conflicts.append(f"{resource} 변경 금지와 변경 요청이 동시에 있습니다.")
+
+        resource_sentences = [
+            sentence
+            for sentence in re.split(r"[.!?]", normalized)
+            if resource.lower() in sentence.lower()
+        ]
+        scoped = " ".join(resource_sentences)
+        if (
+            any(token in scoped for token in ("유지", "남겨", "삭제하지", "자동 삭제하지"))
+            and any(token in scoped for token in ("함께 삭제", "도 삭제", "삭제되어야"))
+        ):
+            conflicts.append(f"{resource} 삭제 시 유지와 함께 삭제가 동시에 요청됐습니다.")
+        if (
+            any(token in scoped for token in ("읽기만", "조회만", "read-only", "수정하지"))
+            and any(token in scoped for token in ("복구", "원래 상태로", "spec 기준으로 되돌"))
+        ):
+            conflicts.append(f"{resource} 읽기 전용과 외부 변경 복구가 동시에 요청됐습니다.")
+    return list(dict.fromkeys(conflicts))
 
 
 def target_project_dir(

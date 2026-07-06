@@ -235,6 +235,7 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["phase"], "LLM planning")
+        self.assertEqual(response.json()["workflowState"], "generating")
         self.assertFalse(response.json()["terminal"])
 
     async def test_health_endpoint_exposes_queue_status(self) -> None:

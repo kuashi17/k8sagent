@@ -402,6 +402,21 @@ def kind_recovery_steps(error_code: str) -> list[str]:
             "kind get clusters와 kubectl cluster-info를 실행합니다.",
             "연결이 복구되면 아래 다시 시도 버튼을 누릅니다.",
         ],
+        "KUBECTL_CONTEXT_INVALID": [
+            "kubectl config get-contexts로 사용 가능한 context를 확인합니다.",
+            "kind get clusters에 나오는 클러스터와 kind context가 일치하는지 확인합니다.",
+            "context를 복구한 뒤 다시 시도합니다.",
+        ],
+        "OLLAMA_UNAVAILABLE": [
+            "Ollama 또는 설정한 Local LLM 서버를 실행합니다.",
+            "터미널에서 ollama list가 성공하는지 확인합니다.",
+            "모델과 서버가 준비되면 다시 시도합니다.",
+        ],
+        "PORT_CONFLICT": [
+            "실행 로그에서 충돌한 포트 번호를 확인합니다.",
+            "해당 포트를 사용하는 기존 프로세스나 잔여 클러스터를 정리합니다.",
+            "포트가 비었을 때 다시 시도합니다.",
+        ],
         "COMMAND_TIMEOUT": [
             "Docker와 Kubernetes 리소스 사용량을 확인합니다.",
             "실행 중인 불필요한 kind 클러스터를 정리한 뒤 다시 시도합니다.",

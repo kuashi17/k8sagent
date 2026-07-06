@@ -382,3 +382,96 @@ cases:
       forbiddenResources: [Deployment, Pod, Service, Job, PVC]
       rbac:
         networkpolicies: [get, list, watch, create, update, patch, delete]
+
+  - id: job-excludes-cronjob
+    requirement: |
+      OneShotTask라는 Custom Resource를 만들고 싶습니다. API는 task.sample.io/v1alpha1입니다.
+      spec:
+      - image: string
+      status:
+      - phase: string
+      Job은 생성하되 CronJob은 만들지 마세요.
+    expected:
+      managedResources: [Job]
+      observedResources: []
+      forbiddenResources: [CronJob]
+      forbiddenRbac: {cronjobs: [get, list, watch, create, update, patch, delete]}
+
+  - id: pvc-retain-natural-negative
+    requirement: |
+      DataVolume라는 Custom Resource를 만들고 싶습니다. API는 storage.sample.io/v1alpha1입니다.
+      spec:
+      - size: string
+      status:
+      - phase: string
+      PVC를 생성하고 관리하지만 Custom Resource를 삭제해도 PVC는 남겨 두세요.
+    expected:
+      managedResources: [PVC]
+      observedResources: []
+      resourcePolicies:
+        - {resource: PVC, strategy: create-or-update, ownership: none, deletionPolicy: retain}
+
+  - id: deployment-read-only-no-replacement
+    requirement: |
+      ExistingAppView라는 Custom Resource를 만들고 싶습니다. API는 view.sample.io/v1alpha1입니다.
+      spec:
+      - deploymentName: string
+      status:
+      - readyReplicas: int32
+      - phase: string
+      기존 Deployment는 읽기만 하고 새로 생성하거나 수정·삭제하지 마세요.
+    expected:
+      managedResources: []
+      observedResources: [Deployment]
+      rbac: {deployments: [get, list, watch]}
+      forbiddenRbac: {deployments: [create, update, patch, delete]}
+
+  - id: contradictory-pod-write
+    requirement: |
+      PodConflict라는 Custom Resource를 만들고 싶습니다. API는 conflict.sample.io/v1alpha1입니다.
+      spec:
+      - image: string
+      status:
+      - phase: string
+      Pod를 생성하지 말고 Pod를 생성해 주세요.
+    expected:
+      requirementConflicts: ["Pod 변경 금지와 변경 요청이 동시에 있습니다."]
+      errorCode: REQUIRED_INPUT_MISSING
+
+  - id: contradictory-pvc-deletion
+    requirement: |
+      StorageConflict라는 Custom Resource를 만들고 싶습니다. API는 conflict.sample.io/v1alpha1입니다.
+      spec:
+      - size: string
+      status:
+      - phase: string
+      Controller는 PVC를 생성합니다. PVC는 삭제 시 유지하되 함께 삭제해 주세요.
+    expected:
+      requirementConflicts: ["PVC 삭제 시 유지와 함께 삭제가 동시에 요청됐습니다."]
+      errorCode: REQUIRED_INPUT_MISSING
+
+  - id: contradictory-deployment-read-only-drift
+    requirement: |
+      ReadConflict라는 Custom Resource를 만들고 싶습니다. API는 conflict.sample.io/v1alpha1입니다.
+      spec:
+      - deploymentName: string
+      status:
+      - phase: string
+      Deployment를 읽기만 하되 외부 변경은 spec 기준으로 복구해 주세요.
+    expected:
+      requirementConflicts: ["Deployment 읽기 전용과 외부 변경 복구가 동시에 요청됐습니다."]
+      errorCode: REQUIRED_INPUT_MISSING
+
+  - id: unsupported-http-route-no-fallback
+    requirement: |
+      RoutePolicy라는 Custom Resource를 만들고 싶습니다. API는 gateway.sample.io/v1alpha1입니다.
+      spec:
+      - host: string
+      status:
+      - phase: string
+      Controller는 gateway.networking.k8s.io/v1의 HTTPRoute 리소스를 생성하고 관리합니다.
+      Deployment와 Service로 대체하지 마세요.
+    expected:
+      managedResources: [HTTPRoute]
+      observedResources: []
+      forbiddenResources: [Deployment, Service]

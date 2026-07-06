@@ -893,6 +893,9 @@ def is_negative_mutation(line: str) -> bool:
             "하지 않",
             "하지 말",
             "하면 안",
+            "지 않",
+            "지 말",
+            "지 마",
             "금지",
             "제외",
         )
@@ -909,11 +912,19 @@ def negative_mutation_resources(line: str) -> list[str]:
     denied: list[str] = []
     pattern = re.compile(
         r"(?P<operation>생성|만들|관리|수정|변경|갱신|삭제|patch)"
-        r"(?:하거나\s*)?(?:하지\s*(?:않|말|마)|하면\s*안|금지|제외)",
+        r"(?:하거나\s*)?(?:하지\s*(?:않|말|마)|지\s*(?:않|말|마)|하면\s*안|금지|제외)",
         re.I,
     )
     for match in pattern.finditer(line):
         prefix = re.split(r"[.!?]\s*", line[: match.start()])[-1]
+        # Keep a preceding positive action outside the prohibition scope:
+        # "Deployment만 생성하고 Service는 만들지 마세요" denies only Service.
+        scoped_prefix = re.split(
+            r"(?:생성|만들|관리|수정|변경|갱신|patch)(?:하고|하며|하되)\s+",
+            prefix,
+        )[-1]
+        if extract_k8s_resources(scoped_prefix):
+            prefix = scoped_prefix
         if match.group("operation") == "삭제" and not any(
             token in prefix
             for token in ("생성", "만들", "관리", "수정", "변경", "갱신", "patch")

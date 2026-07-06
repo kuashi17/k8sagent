@@ -27,6 +27,9 @@ class ErrorCode(str, Enum):
     IMAGE_PULL_FAILED = "IMAGE_PULL_FAILED"
     DOCKER_DAEMON_UNAVAILABLE = "DOCKER_DAEMON_UNAVAILABLE"
     KIND_CONNECTION_FAILED = "KIND_CONNECTION_FAILED"
+    KUBECTL_CONTEXT_INVALID = "KUBECTL_CONTEXT_INVALID"
+    OLLAMA_UNAVAILABLE = "OLLAMA_UNAVAILABLE"
+    PORT_CONFLICT = "PORT_CONFLICT"
     COMMAND_TIMEOUT = "COMMAND_TIMEOUT"
 
 
@@ -89,6 +92,9 @@ ERROR_REGISTRY = {
         definition(ErrorCode.IMAGE_PULL_FAILED, "kubernetes", "컨테이너 이미지를 가져오지 못했습니다.", "image-pull", "retry-after-environment-recovery", True),
         definition(ErrorCode.DOCKER_DAEMON_UNAVAILABLE, "infrastructure", "Docker daemon에 연결할 수 없습니다.", "docker-kind-connection", "retry-after-environment-recovery", True),
         definition(ErrorCode.KIND_CONNECTION_FAILED, "infrastructure", "kind 클러스터에 연결할 수 없습니다.", "docker-kind-connection", "retry-after-environment-recovery", True),
+        definition(ErrorCode.KUBECTL_CONTEXT_INVALID, "infrastructure", "kubectl context가 없거나 현재 클러스터와 맞지 않습니다.", "kubectl-context", "retry-after-environment-recovery", True),
+        definition(ErrorCode.OLLAMA_UNAVAILABLE, "infrastructure", "Local LLM 서버에 연결할 수 없습니다.", "local-llm-connection", "retry-after-environment-recovery", True),
+        definition(ErrorCode.PORT_CONFLICT, "infrastructure", "필요한 포트를 이미 다른 프로세스가 사용 중입니다.", "port-conflict", "retry-after-environment-recovery", True),
         definition(ErrorCode.COMMAND_TIMEOUT, "infrastructure", "명령이 제한 시간 안에 끝나지 않았습니다.", "command-timeout", "retry-after-environment-recovery", True, "warning"),
     ]
 }

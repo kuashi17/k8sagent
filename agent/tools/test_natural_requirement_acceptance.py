@@ -5,7 +5,11 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from agent.context_builder import missing_information, summarize_requirement
+from agent.context_builder import (
+    clarifying_questions,
+    missing_information,
+    summarize_requirement,
+)
 from agent.tools.spec_generator import generate_spec
 
 
@@ -314,6 +318,45 @@ Controller는 Deployment를 생성합니다.
         self.assertTrue(any("Field type requires confirmation" in item for item in spec["errors"]))
         summary = summarize_requirement(text)
         self.assertEqual(summary["ambiguousFieldTypes"], ["spec.count", "spec.options"])
+
+    def test_opposite_resource_instructions_require_clarification(self) -> None:
+        cases = [
+            "Pod를 생성하지 말고 Pod를 생성해 주세요.",
+            "PVC는 삭제 시 유지하되 함께 삭제해 주세요.",
+            "Deployment를 읽기만 하되 외부 변경은 spec 기준으로 복구해 주세요.",
+        ]
+        prefix = """
+ConflictExample Custom Resource를 만들고 싶습니다.
+API는 conflict.sample.io/v1alpha1입니다.
+spec:
+- name: string
+status:
+- phase: string
+"""
+
+        for instruction in cases:
+            with self.subTest(instruction=instruction):
+                text = prefix + instruction
+                summary = summarize_requirement(text)
+                missing = missing_information(summary, text)
+                self.assertTrue(summary["requirementConflicts"])
+                self.assertTrue(any(item.startswith("conflicting requirement: ") for item in missing))
+                self.assertTrue(any("어느 동작" in item for item in clarifying_questions(missing, summary)))
+
+    def test_plain_negative_resource_instruction_is_not_a_conflict(self) -> None:
+        text = """
+OnlyDeployment Custom Resource를 만들고 싶습니다.
+API는 apps.sample.io/v1alpha1입니다.
+spec:
+- image: string
+status:
+- phase: string
+Deployment만 생성하고 Service는 만들지 마세요.
+"""
+        summary = summarize_requirement(text)
+
+        self.assertEqual(summary["managedResources"], ["Deployment"])
+        self.assertEqual(summary["requirementConflicts"], [])
 
 
 if __name__ == "__main__":

@@ -196,6 +196,42 @@ class ResultPresenterTest(unittest.TestCase):
             "일부 생성되었을 수 있는 리소스 확인",
         )
 
+    def test_kind_environment_failures_explain_the_specific_recovery(self) -> None:
+        cases = [
+            (
+                "error: context kind-missing does not exist",
+                "KUBECTL_CONTEXT_INVALID",
+                "kubectl config get-contexts",
+            ),
+            (
+                "ollama request failed: connection refused",
+                "OLLAMA_UNAVAILABLE",
+                "ollama list",
+            ),
+            (
+                "listen tcp :8000: bind: address already in use",
+                "PORT_CONFLICT",
+                "포트 번호",
+            ),
+        ]
+
+        for error, code, recovery_hint in cases:
+            with self.subTest(code=code):
+                result = present_kind_validation_result(
+                    {
+                        "state": "failed",
+                        "stderrTail": error,
+                        "kindValidation": {
+                            "status": "failed",
+                            "results": [{"status": "failed", "error": error}],
+                        },
+                    }
+                )
+                self.assertEqual(result.outcome, "infrastructure-failed")
+                self.assertEqual(result.error_code, code)
+                self.assertFalse(result.capability_evidence_eligible)
+                self.assertIn(recovery_hint, " ".join(result.recovery_steps))
+
     def test_log_analysis_uses_dedicated_beginner_result(self) -> None:
         result = present_log_analysis_result(
             {
