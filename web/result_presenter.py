@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -109,9 +110,17 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
             else "실패한 단계와 다음 조치를 확인해 주세요."
         )
     ))
-    capability_support = list(
-        technical.get("capabilitySupport") or []
-    )
+    capability_support = [
+        {
+            **item,
+            "displayLastValidatedAt": compact_datetime(
+                item.get("lastValidatedAt")
+            ),
+        }
+        if isinstance(item, dict)
+        else item
+        for item in technical.get("capabilitySupport") or []
+    ]
     return RunResultView(
         state=state,
         succeeded=succeeded,
@@ -513,6 +522,21 @@ def strings(value: Any) -> list[str]:
 
 def unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def compact_datetime(value: Any) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return str(value)
+    period = "오전" if parsed.hour < 12 else "오후"
+    hour = parsed.hour % 12 or 12
+    return (
+        f"{parsed.year}. {parsed.month}. {parsed.day}. "
+        f"{period} {hour}:{parsed.minute:02d}"
+    )
 
 
 def tool_label(value: str) -> str:

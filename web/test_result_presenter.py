@@ -70,6 +70,7 @@ class ResultPresenterTest(unittest.TestCase):
                                 {
                                     "resource": "Deployment",
                                     "level": "stable",
+                                    "lastValidatedAt": "2026-06-28T21:24:24+09:00",
                                 }
                             ],
                         },
@@ -81,6 +82,10 @@ class ResultPresenterTest(unittest.TestCase):
         self.assertEqual(result.kind, "CustomerPortal")
         self.assertFalse(result.has_experimental_capability)
         self.assertEqual(result.experimental_resources, [])
+        self.assertEqual(
+            result.capability_support[0]["displayLastValidatedAt"],
+            "2026. 6. 28. 오후 9:24",
+        )
 
     def test_clarification_result_requests_requirement_revision(self) -> None:
         result = present_run_result(

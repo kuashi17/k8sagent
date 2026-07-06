@@ -281,10 +281,10 @@
         <strong>{{ item.resource }}</strong> · {{ item.level }} — {{ item.explanation }}
         {% if item.lastValidatedAt %}
           {% if item.level == "experimental" %}
-          <br><span class="muted">마지막 계약 검증: {{ item.lastValidatedAt }}</span>
+          <br><span class="muted">마지막 계약 검증: {{ item.displayLastValidatedAt }}</span>
           <br><span class="muted">실제 kind lifecycle 검증: 아직 없음</span>
           {% else %}
-          <br><span class="muted">마지막 runtime 검증: {{ item.lastValidatedAt }}{% if item.evidenceRun %} · evidence run {{ item.evidenceRun }}{% endif %}</span>
+          <br><span class="muted">마지막 runtime 검증: {{ item.displayLastValidatedAt }}{% if item.evidenceRun %} · evidence run {{ item.evidenceRun }}{% endif %}</span>
           {% endif %}
         {% endif %}
         {% if item.limitations %}<ul>{% for limitation in item.limitations %}<li>제한: {{ limitation }}</li>{% endfor %}</ul>{% endif %}
