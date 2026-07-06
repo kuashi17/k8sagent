@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from web.runtime_environment import configure_docker_cli
+
 
 AGENT_LOG_PATTERN = re.compile(r"Agent logs:\s*(\S+)")
 TERMINAL_STATES = {"succeeded", "failed", "canceled", "interrupted"}
@@ -259,6 +261,10 @@ class JobManager:
                 return
             status = dict(status)
             status.update({"state": "running", "phase": "starting", "startedAt": now_iso()})
+            self._write_status(job_dir, status)
+        if status.get("jobType") == "kind-validation":
+            docker_runtime = configure_docker_cli()
+            status["dockerRuntime"] = docker_runtime
             self._write_status(job_dir, status)
         env = dict(os.environ)
         env["PYTHONUNBUFFERED"] = "1"

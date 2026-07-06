@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from web.job_manager import (
     JobManager,
@@ -93,6 +94,35 @@ class JobManagerTest(unittest.TestCase):
             command[command.index("--cluster-name") + 1],
             "web-abcd1234",
         )
+
+    def test_kind_job_refreshes_docker_runtime_before_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manager = JobManager(
+                root,
+                root / "jobs",
+                execution_mode="external",
+            )
+            submitted = manager.submit(
+                "kind-validation",
+                ["python3", "-c", "print('ok')"],
+            )
+            job_dir = root / submitted["jobDir"]
+            runtime = {
+                "configured": True,
+                "source": "docker-desktop-windows-cli",
+                "docker": "/runtime/bin/docker",
+            }
+
+            with patch(
+                "web.job_manager.configure_docker_cli",
+                return_value=runtime,
+            ) as configure:
+                manager._run(job_dir, submitted)
+
+            configure.assert_called_once_with()
+            status = manager.get(submitted["jobId"])
+            self.assertEqual(status["dockerRuntime"], runtime)
 
     def test_linked_approval_journey_separates_human_wait(self) -> None:
         timings = build_journey_timings(
