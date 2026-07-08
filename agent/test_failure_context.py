@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from agent.failure_context import detect_failure_context
+from agent.failure_context import detect_failure_context, planner_failure_context
 
 
 class FailureContextTest(unittest.TestCase):
@@ -95,6 +95,19 @@ class FailureContextTest(unittest.TestCase):
         )
 
         self.assertIsNone(failure)
+
+    def test_ollama_planner_timeout_has_structured_infrastructure_code(self) -> None:
+        failure = planner_failure_context(
+            self.context,
+            "Ollama local LLM endpoint에 연결할 수 없습니다. "
+            "요청이 90초 안에 끝나지 않았습니다.",
+            "dry-run",
+        )
+
+        self.assertEqual(failure["failedTool"], "requirement-planner")
+        self.assertEqual(failure["errorCode"], "OLLAMA_UNAVAILABLE")
+        self.assertTrue(failure["errorDetails"]["retryable"])
+        self.assertEqual(failure["errorDetails"]["category"], "infrastructure")
 
 
 if __name__ == "__main__":

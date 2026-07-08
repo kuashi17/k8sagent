@@ -314,7 +314,14 @@ class KindDeploymentEngine:
         (self.log_dir / f"{safe_name}.stderr.log").write_text(completed.stderr, encoding="utf-8")
         if check and completed.returncode != 0:
             self.failed_step = name
-            raise RuntimeError(f"command failed exitCode={completed.returncode}: {' '.join(command)}")
+            evidence = (completed.stderr or completed.stdout).strip()
+            if len(evidence) > 2000:
+                evidence = evidence[-2000:]
+            raise RuntimeError(
+                f"command failed exitCode={completed.returncode}: "
+                f"{' '.join(command)}"
+                + (f"\n{evidence}" if evidence else "")
+            )
         return result
 
     def run_cmd_with_retry(

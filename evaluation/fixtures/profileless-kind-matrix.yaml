@@ -12,3 +12,4 @@ requirements:
   - evaluation/fixtures/requirements/deployment-health.txt
   - evaluation/fixtures/requirements/multi-resource-status.txt
   - evaluation/fixtures/requirements/storage-claim-lifecycle.txt
+  - evaluation/fixtures/requirements/app-access-policy.txt

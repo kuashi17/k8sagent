@@ -25,6 +25,20 @@ class ErrorTaxonomyTest(unittest.TestCase):
             "DOCKER_DAEMON_UNAVAILABLE",
         )
 
+    def test_kind_cluster_creation_failure_is_infrastructure_error(self) -> None:
+        result = infer_tool_error(
+            {
+                "deploymentSummary": {
+                    "failedStep": "kind-create-cluster",
+                    "error": "failed to get api server port: UtilAcceptVsock",
+                }
+            },
+            "kind_deployment",
+        )
+
+        self.assertEqual(result["errorCode"], "KIND_CONNECTION_FAILED")
+        self.assertTrue(result["retryable"])
+
     def test_registry_covers_every_non_empty_error_code(self) -> None:
         expected = {code.value for code in ErrorCode if code is not ErrorCode.NONE}
         self.assertEqual(set(ERROR_REGISTRY), expected)
@@ -84,6 +98,10 @@ class ErrorTaxonomyTest(unittest.TestCase):
             ),
             (
                 "ollama request failed: connection refused",
+                ErrorCode.OLLAMA_UNAVAILABLE,
+            ),
+            (
+                "Ollama local LLM endpoint에 연결할 수 없습니다. 요청이 90초 안에 끝나지 않았습니다.",
                 ErrorCode.OLLAMA_UNAVAILABLE,
             ),
             (

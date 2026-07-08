@@ -676,6 +676,16 @@ def sample_value(field_type: str, name: str) -> Any:
 
 
 def semantic_sample_value(name: str) -> Any:
+    normalized = name.lower()
+    if normalized == "protocol" or normalized.endswith("protocol"):
+        return "TCP"
+    if normalized == "port" or normalized.endswith("port"):
+        return 8080
+    if "namespace" in normalized:
+        return "default"
+    if normalized.endswith("selector"):
+        return {"app": "sample"}
+
     values = {
         "accessMode": "ReadWriteOnce",
         "accessModes": ["ReadWriteOnce"],

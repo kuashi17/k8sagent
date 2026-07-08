@@ -95,6 +95,22 @@ class ArtifactPatcherTest(unittest.TestCase):
             sample_value("string", "namespaceName"),
             "default",
         )
+        self.assertEqual(
+            sample_value("string", "protocol"),
+            "TCP",
+        )
+        self.assertEqual(
+            sample_value("int32", "allowedPort"),
+            8080,
+        )
+        self.assertEqual(
+            sample_value("string", "allowedFromNamespace"),
+            "default",
+        )
+        self.assertEqual(
+            sample_value("map[string]string", "appSelector"),
+            {"app": "sample"},
+        )
 
     @patch.dict("os.environ", {"GOFLAGS": "-mod=readonly"}, clear=False)
     def test_scaffold_execution_disables_vcs_stamping(self) -> None:

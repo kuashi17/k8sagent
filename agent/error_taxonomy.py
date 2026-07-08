@@ -129,6 +129,8 @@ def infer_tool_error(
             or "failed to connect" in lowered
             or "unavailable" in lowered
             or "could not connect" in lowered
+            or "연결할 수 없" in lowered
+            or "요청이" in lowered and "초 안에 끝나지" in lowered
         )
     ):
         code = ErrorCode.OLLAMA_UNAVAILABLE
@@ -140,6 +142,14 @@ def infer_tool_error(
         code = ErrorCode.PORT_CONFLICT
     elif "timed out" in lowered or "timeout" in lowered:
         code = ErrorCode.COMMAND_TIMEOUT
+    elif failed_step in {
+        "ensure-cluster",
+        "kind-create-cluster",
+        "kind-get-clusters",
+        "kubectl-context",
+        "kubectl-use-context",
+    }:
+        code = ErrorCode.KIND_CONNECTION_FAILED
     elif "forbidden" in lowered or failed_step == "rbac-preflight":
         code = ErrorCode.RBAC_FORBIDDEN
     elif "insufficient nvidia.com/gpu" in lowered:
@@ -160,7 +170,11 @@ def infer_tool_error(
         code = ErrorCode.REQUIRED_INPUT_MISSING
     elif tool == "validation" or failed_step.startswith("make "):
         code = ErrorCode.VALIDATION_FAILED
-    elif tool == "kind_deployment" and "connection" in lowered:
+    elif tool == "kind_deployment" and (
+        "connection" in lowered
+        or "failed to get api server port" in lowered
+        or "utilacceptvsock" in lowered
+    ):
         code = ErrorCode.KIND_CONNECTION_FAILED
     resource, verb = extract_rbac_subject(text)
     return canonical_error_details({

@@ -21,7 +21,10 @@ from agent.evidence_builder import (
     build_requirement_safety_evaluation,
 )
 from agent.execution_engine import execute_planned_tools
-from agent.failure_context import detect_failure_context
+from agent.failure_context import (
+    detect_failure_context,
+    planner_failure_context,
+)
 from agent.final_evaluator import evaluate_final_result
 from agent.llm.client import LLMUnavailable, config_from_env
 from agent.llm.planner import LLMOutputParseError, plan_requirement_with_llm
@@ -355,12 +358,18 @@ def finish_planner_failure(
         "toolResults": [],
     }
     final_result = empty_final_result(planner_result["error"])
+    failure_context = planner_failure_context(
+        context,
+        str(planner_result["error"]),
+        args.mode,
+    )
     summary = build_requirement_summary(
         args,
         context,
         planner_result,
         execution,
         final_result,
+        failure_context=failure_context,
     )
     summary["timings"] = finalize_timings(
         context,

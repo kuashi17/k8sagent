@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.contracts import FailureContext
-from agent.error_taxonomy import ErrorCode
+from agent.error_taxonomy import ErrorCode, infer_tool_error
 
 
 def detect_failure_context(
@@ -106,6 +106,44 @@ def detect_failure_context(
             "stderr": message,
         },
     })
+
+
+def planner_failure_context(
+    context: dict[str, Any],
+    message: str,
+    mode: str,
+) -> dict[str, Any]:
+    """Build structured evidence for a planner/provider failure."""
+    details = infer_tool_error(
+        {"exitCode": 2, "stderr": message},
+        "requirement-planner",
+    )
+    return validated_failure_context(
+        {
+            "failedTool": "requirement-planner",
+            "failedStep": "LLM planning",
+            "exitCode": 2,
+            "errorCode": details["errorCode"],
+            "errorDetails": details,
+            "command": [],
+            "stdoutTail": "",
+            "stderrTail": message,
+            "generatedArtifacts": existing_artifacts(context),
+            "missingArtifacts": missing_artifacts(context),
+            "previousSuccessfulSteps": [],
+            "workspace": context["workspace"],
+            "targetProjectDir": context["targetProjectDir"],
+            "agentMode": mode,
+            "failedResult": {
+                "tool": "requirement-planner",
+                "exitCode": 2,
+                "status": "failed",
+                "stderr": message,
+                "errorCode": details["errorCode"],
+                "errorDetails": details,
+            },
+        }
+    )
 
 
 def validated_failure_context(value: dict[str, Any]) -> dict[str, Any]:
