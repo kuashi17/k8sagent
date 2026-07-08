@@ -240,6 +240,9 @@ def compile_requirement(
         "managedResources": (
             (spec.get("controller") or {}).get("managedResources") or []
         ),
+        "observedResources": (
+            (spec.get("controller") or {}).get("observedResources") or []
+        ),
         "projectDir": str(project_dir),
         "specPath": str(spec_path),
         "steps": steps,
