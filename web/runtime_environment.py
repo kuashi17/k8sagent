@@ -12,6 +12,7 @@ from typing import MutableMapping
 DOCKER_DESKTOP_CLI = Path(
     "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
 )
+DEFAULT_DOCKER_INFO_TIMEOUT_SECONDS = 5.0
 
 
 def configure_docker_cli(
@@ -67,15 +68,27 @@ def docker_responds(
     executable: Path,
     environment: MutableMapping[str, str],
 ) -> bool:
+    timeout = docker_info_timeout(environment)
     try:
         completed = subprocess.run(
             [str(executable), "info", "--format", "{{.ServerVersion}}"],
             env=dict(environment),
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=timeout,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
     return completed.returncode == 0 and bool(completed.stdout.strip())
+
+
+def docker_info_timeout(environment: MutableMapping[str, str]) -> float:
+    raw = str(environment.get("K8SAGENT_DOCKER_INFO_TIMEOUT_SECONDS") or "").strip()
+    if not raw:
+        return DEFAULT_DOCKER_INFO_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_DOCKER_INFO_TIMEOUT_SECONDS
+    return max(1.0, min(value, 30.0))
