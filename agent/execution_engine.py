@@ -31,6 +31,9 @@ def execute_planned_tools(
     allow_execute: bool,
     planner_result: dict[str, Any],
 ) -> dict[str, Any]:
+    # 신규 Kubernetes 리소스 capability는 별도 승인 대상이다.
+    # 일반 실행 승인과 capability 승인을 분리해 LLM이 임의 리소스 권한을
+    # 바로 생성하지 못하게 한다.
     capability_blocked = bool(
         mode == "execute"
         and allow_execute
@@ -45,6 +48,8 @@ def execute_planned_tools(
         effective_allow_execute,
     )
     validation_started = time.perf_counter()
+    # LLM이 제안한 Tool call은 allowlist, 필수 인자, 실행 모드, 경로 정책을
+    # 통과해야만 validated 목록에 들어간다.
     validated, rejected, deferred = validate_planned_tool_calls(
         planner_result,
         supported_calls,
@@ -88,6 +93,8 @@ def execute_planned_tools(
         results.append(result)
         print(f"exitCode={result['exitCode']} status={result['status']}")
         if result["exitCode"] != 0:
+            # 첫 실패에서 즉시 중단한다. 실패 이후 Tool을 계속 실행하면
+            # 원인과 산출물이 섞여 recovery 근거가 흐려질 수 있다.
             break
         if (
             name == "capability_drafter"

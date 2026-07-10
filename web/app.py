@@ -85,6 +85,8 @@ workflows = WorkflowService(REPO_ROOT, LOG_ROOT, PROFILE_DIR)
 
 @app.on_event("startup")
 def prepare_local_runtime() -> None:
+    # Web UI에서 kind 검증을 누를 때 Docker CLI 경로가 흔들리지 않도록
+    # 서버 시작 시 한 번 현재 런타임을 확인한다.
     result = configure_docker_cli()
     print(
         "Docker CLI runtime: "
@@ -94,6 +96,8 @@ def prepare_local_runtime() -> None:
 
 @app.on_event("startup")
 def warm_local_llm() -> None:
+    # 첫 계획 생성 지연을 줄이기 위한 선택적 warm-up이다.
+    # 실패해도 Web 서버 자체는 계속 뜨며, 결과 화면에서 LLM 오류를 설명한다.
     if os.environ.get("LOCAL_LLM_WARMUP", "true").lower() in {
         "0",
         "false",
@@ -116,6 +120,8 @@ async def index(request: Request) -> HTMLResponse:
 async def run_requirement(request: Request) -> HTMLResponse:
     form = await request.form()
     try:
+        # 사용자의 form 입력은 먼저 Pydantic schema로 검증한다.
+        # Web UI도 CLI와 같은 Agent 계약을 사용하므로 별도 생성 로직을 갖지 않는다.
         run_request = RequirementRunRequest.from_form(form)
         job = workflows.submit_requirement(run_request, jobs)
     except (ValidationError, ValueError) as exc:
@@ -159,6 +165,8 @@ async def analyze_log(request: Request) -> HTMLResponse:
 @app.post("/runs/job/{job_id}/kind-validate")
 async def validate_in_kind(job_id: str) -> RedirectResponse:
     try:
+        # 코드 생성이 성공한 execute job만 kind 검증 대상으로 허용한다.
+        # Docker/kind 실패는 별도 kind-validation job으로 남겨 Agent 결과와 분리한다.
         job = workflows.submit_kind_validation(job_id, jobs)
     except ValueError:
         return RedirectResponse(f"/runs/job/{job_id}", status_code=303)

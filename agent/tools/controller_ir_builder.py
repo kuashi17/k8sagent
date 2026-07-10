@@ -34,6 +34,8 @@ from agent.tools.resource_catalog import (
 
 
 def build_controller_ir(model: dict[str, Any]) -> ControllerGenerationIR:
+    # 일반화의 핵심 단계다. 리소스 이름별 템플릿을 직접 고르는 대신,
+    # spec + capability catalog를 행동 중심 IR로 바꾼 뒤 emitter가 코드를 만든다.
     catalog = load_resource_catalog()
     resources_by_name = catalog.by_name()
     api = model["api"]

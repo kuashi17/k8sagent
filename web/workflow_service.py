@@ -28,6 +28,8 @@ class WorkflowService:
         request: RequirementRunRequest,
         jobs: Any,
     ) -> dict[str, Any]:
+        # Web 요청을 직접 처리하지 않고 Agent CLI 명령으로 변환한다.
+        # 이렇게 해야 Web과 CLI가 같은 안전 정책, 같은 로그 형식, 같은 Tool 계약을 공유한다.
         profile = self.validate_profile(request.profile)
         if request.approval_parent_job_id:
             parent = jobs.get(request.approval_parent_job_id)
@@ -121,6 +123,8 @@ class WorkflowService:
         source_job_id: str,
         jobs: Any,
     ) -> dict[str, Any]:
+        # kind 검증은 이미 코드 생성과 make 검증이 끝난 execute job에서만 시작한다.
+        # 인프라 실패가 발생해도 원래 생성 결과를 덮어쓰지 않고 별도 job으로 기록한다.
         source = jobs.get(source_job_id)
         metadata = (source or {}).get("metadata") or {}
         if (

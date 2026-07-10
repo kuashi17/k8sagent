@@ -8,6 +8,7 @@ workspace/*
 !workspace/.gitkeep
 knowledge-base/.index/
 .cache/
+.ci-history/
 evaluation/results/*
 !evaluation/results/.gitkeep
 

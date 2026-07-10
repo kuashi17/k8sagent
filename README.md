@@ -1,1314 +1,405 @@
 # Kubebuilder Operator AI Agent
 
-Kubebuilder 기반 Kubernetes Operator 개발을 자동화하기 위한 로컬 실행형 AI Agent 프로젝트입니다.
+자연어 요구사항을 입력하면 Kubernetes Operator 개발에 필요한 구조화 스펙, Kubebuilder 프로젝트, Controller 코드, RBAC, 검증 로그와 실행 근거를 생성하는 로컬 실행형 AI 개발지원 시스템입니다.
 
-이 프로젝트는 단순히 AI에게 코드 작성을 질문하는 챗봇이 아니라, 자연어 요구사항 분석부터 Kubebuilder 개발 절차 안내, 산출물 생성, 검증 명령 실행, 실패 로그 분석, 수정 방향 제시까지 이어지는 생성·검증 중심 개발지원 시스템을 목표로 합니다.
+이 프로젝트는 LLM 답변을 그대로 복사해 쓰는 챗봇이 아니라, AI 계획을 Pydantic 계약과 Tool allowlist로 검증한 뒤 제한된 자동화 도구만 실행하는 생성·검증 중심 Agent입니다.
 
-## 그림으로 먼저 이해하기
+## 과제 요약
 
-자세한 설명을 읽기 전에 이 그림 하나로 먼저 보면 됩니다.
+| 항목 | 내용 |
+| --- | --- |
+| 과제명 | Kubebuilder 기반 Operator 개발 자동화를 위한 AI 기반 생성·검증 시스템 |
+| 과제 유형 | AI 기반 개발/운영업무 생산성 향상 |
+| 대상 사용자 | Kubernetes Operator를 처음 만들거나 반복적으로 작성해야 하는 플랫폼/서비스 개발자 |
+| 해결 문제 | 자연어 요구사항을 CRD, Controller, RBAC, 검증 가능한 Operator 프로젝트로 바꾸는 과정이 어렵고 수작업 오류가 많음 |
+| 핵심 접근 | Local LLM + RAG + 구조화 계약 + 안전한 Tool 실행 + kind lifecycle evidence |
+| 현재 수준 | 로컬/내부 사용 가능한 제품형 MVP |
 
-```mermaid
-flowchart LR
-    U["사용자<br/>Operator 요구사항 작성"] --> A["AI Agent<br/>요구사항 이해 + RAG 검색 + 계획 생성"]
-    A --> T["자동화 Tool<br/>spec 생성, scaffold, patch, 검증"]
-    T --> O["결과물<br/>Kubebuilder 프로젝트, YAML, 로그"]
-    O --> A
-    A --> R["리포트<br/>성공/실패/다음 조치 설명"]
-```
+## 해결하려는 Pain Point
 
-한 문장으로 말하면:
+Kubernetes Operator 개발은 다음 지식과 절차가 동시에 필요합니다.
 
-```text
-사용자가 만들고 싶은 Operator를 자연어로 적으면,
-AI Agent가 관련 문서를 찾아보고,
-기존 자동화 Tool을 안전하게 호출해서,
-Operator 프로젝트와 검증 결과를 만들고,
-마지막에 사람이 이해할 수 있는 리포트를 남깁니다.
-```
+- CRD API group/version/kind 설계
+- spec/status 필드 타입 정의
+- Kubebuilder scaffold와 code generation
+- Controller reconcile 로직 작성
+- RBAC 최소 권한 작성
+- `make generate`, `make manifests`, `make test` 검증
+- kind 클러스터에서 create/update/drift/delete lifecycle 확인
+- 실패 로그를 보고 원인과 복구 방향 판단
 
-처음 이해할 때는 아래 문서를 먼저 보는 것이 좋습니다.
+초보 개발자에게는 이 과정이 길고, 중간에 실패하면 어디를 고쳐야 하는지 알기 어렵습니다. 이 Agent는 사용자가 자연어로 원하는 Operator를 설명하면 안전한 계획을 먼저 보여주고, 승인 후 코드 생성과 검증을 자동화합니다.
 
-- [그림 중심 전체 흐름 설명](docs/visual-overview.md)
-
-## 과제명
-
-Kubebuilder 기반 Operator 개발 자동화를 위한 AI 기반 생성·검증 시스템 구축
-
-## 대상 사용자
-
-- Kubebuilder 기반 Kubernetes Operator를 설계·개발하는 내부 개발자
-- CRD, Controller, RBAC, Manifest, 테스트를 작성하는 플랫폼 엔지니어
-- GitHub, Jenkins, Harbor, Argo CD 기반 개발·검증·배포 체계를 사용하는 조직
-
-## 핵심 목표
-
-- 자연어 요구사항을 Operator 개발 요구사항으로 구조화합니다.
-- AI Agent가 Kubebuilder 개발 순서를 단계별로 안내합니다.
-- CRD, Controller, RBAC, Manifest, 테스트 초안 등 필수 산출물 생성을 지원합니다.
-- `make generate`, `make manifests`, `make test` 등 검증 명령 실행 흐름을 정의합니다.
-- 실패 로그를 분석하여 원인과 해결 방향을 제시합니다.
-- 필요 시 특정 산출물만 부분 수정하거나 재생성할 수 있는 구조를 지향합니다.
-- GitHub, Jenkins, Harbor, Argo CD 연계까지 확장 가능한 구조로 설계합니다.
-
-## 한눈에 보는 전체 구조
-
-이 프로젝트는 크게 세 계층으로 구성됩니다.
-
-| 계층 | 역할 | 대표 파일 |
-| --- | --- | --- |
-| AI Agent 계층 | 사용자의 자연어 요구사항을 읽고, RAG 문서를 검색하고, Local LLM이 실행 계획과 결과 판단을 생성 | `agent/langchain_agent.py`, `agent/llm/*`, `agent/rag/retriever.py` |
-| Tool 계층 | Agent가 호출하는 실제 자동화 도구. 스펙 생성, 실행 계획 생성, scaffold, patch, 검증, 로그 분석을 담당 | `agent/tools/*.py` |
-| 산출물/검증 계층 | 생성된 spec, Kubebuilder 프로젝트, 실행 로그, Agent 리포트를 저장 | `generated/`, `workspace/`, `logs/` |
-
-핵심 개념은 다음과 같습니다.
-
-- **LLM은 명령을 직접 실행하지 않습니다.** LLM은 요구사항을 해석하고 어떤 Tool을 호출할지 계획합니다.
-- **실제 명령 실행은 Tool wrapper가 담당합니다.** 허용된 Tool만 실행하고, 위험한 명령은 실행하지 않습니다.
-- **기본은 dry-run입니다.** 실제 scaffold, patch, e2e 실행은 사용자가 `--execute`를 명시할 때만 수행합니다.
-- **RAG 문서는 모두 로컬 Markdown입니다.** `knowledge-base/` 아래 문서를 검색해 LLM 입력에 포함합니다.
-- **LLM provider는 Ollama local만 사용합니다.** 내부 코드, YAML, Kubernetes 로그를 외부 API로 보내지 않는 구조입니다.
-
-## 전체 흐름도
-
-사용자가 보는 가장 큰 흐름은 다음과 같습니다.
-
-```text
-자연어 요구사항
-  -> RAG 문서 검색
-  -> Local LLM planner
-  -> Tool 호출 계획 생성
-  -> Tool allowlist / 인자 검증
-  -> 기존 자동화 Tool 실행
-  -> Tool 실행 결과 수집
-  -> Local LLM 최종 평가
-  -> report / summary / 로그 저장
-```
-
-GitHub에서 Mermaid가 보이는 환경이라면 아래 흐름도도 함께 확인할 수 있습니다.
+## 전체 동작 흐름
 
 ```mermaid
 flowchart TD
-    A["사용자 자연어 요구사항"] --> B["agent/langchain_agent.py"]
-    B --> C["RAG 검색: knowledge-base Markdown"]
-    C --> D["Local LLM Planner: Ollama"]
-    D --> E["Tool 호출 계획 JSON"]
-    E --> F["Tool Allowlist 및 인자 검증"]
-    F --> G["Tool Wrapper 실행"]
-
-    G --> H1["spec_generator.py"]
-    G --> H2["command_planner.py"]
-    G --> H3["scaffold_runner.py"]
-    G --> H4["artifact_patcher.py"]
-    G --> H5["validation: make generate/manifests/test"]
-    G --> H6["kind_deployment_runner.py"]
-    G --> H7["log_analyzer.py"]
-
-    H1 --> I["generated/operator-spec.yaml"]
-    H2 --> J["generated/command-plan.md"]
-    H3 --> K["workspace/generated-operators/<operator>"]
-    H4 --> L["API types, sample YAML, RBAC marker"]
-    H5 --> M["CRD/RBAC/generated code 검증"]
-    H6 --> N["kind 기반 실제 Kubernetes 검증"]
-    H7 --> O["analysis.md"]
-
-    I --> P["Tool 실행 결과 수집"]
-    J --> P
-    K --> P
-    L --> P
-    M --> P
-    N --> P
-    O --> P
-
-    P --> Q["Local LLM 최종 결과 요약"]
-    Q --> R["logs/agent/<timestamp>/agent-report.md"]
-    Q --> S["logs/agent/<timestamp>/summary.json"]
+    U["사용자<br/>Operator 요구사항 입력"] --> W["Web UI 또는 CLI"]
+    W --> A["Agent Orchestrator"]
+    A --> R["RAG 검색<br/>knowledge-base Markdown"]
+    A --> L["Local LLM Planner<br/>Ollama"]
+    L --> C["Pydantic 계약 검증<br/>RequirementPlan / ToolCall"]
+    C --> V["Tool allowlist<br/>경로·모드·인자 검증"]
+    V --> T["안전한 Tool 실행"]
+    T --> S["operator-spec.yaml 생성"]
+    T --> P["Kubebuilder scaffold"]
+    T --> G["Controller/RBAC/CRD patch"]
+    T --> M["make generate<br/>make manifests<br/>make test"]
+    T --> K["kind lifecycle 검증"]
+    M --> E["Evidence 수집"]
+    K --> E
+    E --> O["AgentResult<br/>초보자 요약 + 기술 세부정보"]
+    O --> W
 ```
 
-## 사용자 입장에서 보는 실행 흐름
+## 안전 실행 구조
 
-초보자가 이 시스템을 사용할 때는 아래 순서로 이해하면 됩니다.
+```mermaid
+sequenceDiagram
+    participant User as 사용자
+    participant UI as Web UI
+    participant Agent as Agent
+    participant LLM as Local LLM
+    participant Tools as Tool Wrapper
+    participant K8s as kind/Kubernetes
 
-| 단계 | 사용자가 하는 일 | Agent/Tool이 하는 일 | 생성되는 결과 |
-| --- | --- | --- | --- |
-| 1 | “어떤 Operator를 만들고 싶은지” 자연어로 작성 | requirement 파일을 읽음 | `requirements/*.txt` |
-| 2 | Agent dry-run 실행 | RAG 검색 후 LLM이 요구사항 요약, 누락 정보, Tool 계획 생성 | `logs/agent/<timestamp>/llm-output.json` |
-| 3 | 구조화 스펙 생성 | `spec_generator.py`가 requirement를 `operator-spec.yaml`로 변환 | `generated/<kind>-operator-spec.yaml` |
-| 4 | 실행 계획 생성 | `command_planner.py`가 Kubebuilder 명령 순서와 목적을 Markdown으로 작성 | `generated/<kind>-command-plan.md` |
-| 5 | scaffold dry-run | `scaffold_runner.py`가 실제 실행될 Kubebuilder 명령을 미리 보여줌 | dry-run 출력, `logs/scaffold/*` |
-| 6 | scaffold execute | `kubebuilder init`, `kubebuilder create api`, `make generate`, `make manifests`, `make test` 실행 | `workspace/generated-operators/<operator>` |
-| 7 | 산출물 보정 | `artifact_patcher.py`가 spec/status 필드, sample YAML, RBAC marker 반영 | API 타입, sample YAML, RBAC marker |
-| 8 | make 검증 | `make generate`, `make manifests`, `make test`로 컴파일/manifest 검증 | 검증 로그 |
-| 9 | kind 검증 | kind 클러스터에서 CRD 설치, CR 생성, lifecycle과 권한 확인 | profileless kind 결과 JSON |
-| 10 | 로그 분석 | `log_analyzer.py`와 LLM이 실패/경고/성공을 설명 | `analysis.md`, `agent-report.md` |
-| 11 | 실패 복구 계획 | LLM recovery plan을 policy validator가 검증 | `validated-recovery-plan.json` |
-
-## Agent 내부 처리 흐름
-
-`agent/langchain_agent.py`는 CLI 진입점이며, 실제 흐름은
-`requirement_orchestrator.py`와 `log_analysis_orchestrator.py`가 담당합니다.
-요구사항 실행은 다음 순서로 동작합니다.
-
-```text
-1. 입력 확인
-   - --requirement 또는 --analyze-log 확인
-   - --profile 확인
-   - --mode dry-run 또는 execute 확인
-
-2. RAG 검색
-   - knowledge-base/kubebuilder-guides
-   - knowledge-base/troubleshooting
-   - knowledge-base/examples
-
-3. Local LLM 호출
-   - requirement summary 생성
-   - missing information 점검
-   - planned steps 생성
-   - toolCalls 생성
-   - risks / nextActions 생성
-
-4. Tool 호출 검증
-   - 허용 Tool인지 확인
-   - workspace 경로가 repo 밖인지 확인
-   - --execute가 없으면 변경 작업은 dry-run으로 강제
-   - 잘못된 Tool은 rejectedToolCalls에 기록
-
-5. Tool 실행
-   - spec_generator
-   - command_planner
-   - scaffold_runner
-   - artifact_patcher
-   - validation
-   - kind_deployment
-   - log_analyzer
-
-6. 최종 LLM 평가
-   - Tool exitCode 확인
-   - 생성 산출물 확인
-   - warning/error 요약
-   - beginnerSummary 생성
-
-7. 실패 시 recovery planning
-   - failure-context.json 생성
-   - troubleshooting RAG 검색
-   - LLM recovery plan 생성
-   - Recovery Policy Validator로 allowlist/근본 원인 검증
-   - 사용자 승인 전에는 복구 Tool 실행 안 함
+    User->>UI: 자연어 요구사항 입력
+    UI->>Agent: dry-run 계획 요청
+    Agent->>LLM: 구조화 계획 생성 요청
+    LLM-->>Agent: Tool 계획 JSON
+    Agent->>Agent: Pydantic schema 검증
+    Agent->>Agent: Tool allowlist / 경로 / 실행 모드 검증
+    Agent-->>UI: 계획, 위험, 누락 정보 표시
+    User->>UI: 생성 승인
+    UI->>Tools: 허용된 Tool만 실행
+    Tools-->>UI: 생성 파일, make 검증 결과
+    User->>UI: Kubernetes 검증 승인
+    UI->>K8s: kind lifecycle 검증
+    K8s-->>UI: runtime evidence
 ```
 
-## Tool별 역할
+핵심 원칙은 다음과 같습니다.
 
-| Tool | 파일 | 입력 | 출력 | 실제 변경 여부 |
-| --- | --- | --- | --- | --- |
-| Requirement Planner | `agent/requirement_orchestrator.py` | requirement, profile | LLM 계획, Tool 호출 계획 | 기본적으로 변경 없음 |
-| RAG Retriever | `agent/rag/retriever.py` | 검색어 | 관련 Markdown 문서 발췌 | 변경 없음 |
-| LLM Client | `agent/llm/client.py` | prompt JSON | LLM JSON 응답 | 변경 없음 |
-| Spec Generator | `agent/tools/spec_generator.py` | `requirements/*.txt` | `generated/*-operator-spec.yaml` | 파일 생성 |
-| Command Planner | `agent/tools/command_planner.py` | `operator-spec.yaml` | `generated/*-command-plan.md` | 파일 생성 |
-| Scaffold Runner | `agent/tools/scaffold_runner.py` | `operator-spec.yaml` | Kubebuilder 프로젝트 | `--execute`일 때만 생성 |
-| Artifact Patcher | `agent/tools/artifact_patcher.py` | spec, project, profile | API 타입, sample, RBAC 보정 | `--execute`일 때만 수정 |
-| Controller Renderer | `agent/tools/controller_renderer.py` | profile 없는 generalized spec | ConfigMap, Secret, PVC, CronJob, Deployment/Service, Namespace reconcile 코드 | `artifact_patcher --execute` 경유 |
-| Controller IR | `agent/tools/controller_ir.py`, `controller_ir_builder.py` | generalized spec | scope, strategy, capability, ownership, deletion, mapping이 명시된 IR | profileless patch 로그에 `controller-ir.json` 기록 |
-| Validation Tool | `agent/tools/langchain_wrappers.py` 내부 | project, targets | `make generate/manifests/test` 결과 | 빌드 산출물 생성 가능 |
-| Kind Deployment | `agent/tools/kind_deployment_runner.py` | profile capability, project | Controller Deployment와 lifecycle 검증 | `--kind-deploy --execute`일 때만 실제 배포 |
-| Tool Validator | `agent/tool_validator.py` | LLM JSON, Tool plan, arguments | validated/rejected/deferred calls | schema, allowlist, mode, path 검증 |
-| Execution Engine | `agent/execution_engine.py` | validated Tool plan, capability context | ordered Tool results and timings | resume, 실행 순서, 첫 실패 중단 |
-| Recovery Policy | `agent/recovery_policy.py` | failure context, raw recovery plan | approval-gated recovery plan | 결정론적 분류, allowlist, 자동 실행 차단 |
-| Report Writer | `agent/report_writer.py` | summary, Tool/LLM/recovery results | JSON, stdout/stderr artifacts | 체크포인트와 최종 로그 영속화 |
-| Report Renderer | `agent/report_renderer.py` | Agent summary | Markdown requirement/log report | safety, evidence, recovery 표시 |
-| Context Builder | `agent/context_builder.py` | requirement, profile hint, retrieval | normalized planning context | 요구사항 파싱과 누락 정보 조립 |
-| Agent Contracts | `agent/contracts.py` | planner, Tool, recovery, summary data | Pydantic 검증 모델 | 단계 간 JSON 계약과 타입 검증 |
-| Controller Quality | `agent/evaluation/controller_quality.py` | generated project, operator spec, validation result | CRD/RBAC/Reconcile/status/멱등성/삭제/test 점수 | profile 없는 생성 결과의 품질 증거 |
-| Unified Evaluation | `agent/evaluation/unified_evaluation.py` | RAG, reliability, artifact, kind, latency 결과 | `final-evaluation.json` | 전체 품질 점수와 미실행 항목 통합 |
-| Evidence Builder | `agent/evidence_builder.py` | summary, Tool/retrieval results | safety and evidence trace | 근거 연결과 안전 정책 표시 |
-| Summary Builder | `agent/summary_builder.py` | context, planner, execution, recovery | Agent summary | 오류·warning·다음 조치 조립 |
-| Log Analyzer | `agent/tools/log_analyzer.py` | `logs/*/<timestamp>` | `analysis.md` | 분석 파일 생성 |
-| Recovery Validator | `agent/recovery_policy.py` | raw recovery plan, failure context | validated/rejected recovery plan | 복구 Tool 자동 실행 안 함 |
+- LLM은 셸 명령을 직접 실행하지 않습니다.
+- 기본 실행은 dry-run입니다.
+- 실제 파일 생성과 kind 검증은 사용자 승인 이후에만 수행됩니다.
+- Tool 이름, 인자, 경로, 실행 모드는 코드에서 검증합니다.
+- 실패 복구는 자동 실행하지 않고, 근거 기반 계획만 제안합니다.
+- Docker/kind 같은 인프라 실패는 Operator 코드 실패와 분리합니다.
 
-## 산출물 위치
+## 필수 실행 환경
 
-실행 후 어디를 보면 되는지 헷갈릴 때는 이 표를 보면 됩니다.
-
-| 위치 | 의미 | 예시 |
+| 구분 | 필요 환경 | 비고 |
 | --- | --- | --- |
-| `requirements/` | 사용자가 작성한 자연어 요구사항 | `requirements/appconfig.txt` |
-| `profiles/` | 선택적 profile hint, fixture 기본값, e2e 규칙, 검증 규칙 | `profiles/*.yaml` |
-| `knowledge-base/` | RAG 검색에 쓰이는 로컬 지식 문서 | `knowledge-base/kubebuilder-guides/basic-flow.md` |
-| `generated/` | Agent가 만든 구조화 스펙과 실행 계획 | `generated/appconfig-operator-spec.yaml` |
-| `workspace/generated-operators/` | Kubebuilder 프로젝트 실제 생성 위치 | `workspace/generated-operators/app-config-operator` |
-| `logs/agent/` | Agent 실행 리포트, LLM 입출력, Tool 결과 | `logs/agent/<timestamp>/agent-report.md` |
-| `logs/scaffold/` | scaffold_runner 실행 로그 | `logs/scaffold/<timestamp>/summary.json` |
-| `logs/patch/` | artifact_patcher 실행 로그 | `logs/patch/<timestamp>/summary.json` |
-| `logs/e2e/` | kind e2e 실행 로그 | `logs/e2e/<timestamp>/summary.json` |
+| OS | Linux 또는 WSL2 Ubuntu | 개발 기준은 WSL2 Ubuntu 24.04 |
+| Python | Python 3.10 이상 | FastAPI Web UI와 Agent 실행 |
+| Go | Go 1.22 이상 권장 | Kubebuilder 프로젝트 생성/테스트 |
+| Docker | Docker Desktop + WSL integration | kind 검증에 필요 |
+| Kubernetes 도구 | kubectl, kind, kubebuilder, kustomize | `scripts/install-local-tools.sh`로 로컬 설치 가능 |
+| Local LLM | Ollama | 기본 모델: `qwen2.5-coder:3b` |
+| Python 패키지 | `requirements.txt` | FastAPI, LangChain, Pydantic, FAISS 등 |
 
-## 주요 로그 파일 의미
-
-Agent를 실행하면 `logs/agent/<timestamp>/` 아래에 여러 파일이 생깁니다.
-
-| 파일 | 의미 |
-| --- | --- |
-| `agent-report.md` | 사람이 읽는 최종 리포트 |
-| `summary.json` | 전체 실행 결과를 기계가 읽기 좋은 형태로 저장 |
-| `llm-input.json` | LLM에 전달한 입력 |
-| `llm-output.json` | LLM이 생성한 JSON 계획 또는 판단 |
-| `llm-raw-output.txt` | 로컬 모델의 원문 응답 |
-| `retrieved-docs.json` | RAG로 검색된 문서 목록 |
-| `initial-plan.json` | 최초 LLM Tool 계획 |
-| `validated-tool-calls.json` | allowlist 검증을 통과한 Tool 호출 |
-| `rejected-tool-calls.json` | 거부된 Tool 호출 |
-| `tool-results.json` | 실제 Tool 실행 결과 |
-| `final-llm-input.json` | Tool 결과를 다시 LLM에 전달한 입력 |
-| `final-llm-output.json` | Tool 실행 후 LLM의 최종 판단 |
-| `failure-context.json` | 실패 시 실패 단계, 명령, stdout/stderr 요약 |
-| `validated-recovery-plan.json` | policy validator가 보정한 최종 복구 계획 |
-| `rejected-recovery-tool-calls.json` | 거부된 복구 Tool과 이유 |
-
-## 성공 흐름과 실패 흐름
-
-정상 흐름은 다음과 같습니다.
-
-```text
-Requirement
-  -> LLM 계획 성공
-  -> Tool 검증 성공
-  -> spec 생성 성공
-  -> command plan 생성 성공
-  -> scaffold 성공
-  -> artifact patch 성공
-  -> make generate/manifests/test 성공
-  -> final LLM 판단: succeeded
-```
-
-실패 흐름은 다음과 같습니다.
-
-```text
-Tool 실행 실패
-  -> failedTool / failedStep / exitCode 수집
-  -> stdout/stderr 마지막 100줄 저장
-  -> troubleshooting RAG 검색
-  -> LLM recovery plan 생성
-  -> Recovery Policy Validator가 allowlist와 원인 관련성 검증
-  -> validatedRecoveryToolCalls 생성
-  -> status: waiting-for-user-approval
-```
-
-중요한 점은 **복구 계획은 자동 실행되지 않는다**는 것입니다. Agent는 “무엇을 고쳐야 하는지”와 “어떤 Tool을 다시 실행해야 하는지”까지만 제안하고, 실제 수정은 사용자 승인 후에 진행합니다.
-
-## 대표 사용 흐름
-
-### 흐름 A: 사용자의 자연어 요구사항으로 dry-run
-
-사용자는 특정 예시에 맞출 필요 없이 만들고 싶은 Operator를 자연어로 작성합니다. `--profile`은 선택 사항이며, 제공되더라도 Agent가 참고하는 hint일 뿐입니다.
-
-대충 쓴 문장을 requirement 파일로 정리하려면 먼저 질문형 builder를 사용할 수 있습니다.
+Docker Desktop을 WSL에서 사용할 경우 다음이 성공해야 합니다.
 
 ```bash
-python3 agent/requirement_builder.py \
-  --draft "비밀번호와 토큰 값을 Kubernetes Secret으로 관리하는 Operator가 필요해" \
-  --output requirements/secret-sync.txt \
-  --assume-defaults \
-  --print-questions
+docker info
 ```
 
-`--assume-defaults`를 빼면 부족한 값을 터미널에서 직접 물어봅니다. builder는 완성된 requirement 파일과 함께 “사용자에게 확인해야 할 질문”을 출력합니다.
+Docker가 꺼져 있거나 WSL integration이 끊긴 경우 kind 검증은 `DOCKER_DAEMON_UNAVAILABLE`로 빠르게 실패하며, lifecycle evidence로 기록하지 않습니다.
+
+## 설치
 
 ```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/my-operator.txt \
-  --mode dry-run
-```
-
-확인할 것:
-
-- `logs/agent/<timestamp>/agent-report.md`
-- `logs/agent/<timestamp>/llm-output.json`
-- `generated/<kind>-operator-spec.yaml`
-- `generated/<kind>-command-plan.md`
-
-### 흐름 B: requirement + optional profile hint
-
-profile은 “이 Operator가 어떤 패턴과 비슷한지”를 알려주는 보조 정보입니다. profile이 있어도 Operator의 kind, field, controller 책임은 현재 requirement가 우선합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/my-operator.txt \
-  --profile profiles/similar-pattern.yaml \
-  --mode dry-run
-```
-
-### 흐름 C: 실제 scaffold/patch/validation
-
-실제 Kubebuilder 프로젝트 생성과 보정까지 진행하려면 `--mode execute --execute`를 함께 사용합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/my-operator.txt \
-  --mode execute \
-  --execute
-```
-
-확인할 것:
-
-- `workspace/generated-operators/<project-name>`
-- `api/<version>/*_types.go`
-- `config/samples/*_<kind>.yaml`
-- `config/rbac/role.yaml`
-- `make generate`, `make manifests`, `make test` 결과
-
-### 흐름 D: 실행 로그 AI 분석
-
-이미 생성된 scaffold/patch/e2e 로그를 분석하고 warning, failure, recovery 방향을 판단합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --analyze-log logs/e2e/20260607-213346
-```
-
-### 내부 fixture
-
-`requirements/appconfig.txt`와 `profiles/appconfig.yaml`은 사용자에게 특정 Operator를 강요하기 위한 기준이 아닙니다. 신뢰성 테스트, kind lifecycle 검증, 회귀 검증을 빠르게 반복하기 위한 내부 fixture입니다.
-
-확인할 것:
-
-- `decision`: `succeeded-with-warning`
-- GPU Pending이 Controller 오류가 아니라 kind 환경 warning으로 분류되는지
-- `recommendedFixes`
-- `explanationForBeginner`
-
-### 시나리오 D: 실패 복구 계획 생성
-
-잘못된 타입, RBAC 누락, PVC 없음 같은 실패가 발생하면 Agent가 복구 계획을 생성합니다.
-
-```text
-예: brokenValue:notatype
-  -> make generate 실패
-  -> classification: invalid-field-type
-  -> requirement_editor -> spec_generator -> artifact_patcher -> validation 순서 제안
-  -> controller-gen, go_version_checker 같은 부적절한 Tool은 거부
-  -> status: waiting-for-user-approval
-```
-
-## 1차 MVP 범위
-
-1차 MVP는 전체 자동화 시스템을 한 번에 구현하지 않고, 로컬 실행형 Agent 흐름을 검증하는 데 집중합니다.
-
-- 현재 로컬 개발환경 점검
-- `go`, `docker`, `kubectl`, `kind`, `helm`, `kubebuilder`, `kustomize`, `git` 설치 여부 확인
-- Kubebuilder scaffold 생성 흐름 정리
-- 예시 API 생성 흐름 정리
-- CRD, Controller, RBAC, Manifest 생성 절차 문서화
-- `make generate` 실행 및 결과 확인 흐름 정리
-- `make manifests` 실행 및 결과 확인 흐름 정리
-- `make test` 실행 및 결과 확인 흐름 정리
-- 실패 로그 분석 기준 정리
-- 프로젝트 목표, 아키텍처, 데모 시나리오, 개발 계획 문서화
-
-## 디렉터리 구조
-
-```text
-/home/ch0618/k8sagent
-├── README.md
-├── PROJECT_GOAL.md
-├── ARCHITECTURE.md
-├── DEMO_SCENARIO.md
-├── DEVELOPMENT_PLAN.md
-├── docs/
-├── knowledge-base/
-├── agent/
-│   ├── langchain_agent.py
-│   ├── requirement_orchestrator.py
-│   ├── log_analysis_orchestrator.py
-│   ├── orchestration_common.py
-│   ├── contracts.py
-│   ├── llm/
-│   ├── rag/
-│   ├── tools/
-│   ├── prompts/
-│   ├── workflows/
-│   └── policies/
-├── profiles/
-├── requirements/
-├── scripts/
-├── examples/
-├── generated/
-├── logs/
-├── workspace/
-└── web/
-```
-
-## 디렉터리 역할
-
-| 경로 | 목적 |
-| --- | --- |
-| `docs` | 요구사항, Agent 흐름, 검증 흐름, 오류 대응 가이드 문서 |
-| `knowledge-base` | RAG 검색에 사용하는 Kubebuilder 가이드, troubleshooting, 예시 문서 |
-| `agent/langchain_agent.py` | CLI 인자 처리와 오케스트레이터 진입점 |
-| `agent/requirement_orchestrator.py` | 요구사항 계획, Tool 실행, 최종 평가, 복구 흐름 |
-| `agent/log_analysis_orchestrator.py` | 기존 실행 로그 분석 흐름 |
-| `agent/orchestration_common.py` | 오케스트레이터 공통 LLM 결과, 시간, 로그 헬퍼 |
-| `agent/contracts.py` | RequirementPlan, ToolCall, ToolResult, FinalEvaluation, FailureContext, RecoveryPlan, AgentSummary, AgentResult 계약 |
-| `agent/llm` | Ollama local LLM client, prompt, planner |
-| `agent/rag` | 로컬 Markdown RAG 검색기 |
-| `agent/tools` | 기존 CLI 자동화 도구와 Tool wrapper |
-| `agent/prompts` | 요구사항 분석, 생성, 검증 분석, 오류 진단용 프롬프트 초안 |
-| `agent/workflows` | 환경 점검, scaffold 생성, generate/manifests/test 흐름 정의 |
-| `agent/policies` | 명령 실행, 파일 수정, 부분 재생성 정책 |
-| `profiles` | AppConfig, TrainingJob, RedisCache 등 profile과 sample/e2e 규칙 |
-| `requirements` | 사용자가 작성하는 자연어 Operator 요구사항 |
-| `scripts` | 이후 로컬 환경 점검 및 검증 실행 스크립트 위치 |
-| `examples` | 샘플 Operator 요구사항 및 데모 입력 예시 |
-| `generated` | Agent가 생성하는 중간 산출물 또는 스펙 저장 위치 |
-| `logs` | 명령 실행 결과와 실패 로그 저장 위치 |
-| `workspace` | 실제 Kubebuilder 프로젝트가 생성될 작업 공간 |
-| `web` | 초보자 입력과 심사용 시연을 위한 Web UI |
-
-## Core Agent와 Profile 구조
-
-이 프로젝트는 TrainingJob 전용 생성기가 아니라 Kubebuilder 기반 Operator 개발 절차를 자동화하는 범용 Agent 시스템입니다.
-
-현재 구조는 다음 두 계층으로 나눕니다.
-
-| 계층 | 역할 | 현재 예 |
-| --- | --- | --- |
-| Core Agent | Operator 종류와 무관한 공통 절차를 수행 | `spec_generator.py`, `command_planner.py`, `scaffold_runner.py` |
-| Profile/Example | 특정 Operator 패턴의 sample과 kind 검증 설정을 정의 | `profiles/trainingjob.yaml`, `profiles/rediscache.yaml` |
-
-TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증용 profile입니다. RedisCache는 StatefulSet/Service 기반 Operator로 확장하기 위한 예시 profile입니다.
-
-범용 생성과 lifecycle 검증은 행동 IR, resource catalog,
-`kind_deployment_runner.py`와 `managed-resources` validator 계약을 재사용합니다.
-리소스별 구형 e2e adapter는 제거했으며 profile도 동일한 공통 검증 경계를 사용합니다.
-
-전체 파이프라인은 다음과 같습니다.
-
-```text
-requirement
-  -> operator-spec.yaml
-  -> command plan
-  -> Kubebuilder scaffold
-  -> artifact patch
-  -> make generate/manifests/test
-  -> kind e2e
-  -> log analysis
-```
-
-리팩터링 계획은 [docs/refactoring-plan.md](docs/refactoring-plan.md)를 참고합니다.
-
-## 시연 문서
-
-현재 MVP 상태를 기준으로 심사/시연에서 사용할 수 있는 문서를 제공합니다.
-
-- [TrainingJob 데모 시나리오](docs/demo-scenario-trainingjob.md)
-- [발표자용 데모 스크립트](docs/demo-script.md)
-- [현재 MVP 상태](docs/current-mvp-status.md)
-- [데모 체크리스트](docs/demo-checklist.md)
-
-## 현재 상태
-
-현재 단계에서는 RedisCache Operator를 1차 MVP 샘플로 생성하고, 요구사항 구조화부터 Kubebuilder 산출물 확인, CRD 생성 검증, 기본 컴파일 검증까지 실행할 수 있는 데모 흐름을 제공합니다.
-
-## RedisCache MVP 데모 실행
-
-다음 명령으로 1차 MVP 흐름을 한 번에 확인할 수 있습니다.
-
-```bash
-./scripts/demo-rediscache-mvp.sh
-```
-
-이 스크립트는 다음을 확인합니다.
-
-- 로컬 개발환경 점검
-- `generated/rediscache-operator-spec.yaml` 구조화 스펙 확인
-- `workspace/redis-cache-operator` Kubebuilder 산출물 확인
-- `RedisCache` Spec/Status 타입 정의 확인
-- `controller-gen` 기반 DeepCopy 및 CRD manifest 생성
-- CRD schema에 `size`, `image`, `storageSize`, `phase`, `readyReplicas`, `message` 필드 포함 여부 확인
-- `go test ./api/... ./cmd/... ./test/utils` 기본 컴파일 검증
-
-실행 환경에 따라 Docker 권한 경고가 표시될 수 있습니다. 1차 MVP scaffold 검증은 Docker daemon 없이도 계속 진행되며, kind 클러스터 기반 e2e 검증 단계에서 Docker 연결이 필요합니다.
-
-## Agent CLI 골격
-
-자연어 요구사항을 구조화 스펙으로 변환하는 CLI 골격을 제공합니다.
-
-범용 요구사항 템플릿을 기준으로 작성한 파일을 `operator-spec.yaml`로 변환할 수 있습니다.
-
-```bash
-cp requirements/template.txt requirements/my-operator.txt
-# requirements/my-operator.txt 내용을 실제 Operator 요구사항으로 수정
-python3 agent/tools/spec_generator.py requirements/my-operator.txt
-```
-
-기본 출력 경로는 다음 형식입니다.
-
-```text
-generated/<kind 소문자>-operator-spec.yaml
-```
-
-예를 들어 `kind`가 `TrainingJob`이면 `generated/trainingjob-operator-spec.yaml`이 생성됩니다. 변환 결과에는 `metadata`, `project`, `api`, `specFields`, `statusFields`, `controller`, `rbac`, `validation`, `warnings`, `errors`가 포함됩니다.
-
-템플릿과 작성 가이드는 다음 문서를 참고합니다.
-
-- [docs/operator-requirement-template.md](docs/operator-requirement-template.md)
-- [docs/requirement-writing-guide.md](docs/requirement-writing-guide.md)
-- [docs/spec-schema.md](docs/spec-schema.md)
-
-생성된 스펙을 기준으로 Kubebuilder 실행 계획 문서를 만들 수 있습니다.
-
-```bash
-python3 agent/tools/command_planner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --output generated/trainingjob-command-plan.md
-```
-
-이 단계는 실제 명령을 실행하지 않고, `kubebuilder init`, `kubebuilder create api`, `make generate`, `make manifests`, `make test`를 어떤 순서와 목적으로 실행할지 Markdown 문서로 생성합니다.
-
-계획을 검토한 뒤 scaffold runner로 실행 예정 명령을 확인할 수 있습니다. 기본 동작은 dry-run입니다.
-
-```bash
-python3 agent/tools/scaffold_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --workspace workspace/generated-operators \
-  --dry-run
-```
-
-실제 실행 전에 로컬 도구, 스펙 필수값, 작업 디렉터리 상태를 preflight로 점검할 수 있습니다.
-
-```bash
-python3 agent/tools/scaffold_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --workspace workspace/generated-operators \
-  --preflight
-```
-
-preflight 결과는 `logs/scaffold/<timestamp>/preflight.json`에 저장됩니다. 실패 항목이 있으면 `--execute` 실행 전 단계에서 중단합니다.
-
-실제 Kubebuilder scaffold를 수행하려면 `--execute`를 명시합니다.
-
-```bash
-python3 agent/tools/scaffold_runner.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --workspace workspace/generated-operators \
-  --execute
-```
-
-대상 프로젝트 디렉터리가 이미 있으면 기본적으로 중단합니다. 기존 디렉터리를 삭제하고 다시 만들 때만 `--force`를 함께 사용합니다. 실제 실행 로그는 `logs/scaffold/<timestamp>/` 아래에 저장됩니다.
-
-생성된 Kubebuilder 프로젝트에 스펙 필드, 샘플 CR, RBAC marker를 반영하려면 artifact patcher를 사용합니다. 기본 동작은 dry-run이며 수정 전후 diff만 출력합니다.
-
-```bash
-python3 agent/tools/artifact_patcher.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --project workspace/generated-operators/trainingjob-operator \
-  --dry-run
-```
-
-TrainingJob profile의 sample 기본값을 사용하려면 `--profile`을 함께 전달합니다.
-
-```bash
-python3 agent/tools/artifact_patcher.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --project workspace/generated-operators/trainingjob-operator \
-  --profile profiles/trainingjob.yaml \
-  --dry-run
-```
-
-실제 파일 수정을 수행하려면 `--execute`를 명시합니다. `make generate`, `make manifests`, `make test`는 별도 검증 단계에서 실행합니다.
-
-```bash
-python3 agent/tools/artifact_patcher.py \
-  --input generated/trainingjob-operator-spec.yaml \
-  --project workspace/generated-operators/trainingjob-operator \
-  --execute
-```
-
-실행 로그와 summary는 `logs/patch/<timestamp>/` 아래에 저장됩니다.
-
-생성된 Operator가 실제 Kubernetes 클러스터에서 동작하는지는 Web 결과 화면의
-`Kubernetes에서 확인` 또는 공통 kind runner로 검증합니다. Docker daemon, kind,
-kubectl이 준비되어 있어야 하며 Web에서는 실패 원인과 재시도 가능 여부를 안내합니다.
-
-```bash
-python3 agent/tools/kind_deployment_runner.py \
-  --project workspace/generated-operators/trainingjob-operator \
-  --cluster-name trainingjob-e2e \
-  --sample workspace/generated-operators/trainingjob-operator/config/samples/ml_v1alpha1_trainingjob.yaml \
-  --validator managed-resources \
-  --validator-config '{"resource":"trainingjob"}' \
-  --dry-run
-```
-
-실제 kind 클러스터 검증은 `--dry-run`을 제거해 실행합니다.
-
-```bash
-python3 agent/tools/kind_deployment_runner.py \
-  --project workspace/generated-operators/trainingjob-operator \
-  --cluster-name trainingjob-e2e \
-  --sample workspace/generated-operators/trainingjob-operator/config/samples/ml_v1alpha1_trainingjob.yaml \
-  --validator managed-resources \
-  --validator-config '{"resource":"trainingjob"}'
-```
-
-일반적인 사용에서는 validator JSON을 직접 작성할 필요가 없습니다. Agent와 Web이
-생성된 Controller IR에서 검증 계약을 만들고 작업별 artifacts에 결과를 격리합니다.
-
-저장된 scaffold, patch, kind 로그는 log analyzer로 요약할 수 있습니다. analyzer는 `summary.json`을 먼저 읽고, 실패 단계가 있으면 해당 stdout/stderr 로그를 함께 확인하여 실패 원인과 수정 방향을 Markdown으로 생성합니다.
-
-```bash
-python3 agent/tools/log_analyzer.py \
-  --log-dir logs/e2e/20260607-213346
-```
-
-분석 결과는 기본적으로 입력한 로그 디렉터리의 `analysis.md`에 저장됩니다. 예를 들어 e2e 성공 로그라면 전체 실행 결과, warning, Job spec validation 결과, summary 기반 재실행 권장 명령을 요약합니다. 실패 로그라면 `failedStep`, 관련 명령, 오류 유형, 근거 로그, 해결 방향을 함께 정리합니다.
-
-초보자용 대화형 입력:
-
-```bash
-./scripts/agent-requirement-cli.py interactive \
-  -o generated/training-job-operator-spec.yaml \
-  --print-commands
-```
-
-대화형 모드는 다음 순서로 질문합니다.
-
-- 관리하려는 대상
-- Custom Resource 이름
-- domain, group, version
-- 사용자가 입력할 값
-- 사용자가 보고 싶은 상태
-- Operator가 생성/관리할 Kubernetes 리소스
-- 입력값과 생성 리소스의 매핑
-- status 갱신 기준
-
-파일 기반 입력:
-
-```bash
-./scripts/agent-requirement-cli.py \
-  -i examples/rediscache-requirement.txt \
-  -o generated/redis-cache-operator-spec.yaml \
-  --print-commands
-```
-
-이 CLI는 입력 요구사항에서 `domain`, `group`, `version`, `kind`, `spec`, `status`, `controller` 정보를 추출하여 YAML 스펙을 생성하고, 실행할 Kubebuilder 명령 후보를 출력합니다.
-
-생성 결과 예:
-
-```text
-generated/redis-cache-operator-spec.yaml
-```
-
-현재 CLI는 LLM을 붙이기 전의 MVP 골격이며, 명시적으로 작성된 요구사항 문장을 규칙 기반으로 파싱합니다. 이후 단계에서 LLM 기반 Semantic Parsing, RAG 검색, 검증 로그 분석 Agent와 연결할 수 있습니다.
-
-## LangChain 기반 Agent Orchestrator
-
-기존 CLI 도구 위에 LangChain-style Agent Orchestrator를 추가했습니다.
-
-본 시스템은 LLM planner 기반 Agent 구조를 사용합니다. Agent는 요구사항을 요약하고, `knowledge-base` 문서를 검색한 뒤, LLM planner가 실행 계획을 JSON으로 생성하고, 기존 CLI 도구를 Tool wrapper로 호출합니다.
-
-정확한 구현 형태는 **Custom Agent Orchestrator + LangChain-compatible Tool wrapper**입니다. 계획·정책 검증·실행·recovery 루프는 프로젝트의 Python Orchestrator가 담당하며, `langchain_core.tools.Tool` adapter는 선택 호환 계층으로 제공합니다. 따라서 현재 구현을 `LangChain AgentExecutor로 전체 Workflow를 구현했다`고 표현하지 않습니다.
-
-RAG는 로컬 Markdown `knowledge-base`를 대상으로 동작합니다. 현재는 keyword 검색을 fallback으로 유지하면서, Ollama embedding과 FAISS index를 사용하는 Hybrid RAG를 지원합니다.
-
-```text
-knowledge-base Markdown
-  -> chunk 분할
-  -> Ollama embedding
-  -> FAISS index
-  -> vector search + keyword search
-  -> optional Local LLM reranker
-  -> Top 3 context
-  -> LLM planner 입력
-```
-
-CPU 노트북 기본값은 reranker를 끈 Hybrid 검색입니다.
-
-```bash
-export RAG_MODE=hybrid
-export RAG_RERANK_ENABLED=false
-```
-
-reranker까지 검증할 때만 별도 모드로 실행합니다.
-
-```bash
-export RAG_MODE=hybrid-rerank
-export RAG_RERANK_ENABLED=true
-export LOCAL_LLM_TIMEOUT_SECONDS=120
-```
-
-RAG index 생성:
-
-```bash
-ollama pull nomic-embed-text
-
-python3 agent/rag/build_index.py \
-  --knowledge-base knowledge-base \
-  --index-dir knowledge-base/.index \
-  --rebuild
-```
-
-검색 테스트:
-
-```bash
-python3 agent/rag/retriever.py \
-  --query "ConfigMap을 생성하는 AppConfig Operator" \
-  --mode hybrid \
-  --json
-```
-
-index가 없거나 embedding model이 준비되지 않은 개발 환경에서는 keyword fallback을 사용할 수 있으며, fallback 여부는 `logs/agent/<timestamp>/selected-context.json`과 `summary.json`에 기록됩니다.
-
-MVP는 안전을 위해 기본 dry-run 중심입니다. 실제 scaffold, patch, e2e 실행은 별도 `--execute`가 명시될 때만 수행합니다.
-
-LLM planner는 Ollama 기반 local provider만 지원합니다. 사내 예제 코드, Kubernetes 로그, YAML 산출물, 오류 로그를 외부 API로 보내지 않고 로컬 환경 안에서 처리하기 위한 구조입니다. Ollama 서버나 모델 호출에 실패하면 다른 provider로 대체하지 않고 명확한 오류를 출력합니다.
-
-```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Linux/WSL에서 Ollama가 없다면 먼저 설치합니다.
-curl -fsSL https://ollama.com/install.sh | sh
+로컬 Kubernetes 개발 도구를 설치합니다.
 
+```bash
+./scripts/install-local-tools.sh
+export PATH="$PWD/.tools/bin:$PATH"
+./scripts/check-env.sh
+```
+
+Ollama 모델을 준비합니다.
+
+```bash
 ollama pull qwen2.5-coder:3b
-ollama run qwen2.5-coder:3b
-
-export LOCAL_LLM_BASE_URL=http://localhost:11434/v1
-export LOCAL_LLM_MODEL=qwen2.5-coder:3b
 ```
 
-`LOCAL_LLM_BASE_URL`을 지정하지 않으면 기본값은 `http://localhost:11434/v1`입니다. `LOCAL_LLM_MODEL`을 지정하지 않으면 기본값은 `qwen2.5-coder:3b`입니다.
-
-대표 실행 예시 1: requirement 기반 dry-run
+## Web UI 실행
 
 ```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/my-operator.txt \
-  --mode dry-run
-```
-
-CPU 환경에서 개발 피드백을 빠르게 보고 싶다면 `fast` run-level을 사용합니다. 이 모드는 최초 LLM 계획과 Tool dry-run은 수행하지만, Tool 결과를 다시 LLM에 보내는 최종 평가 단계는 규칙 기반 요약으로 대체합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/my-operator.txt \
-  --mode dry-run \
-  --run-level fast
-```
-
-현재 기본값은 빠른 피드백을 위해 `--run-level fast`입니다. 정밀한 최종 LLM 평가가 필요하면 `--run-level standard`를 사용합니다. 명시적으로 최종 LLM 평가만 건너뛰려면 `--skip-final-llm-evaluation`을 사용할 수 있습니다.
-
-같은 requirement, profile hint, RAG 문서, local model 조합은 기본적으로 LLM planning cache를 사용합니다. 캐시는 `.cache/agent/llm-plans/` 아래에 저장됩니다. 현재 `requirement-planning-v5` 계약은 prompt, Pydantic schema, Tool 계약, catalog와 profile digest가 달라지면 이전 계획을 자동으로 무효화합니다. 새 모델 응답을 강제로 받고 싶으면 `--refresh-cache`, 캐시를 끄고 싶으면 `--no-cache`를 사용합니다.
-
-로컬 모델 출력 길이는 기본적으로 짧게 제한합니다. 필요하면 다음 환경변수로 조정합니다.
-
-```bash
-export LOCAL_LLM_MAX_TOKENS=700
-export AGENT_REQUIREMENT_RAG_LIMIT=2
-```
-
-cache hit 여부는 실행 초반의 `Planner cache: hit|miss`와 `agent-report.md`의 `Planner cache hit`에서 확인할 수 있습니다.
-
-Agent 실행 결과에는 다음 항목이 포함됩니다.
-
-- Requirement Summary
-- Requirement Intent
-- Missing Information Check
-- Retrieved Knowledge
-- LLM Planner Output
-- AI Reasoning
-- RAG Evidence Used By LLM
-- Tool Call Plan From LLM
-- Profile Hint
-- Tool Execution Results
-- Generated Files
-- Warnings / Errors
-- Next Recommended Actions
-
-특히 `RAG Evidence Used By LLM` 섹션은 검색된 문서가 어떤 판단에 사용되었는지 보여줍니다. 예를 들어 `rbac-marker.md`가 RBAC 권한 추론에 사용되었는지, `reconcile-pattern.md`가 Controller 동작 계획에 사용되었는지 확인할 수 있습니다.
-
-근거와 안전장치만 따로 확인하려면 [Agent Evidence And Safety](docs/agent-evidence-and-safety.md)를 봅니다. Agent 실행 시 `evidence-trace.json`과 `safety-evaluation.json`이 함께 생성되어, RAG 문서 선택 이유, LLM 판단 근거, Tool allowlist 검증, dry-run/execute gate, recovery 승인 대기 상태를 확인할 수 있습니다.
-
-특정 예시에 종속되지 않는 Agent core 방향은 [Generic Agent Core](docs/generic-agent-core.md)를 봅니다. 여기에는 AppConfig가 내부 fixture이고, profile은 hint-only라는 기준이 정리되어 있습니다.
-
-오프라인/내부망 환경에서 모델을 어떻게 사용할지는 [Local Model Usage Policy](docs/local-model-usage-policy.md)를 봅니다. 이 문서는 Ollama local model, run-level, planning cache, Tool 실행 안전 원칙을 정리합니다.
-
-기본은 dry-run이며, 실제 scaffold, patch, e2e 변경 작업은 `--execute`가 명시되지 않으면 수행하지 않습니다. 실행 결과는 `logs/agent/<timestamp>/summary.json`과 `logs/agent/<timestamp>/agent-report.md`에 저장됩니다.
-
-검증 완료 후 profile 기반 kind 배포와 최종 LLM 재평가까지 한 Workflow로 실행:
-
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/appconfig.txt \
-  --profile profiles/appconfig.yaml \
-  --mode execute \
-  --execute \
-  --resume-existing \
-  --kind-deploy \
-  --run-level standard
-```
-
-```text
-requirement
-  -> RAG + Local LLM Tool 계획
-  -> spec / command plan
-  -> scaffold 생성 또는 기존 scaffold 재사용
-  -> artifact patch
-  -> make generate / manifests / test
-  -> profile-backed kind deployment
-  -> kind summary를 Local LLM에 전달
-  -> 최종 실행 판단
-```
-
-`--kind-deploy`는 profile에 `kindDeployment.enabled: true`와 실행 인자가 정의된 경우에만 허용됩니다. Docker 연결 실패처럼 원인이 결정론적인 경우에는 별도 recovery LLM 호출 없이 `docker-kind-connection` policy plan을 즉시 생성합니다. 사용자 승인 전에는 자동 재실행하지 않습니다.
-
-Tool 실패가 감지되면 recovery planning 전에 현재 plan, Tool 결과, failure context를 Agent 로그에 체크포인트로 저장합니다. recovery LLM이 지연되거나 프로세스가 중단되어도 실행 근거가 빈 로그 디렉터리로 남지 않습니다.
-
-핵심 Tool은 stderr에 `TOOL_ERROR_JSON` 구조화 오류를 함께 기록합니다. Recovery는 `errorCode`를 우선 사용하고, 구조화 코드가 없는 외부 명령에만 제한적으로 문자열 분류를 적용합니다.
-`agent/error_registry.py`의 Pydantic `ErrorDefinition`이 오류별 사용자 메시지,
-Recovery 분류·정책, retry 가능 여부와 Web UI severity의 단일 원천입니다. 새
-오류 코드를 추가하면서 registry 계약을 빠뜨리면 단위 테스트와 import 검증이
-실패합니다.
-
-kind runner는 공통 배포 엔진과 profile별 validator로 나뉩니다. 공통 엔진은 cluster 준비, image build/load, CRD 설치, Controller 배포 대기만 담당합니다. Custom Resource와 관리 리소스의 상태/lifecycle 검증은 `kindDeployment.validator`와 `validatorConfig`가 선택한 validator가 담당합니다. 현재 내부 fixture는 `appconfig-configmap` validator를 사용합니다.
-
-성능 병목은 `logs/agent/<timestamp>/timings.json`과 `agent-report.md`의 `Timings` 섹션에서 확인합니다. 주요 항목은 RAG 검색 시간, 최초 LLM 계획 시간, Tool 검증 시간, Tool 실행 시간, 최종 LLM 평가 시간, 전체 시간입니다.
-
-실제 LLM 연결 여부는 다음 파일로 확인합니다.
-
-```bash
-ls -al logs/agent
-cat logs/agent/<timestamp>/llm-output.json
-cat logs/agent/<timestamp>/agent-report.md
-```
-
-`llm-output.json`에는 모델이 생성한 요구사항 요약, 누락 정보, RAG 근거, Tool 호출 계획이 저장됩니다. `llm-raw-output.txt`에는 로컬 모델의 원문 응답이 저장됩니다. 이 파일들이 심사에서 “모델이 실제로 판단했다”는 핵심 증거입니다.
-
-대표 실행 예시 2: log 분석 기반 AI 판단
-
-기존 실행 로그를 Agent가 다시 분석하게 할 수도 있습니다. 이 모드는 `log_analyzer.py` 결과와 `knowledge-base`의 troubleshooting 문서를 함께 참조해 성공/실패 판단, warning 해석, 다음 조치 방향을 설명합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --analyze-log logs/e2e/20260607-213346
-```
-
-TrainingJob e2e 로그의 GPU Pending 케이스는 `succeeded-with-warning`으로 분류됩니다. Controller가 Job을 생성하지 못한 오류가 아니라, kind 클러스터에 `nvidia.com/gpu` 리소스가 없어 Pod가 Pending 상태로 남은 케이스이기 때문입니다.
-
-이 모드에서 LLM은 `summary.json`, `analysis.md`, troubleshooting RAG 문서를 함께 읽고 다음 JSON 판단을 생성합니다.
-
-```json
-{
-  "decision": "succeeded | failed | succeeded-with-warning",
-  "classification": "...",
-  "rootCause": "...",
-  "evidence": [],
-  "ragEvidence": [],
-  "recommendedFixes": [],
-  "rerunCommand": "...",
-  "explanationForBeginner": "..."
-}
-```
-
-아키텍처 설명은 [docs/ai-agent-architecture.md](docs/ai-agent-architecture.md)를 참고합니다.
-
-## RAG 검색 품질 평가
-
-RAG 검색은 감으로만 확인하지 않고 평가 데이터셋으로 비교합니다.
-
-평가 대상 모드:
-
-- `keyword`: Markdown 키워드 검색
-- `vector`: Ollama embedding + FAISS 검색
-- `hybrid`: keyword와 vector 결합
-- `hybrid-rerank`: hybrid 후보를 Local LLM reranker로 재정렬
-
-기본 평가 실행:
-
-```bash
-./scripts/evaluate-rag.sh
-```
-
-동일 명령을 직접 실행하면 다음과 같습니다.
-
-```bash
-python3 agent/rag/build_index.py \
-  --knowledge-base knowledge-base \
-  --index-dir knowledge-base/.index \
-  --rebuild
-
-python3 agent/evaluation/rag_evaluator.py \
-  --dataset evaluation/rag-evaluation-dataset.yaml \
-  --index-dir knowledge-base/.index \
-  --modes keyword,vector,hybrid \
-  --output-dir evaluation/results
-```
-
-reranker는 CPU 환경에서 느릴 수 있으므로 별도로 검증합니다.
-
-```bash
-python3 agent/evaluation/rag_evaluator.py \
-  --dataset evaluation/rag-evaluation-dataset.yaml \
-  --index-dir knowledge-base/.index \
-  --modes hybrid-rerank \
-  --reranker-timeout 120 \
-  --output-dir evaluation/results
-```
-
-평가 결과는 `evaluation/results/<timestamp>/` 아래에 저장됩니다.
-
-- `evaluation-summary.json`
-- `evaluation-details.json`
-- `<mode>-results.json`
-- `rag-evaluation-report.md`
-
-평가 지표는 Hit@1, Hit@3, Recall@3, Recall@5, MRR, 평균 latency, P95 latency, fallback count, reranker timeout count입니다.
-
-자세한 설명은 [docs/rag-evaluation.md](docs/rag-evaluation.md)를 참고합니다.
-
-## MVP 평가 지표 측정
-
-제출 계획서의 4개 평가 지표를 실제 Agent 실행 로그 기준으로 계산할 수 있습니다.
-
-측정 지표:
-
-- 개발 단계별 작업 시간 단축
-- 필수 산출물 생성 완성도
-- 검증 단계 1차 통과율
-- 오류 대응 지원 속도
-
-대표 로그 4개 평가:
-
-```bash
-python3 agent/evaluation/mvp_evaluator.py \
-  --log-paths \
-    logs/agent/20260617-140047-627341 \
-    logs/agent/20260617-140801-334502 \
-    logs/agent/20260617-141235-479378 \
-    logs/agent/20260617-141519-779916 \
-  --baseline evaluation/mvp-baseline.yaml \
-  --output-dir evaluation/results/mvp
-```
-
-전체 Agent 로그 평가:
-
-```bash
-./scripts/evaluate-mvp.sh --logs-dir logs/agent
-```
-
-결과는 `evaluation/results/mvp/<timestamp>/` 아래에 생성됩니다.
-
-- `mvp-evaluation-summary.json`
-- `mvp-evaluation-details.json`
-- `artifact-completion-results.json`
-- `validation-pass-results.json`
-- `error-response-results.json`
-- `mvp-evaluation-report.md`
-
-baseline은 `evaluation/mvp-baseline.yaml`에서 관리합니다. 실제 수작업 측정값이 아닌 placeholder baseline은 `measured: false`로 표시하며, 이 경우 작업 시간 단축률은 임의 달성 처리하지 않고 `측정 불가`로 표시합니다.
-
-자세한 설명은 [docs/mvp-evaluation.md](docs/mvp-evaluation.md)를 참고합니다.
-
-## Web UI
-
-CLI는 실제 자동화 core이고, Web UI는 초보자가
-`요구사항 입력 → 계획 확인 → 실행 승인 → 결과 확인` 순서로 사용할 수 있는
-wrapper입니다. 내부적으로 `agent/langchain_agent.py`를 호출하므로 CLI와 같은
-안전 정책과 Agent 파이프라인을 사용합니다.
-
-공식 Web UI 실행:
-
-```bash
-pip install -r requirements.txt
-
 uvicorn web.app:app --host 0.0.0.0 --port 8000
 ```
 
-브라우저에서 `http://localhost:8000`에 접속합니다.
+브라우저에서 접속합니다.
 
-기본 화면은 비어 있는 자연어 입력창, 작성 기준 세 가지, 바로 채워 넣을 수
-있는 일반 예시만 보여줍니다. `안전한 계획 만들기` 단계에서는 파일이나
-클러스터를 변경하지 않습니다. Profile, run-level, kind 배포는 접힌 개발자
-설정에 있고, Safety, Evidence, Recovery, stdout/stderr 원문도 결과 화면의
-개발자 영역에 접혀 있습니다. 진행 상태와 내부 phase는 초보자용 한국어로
-표시됩니다.
-
-Web UI의 기본 흐름:
-
-1. 자연어 요구사항을 직접 입력하거나 일반 예시로 시작합니다.
-2. 관리 리소스, 완료 단계, 생성 대상과 경고를 검토합니다.
-3. 계획 결과에서 `이 계획대로 만들기`를 눌러 실제 생성을 승인합니다.
-4. 생성과 검증 결과, 다음 행동을 확인합니다.
-
-이 전체 흐름은 `web/test_beginner_journey.py`에서 HTTP form 제출, 영속 job
-생성, 외부 worker claim, 계획 결과 표시, 실행 재승인, 최종 결과 표시까지
-하나의 사용자 여정으로 검증합니다. 테스트에서는 fixture Agent를 사용하므로
-Local LLM이나 Docker 없이도 Web과 Agent 사이의 계약 회귀를 빠르게 찾습니다.
-
-추가로 할 수 있는 작업:
-
-- 자연어 requirement 기반 Agent dry-run/execute
-- optional profile hint 선택
-- fast/standard run-level 선택
-- profile capability 기반 kind deployment 선택
-- 기존 scaffold resume
-- 기존 e2e 로그 분석
-- Agent report, evidence trace, safety evaluation, recovery 상태 확인
-- 작업 ID 기반 백그라운드 실행
-- 최근 작업 목록 조회와 실행 중 작업 취소
-- 초보자용 진행 단계와 상태 자동 갱신
-- 개발자 상세 영역에서 stdout/stderr 및 실행 근거 확인
-
-FastAPI를 설치할 수 없는 환경에서는 제한된 legacy fallback을 사용할 수
-있습니다. 이 화면은 초보자용 최신 UI와 기능이 다릅니다.
-
-```bash
-python3 web/server.py 8000
+```text
+http://localhost:8000
 ```
 
-긴 LLM planning이나 kind 배포 중에도 최초 HTTP 요청은 즉시 작업 페이지로 이동합니다. 최근 작업은 `GET /api/jobs`, 개별 상태는 `GET /api/jobs/<job-id>`, 취소는 `POST /api/jobs/<job-id>/cancel`로 처리합니다. 실행 정보는 `logs/web/jobs/<job-id>/status.json`, `stdout.log`, `stderr.log`에 저장됩니다. 서버 재시작 시 실행 중이던 작업은 `interrupted`로 표시되고 완료된 작업 결과는 계속 열 수 있습니다.
+Web UI 기본 흐름은 다음과 같습니다.
 
-Web 작업의 생성 산출물과 Kubebuilder 프로젝트는 각각
-`logs/web/jobs/<job-id>/artifacts`와 `logs/web/jobs/<job-id>/workspace`에
-격리됩니다. 동시 실행과 재시도는 서로의 spec, capability proposal, 생성 코드를
-덮어쓰지 않습니다. CLI 직접 실행은 호환성을 위해 `generated/`와
-`workspace/generated-operators`를 기본값으로 유지합니다.
+1. 만들고 싶은 Operator 요구사항을 자연어로 작성합니다.
+2. Agent가 계획과 누락 정보를 먼저 보여줍니다.
+3. 사용자가 승인하면 Kubebuilder 프로젝트와 코드를 생성합니다.
+4. 생성 후 `make generate`, `make manifests`, `make test`를 실행합니다.
+5. 사용자가 원하면 kind 클러스터에서 lifecycle을 검증합니다.
+6. 결과 화면에서 초보자 요약, 생성 파일, kubectl 확인 명령, 실패 원인을 확인합니다.
 
-운영 상태는 `GET /api/health`에서 확인합니다. 응답에는 Web 서비스 상태,
-embedded/external 실행 모드와 queued/running/terminal 작업 수가 포함됩니다.
+## CLI 실행 예시
 
-다중 Web worker 운영에서는 Web 프로세스와 실행 worker를 분리합니다.
-
-```bash
-export WEB_JOB_EXECUTION_MODE=external
-uvicorn web.app:app --host 0.0.0.0 --port 8000 --workers 2
-
-# 별도 터미널 또는 서비스에서 여러 개 실행 가능
-WEB_JOB_EXECUTION_MODE=external python3 web/worker.py
-WEB_JOB_EXECUTION_MODE=external python3 web/worker.py
-```
-
-각 worker는 `claim.lock`을 원자적으로 생성해 하나의 작업만 가져갑니다. 진행 로그는 `GET /api/jobs/<job-id>/events` SSE로 전송됩니다. 실패/중단/취소 작업은 `POST /api/jobs/<job-id>/retry`로 제한된 횟수 안에서 새 작업으로 재시도합니다.
-
-kind 배포 작업의 rollback은 자동 실행하지 않습니다. UI와 상태 API의 `rollbackPolicy`에는 rollout revision 확인, sample CR 삭제, CRD 제거 순서가 수동 승인 절차로 표시됩니다.
-
-Web UI execute는 Mode를 `execute`로 선택하고 별도의 실제 변경 승인 체크박스까지 선택해야 합니다. kind deployment는 capability가 정의된 profile을 선택해야 합니다.
-
-## 신뢰성/응답속도 검증
-
-오프라인 Local LLM Agent는 모델 응답, Tool 실행, Kubernetes 검증이 함께 얽히기 때문에 “빠르게 반복 가능한 검증”과 “실제 클러스터 검증”을 분리합니다.
-
-전체 회귀 검증의 공통 진입점:
-
-```bash
-# 단위 테스트 + 정책 검증. LLM과 Docker 불필요
-python3 scripts/run-regression-tests.py --suite quick
-
-# quick + 실제 Agent dry-run 1회
-python3 scripts/run-regression-tests.py --suite standard
-
-# standard + Agent 반복 일관성 + kind lifecycle + profileless 실제 compile
-python3 scripts/run-regression-tests.py --suite full
-```
-
-Full workflow는 self-hosted `full` job 완료 후 별도 report job에서 GitHub API와
-회귀 artifact를 결합합니다. `full-timing-<run-id>` artifact에는 queue 시간,
-실제 job 시간, workflow step/category, 내부 regression check, workflow overhead가
-`full-ci-timing.json`과 `full-ci-timing.md`로 저장됩니다. queue 시간은 runner
-가용성 지표로 분리하고, 실제 `full` job은 600초 예산을 넘으면 timing report
-gate가 실패합니다.
-
-Profileless kind 결과의 `timings.deploymentCategories`에는 Docker build, kind
-image load, cluster 준비, install/deploy, readiness, RBAC, lifecycle 검증 시간이
-사례별·전체 합계로 기록됩니다.
-
-각 kind deployment summary의 `runtimeEvidence`는 멱등성, 외부 drift 복구, read-only 외부 watch,
-RBAC 허용 목록과 wildcard 거부, 삭제 정책, finalizer, observedGeneration/Conditions를
-동일한 차원으로 기록합니다. Quick CI의 `legacy-usage` gate는
-`config/legacy-path-policy.yaml`에 승인되지 않은 legacy 참조가 추가되는 것을 막고
-참조 개수를 artifact로 남깁니다. 현재 구형 Job 전용 e2e adapter 참조는 0개입니다.
-
-Full CI는 runtime evidence로 capability별 `stable`, `beta`, `experimental`을
-산출해 `capability-matrix.json`에 저장합니다. Web job은 별도로 제출·queue·실행·전체
-여정과 사용자 승인 대기 시간을 `journeyTimings`에 기록합니다. Capability 결과에는
-`lastValidatedAt`, evidence run, 등급 산출 기준과 제한사항이 포함됩니다. 600초 핵심 job gate와 1,200초 통합
-관찰 기준의 범위는 [품질 및 시간 기준](docs/quality-thresholds.md)에 정의합니다.
-MVP 기능 개선 종료 범위와 이후 허용 변경은
-[MVP 97% 완료 및 Feature Freeze](docs/mvp-97-completion.md)에 정의합니다.
-
-Self-hosted Full runner의 pinned tool과 Go build/module cache는 runner의 영속
-로컬 경로를 사용합니다. 수백 MB를 매 실행마다 Actions cache로 내려받고 다시
-압축하지 않으며, checkout workspace 밖의 `$HOME/.cache/k8sagent/tools`,
-`/tmp/k8sagent-go-build`, `~/go/pkg/mod`를 재사용합니다.
-
-각 실행은 `evaluation/results/regression/<timestamp>/regression-summary.json`과 하위 검증 결과를 남깁니다. CI와 로컬 개발의 기본 검증은 `quick`, 로컬 LLM까지 포함한 변경은 `standard`, Docker/kind가 준비된 릴리스 전 검증은 `full`을 사용합니다.
-
-각 결과 디렉터리의 `performance-trend.json`에는 검사별 실행 시간, 전체 시간, 직전 실행 비교값이 저장됩니다. `quick`에는 requirement RAG fixture의 Hit@3, Recall@3, MRR 품질 gate도 포함됩니다. `final-evaluation.json`은 요구사항 이해, RAG, artifact, validation, safety, E2E, latency를 하나의 점수로 통합합니다.
-
-GitHub Actions 분리:
-
-- `.github/workflows/quick.yml`: 모든 PR에서 실행하며 필요하면 수동 재실행
-- `.github/workflows/standard.yml`: main push, 주간 정기 실행과 수동 실행
-- `.github/workflows/full.yml`: 릴리스 후보에서 수동 실행하는 Docker/kind gate
-
-세 workflow는 suite별 `.ci-history/*.json`을 Actions cache로 복원·저장하므로 새 checkout에서도 직전 성능과 비교할 수 있습니다. 실행 결과 artifact는 run ID별 이름으로 30일 보존하며, `full`은 종료 시 자신이 사용하는 임시 kind 클러스터를 정리합니다.
-
-`standard`와 `full`은 local LLM planning cache를 workflow 간 복원합니다. `full`의 pinned Go/kind/Kubebuilder 도구와 Go module/build cache는 self-hosted runner의 checkout 밖 영속 경로를 사용하고, 도구가 없을 때만 자동 설치합니다. Profileless compile은 첫 fixture로 Go cache를 준비한 뒤 최대 2개만 병렬 실행하고, scaffold 직후의 중복 validation은 생략하되 artifact patch 이후 `make generate`, `make manifests`, `make test` 최종 gate는 그대로 수행합니다. Kind matrix는 동일 실행에서 통과한 compile workspace와 단일 kind 클러스터를 재사용하며, 결과의 모든 `compileReused` 값이 참인지 workflow가 검사합니다. 생성 Dockerfile은 BuildKit의 module/build cache mount를 사용하고 전체 의존성을 매번 다시 만드는 `go build -a`를 사용하지 않습니다.
-
-`full`은 AppConfig 멱등성 외에도 `profile_kind_matrix.py`를 통해 TrainingJob과 RedisCache의 실제 profile lifecycle을 실행합니다. 결과에는 update, 동일 sample 재적용 멱등성, 삭제 정책, restore 증거가 포함됩니다.
-
-profileless kind matrix는 13개 요구사항에서 ConfigMap, Deployment, Service, Secret, CronJob, Namespace, DaemonSet, StatefulSet, PVC, ServiceAccount, Role, ClusterRole의 공통 lifecycle과 조합형 workload primitive를 검증합니다. read-only Deployment 시나리오는 외부 리소스 변경 watch, status 반영, 쓰기 RBAC 거부와 retain 삭제 정책을 확인합니다. ClusterRole 시나리오는 전체 API group 기반 finalizer 등록, cluster-scoped 리소스의 명시적 삭제, finalizer 제거 후 Custom Resource 삭제, restore까지 실제 kind에서 확인합니다. 생성된 Controller 소스 해시가 image tag에 포함되므로 반복 실행도 이전 Pod를 재사용하지 않습니다. `recreate` field contract는 Controller가 immutable 변경을 감지해 관리 리소스를 재생성하는 동작으로 검증됩니다.
-
-빠른 정책/캐시 검증:
-
-```bash
-python3 agent/evaluation/reliability_test_runner.py \
-  --level fast \
-  --output-dir evaluation/results/reliability/fast-check
-```
-
-`fast` 모드는 다음을 확인합니다.
-
-- LLM 출력 JSON schema 검증
-- Tool allowlist, 필수 인자, 임의 shell 명령 차단
-- `--execute` 없는 변경 Tool dry-run 강제
-- Recovery Tool 자동 실행 차단
-- invalid field type 복구 정책 검증
-- Agent dry-run 1회 실행
-- kind 클러스터 재적용 검증은 생략
-
-전체 신뢰성 검증:
-
-```bash
-python3 agent/evaluation/reliability_test_runner.py \
-  --level full \
-  --output-dir evaluation/results/reliability/full-check
-```
-
-`full` 모드는 fast 검증에 더해 generic fixture requirement의 Agent dry-run 3회 일관성 비교와 kind 기반 멱등성 검증을 수행합니다. Agent 실행은 로컬 캐시를 활용하므로 같은 requirement, profile hint, 모델 설정에서는 반복 실행 시간이 줄어듭니다.
-
-Generic fixture kind 배포 검증:
-
-```bash
-python3 agent/tools/kind_deployment_runner.py
-```
-
-이 검증은 내부 ConfigMap 기반 fixture Operator를 kind 클러스터에 실제 배포하고 다음 lifecycle을 확인합니다. AppConfig는 제품 방향이 아니라 회귀 테스트 fixture입니다.
-
-- Custom Resource 생성 시 ConfigMap 생성
-- `configData` 변경 시 ConfigMap update
-- `enabled=false` 변경 시 ConfigMap 삭제 및 status `Disabled`
-- Custom Resource 삭제 시 하위 ConfigMap 정리
-- 원본 sample 재적용 시 ConfigMap/status 복구
-
-실행 로그는 `logs/kind-deployment/<timestamp>/summary.json`에 저장됩니다.
-
-Profile 없이 다양한 요구사항을 처리하는지 빠르게 확인:
-
-```bash
-python3 agent/evaluation/profileless_requirement_runner.py \
-  --output-dir evaluation/results/profileless/generic-check \
-  --run-level fast
-```
-
-이 runner는 Agent에 `--disable-profile-hints`를 전달합니다. 이 모드에서는 profile 선택뿐 아니라 profile 후보 탐색도 수행하지 않으므로 LLM planning과 Tool 인자가 요구사항 및 RAG 문서만 사용합니다.
-
-개별 요구사항도 같은 정책으로 실행할 수 있습니다.
+계획만 생성합니다.
 
 ```bash
 python3 agent/langchain_agent.py \
   --requirement requirements/web-service.txt \
-  --disable-profile-hints \
+  --mode dry-run \
   --run-level fast
 ```
 
-`--profile`과 `--disable-profile-hints`는 동시에 사용할 수 없습니다. 현재 검증 fixture는 Redis StatefulSet/Service, Secret, CronJob, Deployment/Service, PVC, Namespace label 정책 요구사항을 진짜 profileless 조건으로 실행합니다.
+실제 Kubebuilder 프로젝트와 파일을 생성합니다.
 
-실제 Kubebuilder 프로젝트 생성과 Go compile까지 격리된 임시 workspace에서 확인:
+```bash
+python3 agent/langchain_agent.py \
+  --requirement requirements/web-service.txt \
+  --mode execute \
+  --execute \
+  --run-level fast
+```
+
+profile 없이 여러 Operator 요구사항을 컴파일 검증합니다.
 
 ```bash
 python3 agent/evaluation/profileless_compile_runner.py \
-  --output-dir evaluation/results/profileless-compile/local
+  --output-dir evaluation/results/profileless-compile/local \
+  --jobs 2
 ```
 
-현재 compile matrix의 17개 요구사항마다 `spec 생성 → capability 확인 → scaffold → artifact patch → make generate/manifests/test → Controller quality 평가`를 수행합니다. kind matrix의 모든 요구사항을 compile matrix에 포함해 runtime 검증에서 scaffold와 compile을 반복하지 않습니다. aliased workload fixture는 `variables`, `limits`, `claimRef`처럼 primitive의 기본 필드명과 다른 입력도 명시된 target 동작을 기준으로 추론하는지 확인합니다. NetworkPolicy, ServiceAccount, Role, ClusterRole, HorizontalPodAutoscaler는 catalog 항목만으로 추가한 일반화 증거입니다. CRD, RBAC, Reconcile, status, watch, 멱등성 패턴, 삭제 정책과 테스트 증거를 저장하며 저장소의 `workspace/`는 변경하지 않습니다.
-
-생성된 profileless Operator matrix를 실제 kind에서 lifecycle까지 확인:
+Docker/kind가 준비된 경우 실제 lifecycle을 검증합니다.
 
 ```bash
 python3 agent/evaluation/profileless_kind_runner.py \
   --output-dir evaluation/results/profileless-kind/local
 ```
 
-이 검증은 임시 workspace에서 10개 profileless Operator를 새로 생성·컴파일합니다. 생성된 Controller를 같은 kind 클러스터에 순차 배포하여 관리 리소스 생성, 초기 field mapping, 재적용 멱등성, 변경 반영, immutable 재생성, 삭제 정책, sample 복구를 확인합니다. read-only 사례는 외부 리소스 변경이 watch를 통해 CR status에 반영되는지, 쓰기 RBAC이 실제로 거부되는지, CR 삭제 후 외부 리소스가 유지되는지도 확인합니다. profile fixture나 전용 Controller 준비 코드는 사용하지 않으며 결과는 `profileless-kind-results.json`에 저장됩니다.
+## 요구사항 작성에 필요한 정보
 
-Controller 생성의 일반화 경계는 다음과 같습니다.
+초보자도 아래 네 가지만 쓰면 Agent가 안정적으로 계획을 세울 수 있습니다.
 
-- resource catalog는 Kubernetes resource의 base/conditional object와 field mapping을 행동 IR로 변환
-- IR은 field mutability, in-place/recreate update, ownership, delete/retain 계약을 보관
-- mutation renderer는 resource Kind를 분기하지 않고 모든 object에 동일한 nested path 연산을 적용
-- kind lifecycle 계약은 동일한 IR에서 생성되며 setup, update, recreate, delete, retain을 결정
-- 실제 사례 목록과 held-out 요구사항은 `evaluation/fixtures/`에만 위치
+| 정보 | 필요한 이유 | 예시 |
+| --- | --- | --- |
+| 리소스 이름과 API | Kubernetes가 CRD를 식별하는 주소 | `kind: WebApp`, `api: apps.sample.io/v1alpha1` |
+| 입력값과 타입 | CRD spec 필드와 Go 타입 생성 | `image: string`, `replicas: int32` |
+| 관리 대상과 동작 | Controller reconcile 코드 생성 | `Deployment를 생성하고 replicas 변경을 반영` |
+| status와 삭제 방식 | 사용자가 kubectl로 상태를 확인하고 lifecycle을 이해 | `readyReplicas`, `삭제 시 Deployment도 삭제` |
 
-`evaluation/fixtures/requirements/queue-worker.txt`는 core 변경 없이 새로운 Custom Resource Kind를 생성·컴파일할 수 있는지 확인하는 held-out fixture입니다.
-
-관리 리소스 capability는 [resource-capabilities.yaml](config/resource-capabilities.yaml)에 선언합니다. 각 항목은 alias, API version, scope, ownership, lifecycle, name 후보, base object, 조건부 object, label path, dependency, field/status mapping을 포함하며 Pydantic으로 검증됩니다. catalog 최상위의 재사용 가능한 behavior primitive를 workload별 path binding으로 조합해 env, resource limits, PVC volume/mount, liveness/readiness probe를 생성합니다. 단일 mutation renderer는 `containers[0].ports[0]` 같은 map/list 혼합 경로와 `int64`, `env-map`, `string-map`, `merge-string-map`, `string-slice` transform을 공통 처리합니다.
-
-catalog에 없는 관리 리소스는 `capability_drafter`가 local LLM 초안을 생성하고 동일한 Pydantic catalog Schema와 안전 경로 정책으로 검증합니다. dry-run에서는 `generated/*-capability-proposal.yaml`에 `pending-approval` 상태와 내용 기반 `proposalId`만 기록합니다. 일반 실행 승인과 capability 승인은 분리되어 있으며, Web UI에서 API 버전과 scope를 별도로 확인하거나 CLI에서 검토한 proposal 경로와 정확한 `proposalId`를 함께 전달해야 `config/resource-capability-overrides.yaml` overlay에 반영됩니다. 제안 파일이 검토 후 변경되거나 현재 Operator spec과 관리 리소스가 다르면 실행을 중단하며, 미승인 상태에서는 나머지 변경 Tool을 dry-run으로 제한합니다. identity, ownerReference, finalizer, status 및 저장소 밖 경로를 덮어쓰는 mutation은 승인 전에 거부됩니다.
-
-Capability 초안은 현재 Kubernetes cluster의 Discovery API와도 대조합니다. 제안한 `apiVersion`과 kind가 실제 API에 존재하는지, plural과 namespaced/cluster scope가 정확한지, reconcile 전략에 필요한 verbs를 API가 지원하는지 확인합니다. 통과한 group/resource/verbs는 생성 RBAC marker에 사용되며, Discovery 연결 실패나 불일치가 있으면 capability overlay 승인이 거부됩니다. 승인 순간에도 Discovery 결과를 다시 계산하여 검토 이후 API가 바뀐 경우 실행을 중단합니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/example.txt \
-  --mode execute --execute \
-  --capability-proposal generated/example-capability-proposal.yaml \
-  --capability-approval '<reviewed-proposalId>'
-```
-
-profileless Controller status에는 `observedGeneration`과 표준 `Conditions`가 자동 추가됩니다. 정상 상태는 30초 재조정, 실패는 controller-runtime 오류 재시도와 10초 requeue 근거, immutable 변경은 `Recreating` Condition과 2초 재조정으로 구분됩니다. cluster-scoped 등 ownerReference를 사용할 수 없는 `explicit-delete` capability는 finalizer로 삭제 lifecycle을 완료합니다.
-
-새 관리 리소스 일반화 검증은 Python 분기나 emitter를 추가하는 방식이 아니라 catalog 항목과 `evaluation/fixtures/requirements/`의 held-out 요구사항만 추가하여 수행합니다. 중복 alias, 잘못된 nested path, 미완성·미등록 dependency, read-only mutation 및 cluster-scoped ownerReference는 catalog 로드 단계에서 거부됩니다.
-
-## 스펙 기반 Kubebuilder Scaffold
-
-구조화 스펙 YAML을 기반으로 Kubebuilder 프로젝트를 생성할 수 있습니다.
-
-```bash
-./scripts/scaffold-from-spec.py generated/training-job-operator-spec.yaml
-```
-
-기존 workspace를 다시 만들려면:
-
-```bash
-./scripts/scaffold-from-spec.py generated/training-job-operator-spec.yaml --force
-```
-
-이 스크립트는 다음을 수행합니다.
-
-- `kubebuilder init`
-- `kubebuilder create api`
-- `api/<version>/*_types.go`에 spec/status 필드 반영
-- `config/samples` 샘플 Custom Resource 갱신
-- `make generate`
-- `make manifests`
-
-생성 결과 예:
+예시:
 
 ```text
-workspace/training-job-operator
+CustomerPortal Operator를 만들어 주세요.
+API는 apps.sample.io/v1alpha1입니다.
+
+spec:
+- image: string
+- replicas: int32
+
+status:
+- phase: string
+- readyReplicas: int32
+- message: string
+
+Controller는 Deployment를 생성하고, image와 replicas 변경을 반영해야 합니다.
+외부에서 Deployment가 변경되면 spec 기준으로 복구해야 합니다.
+CustomerPortal이 삭제되면 Deployment도 함께 삭제해야 합니다.
 ```
 
-## WSL 개발환경
+## Capability 등급
 
-시스템 패키지 설치 권한이 없는 WSL 환경에서는 프로젝트 로컬 도구 설치 스크립트를 사용합니다.
+Capability 등급은 새 Custom Resource 이름이 아니라, 관리하려는 Kubernetes 리소스와 lifecycle 패턴의 검증 증거를 기준으로 판단합니다.
+
+| 등급 | 의미 |
+| --- | --- |
+| stable | compile, kind lifecycle, drift 복구, RBAC, 삭제 정책 등 runtime evidence가 충분함 |
+| beta | 일부 runtime evidence가 있으나 조합/edge case 검증이 제한적임 |
+| experimental | catalog/schema 또는 compile 증거는 있으나 kind lifecycle evidence가 부족함 |
+
+예를 들어 처음 보는 `CustomerPortal` CR이라도 내부에서 검증된 Deployment lifecycle을 사용하면 stable로 볼 수 있습니다. 반대로 `NetworkPolicy`처럼 아직 kind lifecycle 증거가 부족한 리소스 패턴은 experimental로 표시합니다.
+
+## 검증과 성과 지표
+
+이 프로젝트는 기능 구현뿐 아니라 회귀 검증과 runtime evidence를 함께 관리합니다.
 
 ```bash
-./scripts/install-local-tools.sh
-./scripts/check-env.sh
+# LLM과 Docker 없이 빠르게 수행하는 기본 회귀
+python3 scripts/run-regression-tests.py \
+  --suite quick \
+  --output-dir evaluation/results/regression/local-quick
+
+# Local LLM 일관성까지 포함
+python3 scripts/run-regression-tests.py \
+  --suite standard \
+  --output-dir evaluation/results/regression/local-standard
+
+# Docker/kind lifecycle까지 포함
+python3 scripts/run-regression-tests.py \
+  --suite full \
+  --output-dir evaluation/results/regression/local-full
 ```
 
-설치된 로컬 도구는 `.tools/bin` 아래에 위치합니다. 현재 셸에서 바로 사용하려면 다음을 실행합니다.
+주요 검증 항목:
 
-```bash
-export PATH="/home/ch0618/k8sagent/.tools/bin:$PATH"
+- 자연어 요구사항 파싱 일관성
+- 부정/제외 표현 처리
+- 필수 정보 누락 시 clarification-required 처리
+- Tool allowlist와 경로 제한
+- 구조화 errorCode 분류
+- RAG 검색 품질
+- profileless Operator compile matrix
+- kind lifecycle matrix
+- RBAC 최소 권한
+- drift recovery
+- read-only watch
+- retain/delete/finalizer 정책
+- Docker unavailable fail-fast
+
+최근 검증 예시:
+
+| 항목 | 결과 |
+| --- | --- |
+| Quick regression | 통과 |
+| Response consistency | 29/29 통과 |
+| Docker unavailable 테스트 | 약 8초 내 `DOCKER_DAEMON_UNAVAILABLE` 분류 |
+| Docker unavailable lifecycle evidence | 전부 `not-run`, 성공 evidence 미기록 |
+
+## 시스템 구조
+
+```mermaid
+flowchart LR
+    subgraph UI["사용자 인터페이스"]
+        WEB["web/app.py<br/>FastAPI Web UI"]
+        CLI["agent/langchain_agent.py<br/>CLI"]
+    end
+
+    subgraph AGENT["Agent Core"]
+        ORCH["requirement_orchestrator.py"]
+        CTX["context_builder.py"]
+        LLM["agent/llm/*"]
+        RAG["agent/rag/*"]
+        EXEC["execution_engine.py"]
+        ERR["error_registry.py<br/>error_taxonomy.py"]
+    end
+
+    subgraph TOOLS["Tool Layer"]
+        SPEC["spec_generator.py"]
+        PLAN["command_planner.py"]
+        SCAF["scaffold_runner.py"]
+        PATCH["artifact_patcher.py"]
+        IR["controller_ir_builder.py"]
+        KIND["kind_deployment_runner.py"]
+    end
+
+    subgraph OUTPUT["산출물과 증거"]
+        ART["generated/ 또는 artifacts/"]
+        WORK["workspace/ 또는 job workspace"]
+        LOG["logs/"]
+        EVAL["evaluation/results/"]
+    end
+
+    WEB --> ORCH
+    CLI --> ORCH
+    ORCH --> CTX
+    ORCH --> LLM
+    ORCH --> RAG
+    ORCH --> EXEC
+    EXEC --> SPEC
+    EXEC --> PLAN
+    EXEC --> SCAF
+    EXEC --> PATCH
+    PATCH --> IR
+    EXEC --> KIND
+    SPEC --> ART
+    PLAN --> ART
+    SCAF --> WORK
+    PATCH --> WORK
+    KIND --> LOG
+    ORCH --> LOG
+    ERR --> ORCH
+    EVAL --> LOG
 ```
 
-자세한 내용은 [docs/development-environment.md](docs/development-environment.md)를 참고합니다.
+## 소스코드 설명
+
+| 경로 | 역할 |
+| --- | --- |
+| `web/app.py` | FastAPI Web UI 진입점. 요구사항 입력, 작업 상태, 결과 화면, kind 검증 요청을 처리 |
+| `web/workflow_service.py` | Web 요청을 Agent CLI 명령으로 변환하고 작업 큐에 등록 |
+| `web/job_manager.py` | 비동기 작업 상태, 로그, 재시도/중단 상태 관리 |
+| `web/result_presenter.py` | Agent/Tool 결과 JSON을 초보자용 화면 데이터로 변환 |
+| `agent/langchain_agent.py` | CLI 진입점. 요구사항 실행과 로그 분석 실행을 분기 |
+| `agent/requirement_orchestrator.py` | 요구사항 분석, LLM 계획, Tool 실행, 최종 평가, recovery planning의 중심 흐름 |
+| `agent/context_builder.py` | 자연어 requirement에서 API, spec/status, 관리 리소스, 누락 정보를 정규화 |
+| `agent/contracts.py` | RequirementPlan, ToolCall, ToolResult, FinalEvaluation 등 Pydantic 계약 |
+| `agent/execution_engine.py` | 검증된 Tool call만 순서대로 실행하고 첫 실패에서 중단 |
+| `agent/error_registry.py` | errorCode, 사용자 메시지, recovery 정책, retry 가능 여부, UI severity의 중앙 registry |
+| `agent/error_taxonomy.py` | Tool stdout/stderr와 structured error를 표준 errorCode로 변환 |
+| `agent/recovery_orchestrator.py` | 실패 context와 RAG 근거를 바탕으로 복구 계획을 생성 |
+| `agent/recovery_policy.py` | 복구 계획의 allowlist, 근거, 자동 실행 금지 정책 검증 |
+| `agent/llm/*` | Ollama 호환 Local LLM client, planner, prompt 구성 |
+| `agent/rag/*` | Markdown knowledge-base 로딩, 검색, reranking |
+| `agent/tools/spec_generator.py` | 자연어 요구사항을 `operator-spec.yaml` 계약으로 변환 |
+| `agent/tools/capability_drafter.py` | catalog에 없는 capability 초안을 생성하고 승인 계약을 만듦 |
+| `agent/tools/scaffold_runner.py` | Kubebuilder init/create api 실행 또는 dry-run |
+| `agent/tools/artifact_patcher.py` | API 타입, sample YAML, RBAC marker, Controller 코드를 보정 |
+| `agent/tools/controller_ir.py` | Controller 생성을 위한 중간 표현(IR) Pydantic 모델 |
+| `agent/tools/controller_ir_builder.py` | operator spec과 capability catalog를 Controller IR로 변환 |
+| `agent/tools/controller_emitters.py` | IR 기반으로 Go reconcile 코드 조각 생성 |
+| `agent/tools/kind_deployment_runner.py` | kind 클러스터 생성, 이미지 빌드/로드, Controller 배포, lifecycle 검증 |
+| `agent/tools/kind_deployment_validators.py` | managed resource, read-only, retain/delete, finalizer 등 runtime 검증기 |
+| `evaluation/` | RAG 품질, response consistency, profileless compile/kind, unified evaluation runner |
+| `config/resource-capabilities.yaml` | Kubernetes 리소스 capability catalog |
+| `config/capability-support.yaml` | UI에 표시하는 stable/beta/experimental evidence |
+| `knowledge-base/` | RAG가 참조하는 Kubebuilder guide, troubleshooting, few-shot 문서 |
+| `docs/` | 상세 설계, 품질 기준, 요구사항 작성 가이드, 데모 시나리오 |
+
+## 주요 산출물
+
+| 산출물 | 위치 |
+| --- | --- |
+| Agent 실행 로그 | `logs/agent/<timestamp>/` |
+| Web 작업 로그 | `logs/web/jobs/<job-id>/` |
+| Operator spec | `generated/*-operator-spec.yaml` 또는 Web job artifacts |
+| Command plan | `generated/*-command-plan.md` 또는 Web job artifacts |
+| Kubebuilder workspace | `workspace/` 또는 Web job workspace |
+| kind 검증 결과 | `profileless-kind-results.json` |
+| 회귀 검증 결과 | `evaluation/results/` |
+
+## 제한사항
+
+- 100% 범용 자연어 이해 시스템은 아닙니다. 필수 API 정보, 필드 타입, 관리 리소스가 부족하면 추가 정보를 요청합니다.
+- Docker/kind 검증은 로컬 Docker Desktop과 WSL integration 상태에 영향을 받습니다.
+- `experimental` capability는 생성은 가능할 수 있으나 실제 kind lifecycle 증거가 부족하므로 코드와 RBAC 검토가 필요합니다.
+- LLM planning은 local cache와 schema repair로 안정화했지만, 최종 판단은 Tool 결과와 구조화 evidence를 우선합니다.
+- 복구 계획은 자동 실행하지 않습니다. 사용자가 검토하고 승인해야 합니다.
+
+## 보고서 작성 시 강조할 점
+
+심사 기준에 맞춰 다음 내용을 중심으로 설명할 수 있습니다.
+
+- 문제 정의: Operator 개발 과정의 복잡도, 반복 작업, 실패 원인 파악 어려움
+- 기술 선택 타당성: Local LLM, RAG, Pydantic 계약, 안전한 Tool wrapper, kind evidence 조합
+- 구현 완성도: Web UI, CLI, 코드 생성, make 검증, runtime 검증, error taxonomy, recovery planning
+- 정량 지표: 회귀 테스트 통과율, response consistency, fail-fast 시간, 수동 단계 감소
+- 정성 지표: 초보자용 설명, kubectl 확인 명령, capability 신뢰도 표시, 실패 원인 구분
+
+## 참고 문서
+
+- [시각적 전체 흐름](docs/visual-overview.md)
+- [요구사항 작성 가이드](docs/requirement-writing-guide.md)
+- [품질 기준](docs/quality-thresholds.md)
+- [안전성과 증거 설계](docs/agent-evidence-and-safety.md)
+- [현재 MVP 상태](docs/current-mvp-status.md)
+- [문제 해결 가이드](docs/troubleshooting-guide.md)

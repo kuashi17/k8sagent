@@ -144,6 +144,8 @@ def generate_spec(text: str, source_file: Path) -> dict[str, Any]:
     warnings: list[str] = []
     errors: list[str] = []
 
+    # 자연어 입력을 바로 코드 생성에 쓰지 않고, 먼저 operator-spec.yaml 계약으로
+    # 고정한다. 이후 scaffold, patch, 검증 Tool은 이 구조화 스펙만 바라본다.
     api = parse_api(text, warnings)
     project = parse_project(text, api, warnings)
     spec_fields = parse_fields(text, "spec", warnings)

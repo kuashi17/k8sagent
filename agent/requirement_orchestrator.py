@@ -64,6 +64,9 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     requirement_path = Path(args.requirement)
     requirement_text = requirement_path.read_text(encoding="utf-8")
     profile = load_profile(Path(args.profile)) if args.profile else {}
+    # 자연어 requirement를 Agent 내부 계약으로 정규화한다.
+    # 여기서 API, spec/status, 관리 리소스, 누락 정보, RAG context가 모인다.
+    # 이후 단계는 원문 자연어보다 이 context를 기준으로 동작한다.
     context = build_requirement_context(
         requirement_path,
         requirement_text,
@@ -106,6 +109,8 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
             total_started,
         )
 
+    # LLM은 실행 계획만 만든다. 실제 명령 실행 여부는 아래 Tool 검증과
+    # execution engine이 결정하므로, LLM 출력이 곧바로 셸 실행으로 이어지지 않는다.
     planner_started = time.perf_counter()
     planner_result = call_requirement_planner(
         args,
@@ -142,6 +147,8 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
                 "after validation."
             ),
         )
+    # 검증된 Tool만 정해진 순서로 실행한다. 실패가 발생하면 뒤 단계는
+    # 실행하지 않고 failure context와 recovery planning으로 넘어간다.
     execution = execute_planned_tools(
         context,
         args.mode,
@@ -157,6 +164,8 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
     )
     recovery_result = None
     if failure_context:
+        # 복구는 자동 실행하지 않는다. 실패 근거를 저장하고,
+        # 승인 가능한 복구 계획만 생성한다.
         write_recovery_checkpoint(
             log_dir,
             args,

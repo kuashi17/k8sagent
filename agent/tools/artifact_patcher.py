@@ -122,6 +122,8 @@ def load_profile(path: Path) -> dict[str, Any]:
 
 
 def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: str | None) -> dict[str, Any]:
+    # 여러 버전의 spec/profile 입력을 하나의 내부 모델로 정규화한다.
+    # Controller 생성기는 legacy profile 구조가 아니라 이 normalized model과 IR을 기준으로 동작한다.
     api = spec.get("api") or spec.get("resource") or {}
     project = spec.get("project") or {}
     spec_fields = spec.get("specFields") or spec.get("spec", {}).get("fields") or []

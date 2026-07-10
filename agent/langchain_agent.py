@@ -126,6 +126,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    # CLI는 두 가지 진입점을 하나로 묶는다.
+    # 1) requirement 기반 Operator 생성/검증
+    # 2) 기존 실행 로그 분석
+    # 실제 orchestration은 전용 모듈로 위임해 진입점이 커지지 않도록 한다.
     if args.profile and args.disable_profile_hints:
         raise SystemExit(
             "--profile and --disable-profile-hints cannot be used together."

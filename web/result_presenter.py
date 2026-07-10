@@ -36,6 +36,9 @@ BEGINNER_TEXT = {
 
 
 def present_run_result(job: dict[str, Any]) -> RunResultView:
+    # Agent summary는 개발자용 JSON에 가깝다.
+    # 이 함수는 같은 결과를 초보자가 읽을 수 있는 제목, 다음 행동,
+    # capability 등급, 생성 파일 목록으로 바꿔 Web template에 전달한다.
     summary = job.get("summary") or {}
     shared = summary.get("agentResult") or {}
     technical = shared.get("technicalDetails") or {}
@@ -196,6 +199,8 @@ def present_run_result(job: dict[str, Any]) -> RunResultView:
 
 
 def present_log_analysis_result(job: dict[str, Any]) -> LogAnalysisView:
+    # 실패 로그 분석도 생성 작업과 동일한 화면 계약으로 보여준다.
+    # 원본 로그 경로는 숨기고, 사용자가 취해야 할 조치 중심으로 변환한다.
     summary = job.get("summary") or {}
     analysis = summary.get("llmAnalysis") or {}
     errors = strings(summary.get("errors"))
