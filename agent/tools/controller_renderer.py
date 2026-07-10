@@ -59,6 +59,12 @@ def render_controller(ir: ControllerGenerationIR) -> str:
         )
         functions.append(render_resource_function(resource, ir, alias))
 
+    success_phase = success_status_phase(resources)
+    success_message = (
+        "Observed resources are available."
+        if success_phase == "Observing"
+        else "Managed resources are reconciled."
+    )
     return f'''package controller
 
 import (
@@ -102,7 +108,7 @@ func (r *{kind}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 {render_finalizer_reconcile(ir)}
 \tnames := map[string]string{{}}
 {chr(10).join(reconcile_calls)}
-\tif err := r.updateStatus(ctx, &instance, "Ready", "Managed resources are reconciled.", names); err != nil {{
+\tif err := r.updateStatus(ctx, &instance, "{success_phase}", "{success_message}", names); err != nil {{
 \t\treturn ctrl.Result{{RequeueAfter: {state.failure_requeue_seconds} * time.Second}}, err
 \t}}
 \treturn ctrl.Result{{RequeueAfter: {state.success_requeue_seconds} * time.Second}}, nil
@@ -290,6 +296,15 @@ func (r *{kind}Reconciler) SetupWithManager(mgr ctrl.Manager) error {{
 \t\tComplete(r)
 }}
 '''
+
+
+def success_status_phase(resources: list[ManagedResourceSpec]) -> str:
+    if resources and all(
+        resource.strategy == ReconcileStrategy.READ_ONLY
+        for resource in resources
+    ):
+        return "Observing"
+    return "Ready"
 
 
 def render_resource_function(
@@ -611,7 +626,7 @@ def render_status_function(
         condition_assignments.extend(
             [
                 "\tconditionStatus := metav1.ConditionFalse",
-                '\tif phase == "Ready" { conditionStatus = metav1.ConditionTrue }',
+                '\tif phase == "Ready" || phase == "Observing" { conditionStatus = metav1.ConditionTrue }',
                 "\tmeta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{",
                 '\t\tType: "Ready",',
                 "\t\tStatus: conditionStatus,",
@@ -622,8 +637,15 @@ def render_status_function(
             ]
         )
     for resource in ir.managed_resources:
+        for field in observed_resource_name_fields(resource, status_fields):
+            assignments.append(
+                f'\tinstance.Status.{go_name(field)} = '
+                f'names["{resource.kind}"]'
+            )
         for mapping in resource.status_mappings:
             field = mapping.target_path.removeprefix("status.")
+            if field in observed_resource_name_fields(resource, status_fields):
+                continue
             if mapping.transform == "resource-name":
                 assignments.append(
                     f'\tinstance.Status.{go_name(field)} = '
@@ -656,6 +678,23 @@ def render_status_function(
 \treturn r.Status().Update(ctx, instance)
 }}
 '''
+
+
+def observed_resource_name_fields(
+    resource: ManagedResourceSpec,
+    status_fields: set[str],
+) -> list[str]:
+    kind = resource.kind[:1].lower() + resource.kind[1:]
+    candidates = [
+        f"observed{resource.kind}Name",
+        f"{kind}Name",
+    ]
+    return [
+        field
+        for field in candidates
+        if field in status_fields
+        and resource.strategy == ReconcileStrategy.READ_ONLY
+    ]
 
 
 def render_direct_status_mapping(

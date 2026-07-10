@@ -26,7 +26,7 @@ def model(resources, spec_fields, status_fields):
                 "name": name,
                 "type": (
                     "int32"
-                    if name == "readyReplicas"
+                    if name in {"desiredReplicas", "readyReplicas"}
                     else "metav1.Time"
                     if name == "lastScheduleTime"
                     else "string"
@@ -145,7 +145,13 @@ class ControllerRendererTest(unittest.TestCase):
         value = model(
             [],
             ["deploymentName"],
-            ["phase", "desiredReplicas", "readyReplicas", "message"],
+            [
+                "phase",
+                "observedDeploymentName",
+                "desiredReplicas",
+                "readyReplicas",
+                "message",
+            ],
         )
         value["controller"] = {
             "managedResources": [],
@@ -182,6 +188,8 @@ class ControllerRendererTest(unittest.TestCase):
         self.assertIn("expectedName := instance.Spec.DeploymentName", rendered)
         self.assertIn("client.InNamespace(object.GetNamespace())", rendered)
         self.assertIn('"NotFound"', rendered)
+        self.assertIn('"Observing"', rendered)
+        self.assertIn("instance.Status.ObservedDeploymentName", rendered)
         self.assertIn("instance.Status.DesiredReplicas", rendered)
 
     def test_state_machine_status_and_requeue_are_rendered(self) -> None:
