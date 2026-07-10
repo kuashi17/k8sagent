@@ -422,7 +422,8 @@ def render_go_fields(fields: list[dict[str, Any]], section: str) -> str:
         description = field.get("description") or f"{go_name} is a {section} field."
         lines.append(f"\t// {description}")
         lines.extend(validation_markers(go_type))
-        lines.append(f"\t{go_name} {go_type} `json:\"{name},omitempty\"`")
+        tag = name if section == "Status" else f"{name},omitempty"
+        lines.append(f"\t{go_name} {go_type} `json:\"{tag}\"`")
         lines.append("")
     return "\n".join(lines)
 

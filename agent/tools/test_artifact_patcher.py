@@ -8,6 +8,7 @@ from unittest.mock import patch
 from agent.tools.artifact_patcher import (
     normalize_spec,
     patch_controller,
+    render_go_fields,
     sample_value,
 )
 from agent.tools.scaffold_runner import build_execution_env
@@ -111,6 +112,23 @@ class ArtifactPatcherTest(unittest.TestCase):
             sample_value("map[string]string", "appSelector"),
             {"app": "sample"},
         )
+
+    def test_status_fields_do_not_omit_zero_values(self) -> None:
+        rendered = render_go_fields(
+            [{"name": "readyReplicas", "type": "int32"}],
+            "Status",
+        )
+
+        self.assertIn('json:"readyReplicas"', rendered)
+        self.assertNotIn('json:"readyReplicas,omitempty"', rendered)
+
+    def test_spec_fields_keep_omitempty(self) -> None:
+        rendered = render_go_fields(
+            [{"name": "replicas", "type": "int32"}],
+            "Spec",
+        )
+
+        self.assertIn('json:"replicas,omitempty"', rendered)
 
     @patch.dict("os.environ", {"GOFLAGS": "-mod=readonly"}, clear=False)
     def test_scaffold_execution_disables_vcs_stamping(self) -> None:
