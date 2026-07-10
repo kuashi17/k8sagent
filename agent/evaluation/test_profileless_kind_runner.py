@@ -5,13 +5,17 @@ from __future__ import annotations
 import tempfile
 import unittest
 import json
+import subprocess
 from pathlib import Path
+from unittest import mock
 
 from agent.evaluation.profileless_kind_runner import (
     aggregate_deployment_categories,
     aggregate_kind_timings,
     build_kind_command,
     build_kind_contract,
+    check_docker_available,
+    docker_preflight_failure_result,
     project_content_digest,
     load_precompiled_results,
     result_payload,
@@ -19,6 +23,57 @@ from agent.evaluation.profileless_kind_runner import (
 
 
 class ProfilelessKindRunnerTest(unittest.TestCase):
+    def test_docker_preflight_timeout_is_structured_as_docker_unavailable(
+        self,
+    ) -> None:
+        docker_check = {
+            "ok": False,
+            "name": "docker-info",
+            "command": ["docker", "info"],
+            "stdout": "",
+            "stderr": "docker info timed out after 8 seconds",
+            "exitCode": 124,
+            "status": "failed",
+            "elapsedSeconds": 8.0,
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            result = docker_preflight_failure_result(
+                Path("requirements/customer-portal.txt"),
+                Path(temp),
+                docker_check,
+            )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(result["compile"]["skipped"])
+        deployment = result["deploymentSummary"]
+        self.assertEqual(deployment["failedStep"], "docker-info")
+        self.assertEqual(
+            deployment["errorCode"],
+            "DOCKER_DAEMON_UNAVAILABLE",
+        )
+        self.assertEqual(
+            deployment["runtimeEvidence"]["idempotency"]["status"],
+            "not-run",
+        )
+
+    def test_docker_preflight_uses_short_timeout(self) -> None:
+        with mock.patch(
+            "agent.evaluation.profileless_kind_runner.shutil.which",
+            return_value="/usr/bin/docker",
+        ), mock.patch(
+            "agent.evaluation.profileless_kind_runner.subprocess.run"
+        ) as run:
+            run.side_effect = subprocess.TimeoutExpired(
+                ["/usr/bin/docker", "info"],
+                timeout=8,
+            )
+
+            result = check_docker_available(timeout_seconds=8)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["name"], "docker-info")
+        self.assertEqual(result["exitCode"], 124)
+
     def test_result_records_precompiled_workspace_reuse(self) -> None:
         result = result_payload(
             "passed",

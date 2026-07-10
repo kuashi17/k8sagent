@@ -141,7 +141,8 @@ class KindDeploymentEngine:
         for binary in ["docker", "kind", "kubectl", "make", "go"]:
             if not shutil.which(binary):
                 raise RuntimeError(f"required binary not found in PATH: {binary}")
-        self.run_cmd("docker-info", ["docker", "info"], timeout=30)
+        self.failed_step = "docker-info"
+        self.run_cmd("docker-info", ["docker", "info"], timeout=8)
 
     def ensure_cluster(self) -> None:
         self.failed_step = "ensure-cluster"
@@ -290,13 +291,42 @@ class KindDeploymentEngine:
             self.steps.append(result)
             return result
         started = time.time()
-        completed = subprocess.run(
-            command,
-            cwd=cwd or REPO_ROOT,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=cwd or REPO_ROOT,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            elapsed = round(time.time() - started, 3)
+            stdout = decode_timeout_output(exc.stdout)
+            stderr = (
+                decode_timeout_output(exc.stderr)
+                or f"command timed out after {timeout} seconds"
+            )
+            result = {
+                "name": name,
+                "command": command,
+                "cwd": str(cwd or REPO_ROOT),
+                "stdout": stdout,
+                "stderr": stderr,
+                "exitCode": 124,
+                "status": "failed",
+                "elapsedSeconds": elapsed,
+            }
+            self.steps.append(result)
+            safe_name = f"{len(self.steps):02d}-{name}"
+            (self.log_dir / f"{safe_name}.stdout.log").write_text(stdout, encoding="utf-8")
+            (self.log_dir / f"{safe_name}.stderr.log").write_text(stderr, encoding="utf-8")
+            if check:
+                self.failed_step = name
+                raise RuntimeError(
+                    f"command timed out after {timeout} seconds: "
+                    + " ".join(command)
+                ) from exc
+            return result
         elapsed = round(time.time() - started, 3)
         result = {
             "name": name,
@@ -500,6 +530,14 @@ def is_transient_docker_failure(result: dict[str, Any]) -> bool:
             "unexpected eof",
         )
     )
+
+
+def decode_timeout_output(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
 
 
 def resolve_path(path: str | Path) -> Path:

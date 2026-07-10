@@ -28,8 +28,10 @@ from agent.evaluation.kind_contract_builder import (
 from agent.evaluation.profileless_compile_runner import (
     compile_requirement,
 )
+from agent.error_taxonomy import infer_tool_error
 from agent.tools.artifact_patcher import normalize_spec
 from agent.tools.controller_ir_builder import build_controller_ir
+from agent.tools.kind_deployment_runner import build_runtime_evidence
 
 
 DEFAULT_MATRIX = (
@@ -87,6 +89,40 @@ def main() -> int:
         if args.precompiled_results
         else {}
     )
+    docker_check = check_docker_available()
+    if not docker_check["ok"]:
+        results = [
+            docker_preflight_failure_result(
+                requirement,
+                output_dir / "cases" / requirement.stem,
+                docker_check,
+            )
+            for requirement in requirements
+        ]
+        payload = {
+            "createdAt": datetime.now().astimezone().isoformat(
+                timespec="seconds"
+            ),
+            "status": "failed",
+            "profileUsed": False,
+            "results": results,
+            "timings": aggregate_kind_timings(
+                results,
+                round(time.perf_counter() - started, 3),
+            ),
+        }
+        write_result(output_dir, payload)
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "outputDir": relative(output_dir),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return 1
     work_root = Path(
         tempfile.mkdtemp(prefix="k8sagent-profileless-kind-")
     )
@@ -227,6 +263,119 @@ def run_requirement(
     )
     write_result(output_dir, payload)
     return payload
+
+
+def check_docker_available(timeout_seconds: int = 8) -> dict[str, Any]:
+    started = time.perf_counter()
+    docker = shutil.which("docker")
+    if not docker:
+        return {
+            "ok": False,
+            "name": "docker-info",
+            "command": ["docker", "info"],
+            "stdout": "",
+            "stderr": "required binary not found in PATH: docker",
+            "exitCode": 127,
+            "status": "failed",
+            "elapsedSeconds": round(time.perf_counter() - started, 3),
+        }
+    try:
+        completed = subprocess.run(
+            [docker, "info"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "name": "docker-info",
+            "command": [docker, "info"],
+            "stdout": decode_timeout_output(exc.stdout),
+            "stderr": (
+                decode_timeout_output(exc.stderr)
+                or f"docker info timed out after {timeout_seconds} seconds"
+            ),
+            "exitCode": 124,
+            "status": "failed",
+            "elapsedSeconds": round(time.perf_counter() - started, 3),
+        }
+    return {
+        "ok": completed.returncode == 0,
+        "name": "docker-info",
+        "command": [docker, "info"],
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+        "exitCode": completed.returncode,
+        "status": "succeeded" if completed.returncode == 0 else "failed",
+        "elapsedSeconds": round(time.perf_counter() - started, 3),
+    }
+
+
+def decode_timeout_output(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def docker_preflight_failure_result(
+    requirement: Path,
+    output_dir: Path,
+    docker_check: dict[str, Any],
+) -> dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    error_text = (
+        str(docker_check.get("stderr") or "")
+        or str(docker_check.get("stdout") or "")
+        or "docker info failed"
+    )
+    error_details = infer_tool_error(
+        {
+            "exitCode": docker_check.get("exitCode") or 1,
+            "stderr": error_text,
+            "deploymentSummary": {
+                "failedStep": "docker-info",
+            },
+        },
+        "profileless_kind",
+    )
+    deployment = {
+        "status": "failed",
+        "failedStep": "docker-info",
+        "engine": "profileless-kind-preflight",
+        "checks": {"error": error_text},
+        "runtimeEvidence": build_runtime_evidence({}),
+        "steps": [docker_check],
+        "elapsedSeconds": docker_check.get("elapsedSeconds") or 0,
+        "errorCode": error_details["errorCode"],
+        "errorDetails": error_details,
+    }
+    result = result_payload(
+        "failed",
+        requirement,
+        {
+            "passed": False,
+            "skipped": True,
+            "reason": "docker preflight failed",
+        },
+        deployment,
+        [str(item) for item in docker_check.get("command") or ["docker", "info"]],
+        error_text,
+        {
+            "caseSeconds": docker_check.get("elapsedSeconds") or 0,
+            "contractBuildSeconds": 0.0,
+            "runnerSeconds": 0.0,
+            "deploymentStepSeconds": docker_check.get("elapsedSeconds") or 0,
+            "deploymentCategories": {
+                "docker-preflight": docker_check.get("elapsedSeconds") or 0,
+            },
+        },
+    )
+    write_result(output_dir, result)
+    return result
 
 
 def load_precompiled_results(path: Path) -> dict[str, dict[str, Any]]:
