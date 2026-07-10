@@ -166,6 +166,10 @@ def generate_spec(text: str, source_file: Path) -> dict[str, Any]:
         "warnings": warnings,
         "errors": errors,
     }
+    errors.extend(
+        f"Conflicting requirement: {item}"
+        for item in detect_requirement_conflicts(text)
+    )
     validate_spec(result)
     return result
 
@@ -645,14 +649,14 @@ def find_section_block(text: str, section: str) -> str:
         return structured
     inline_heading = re.search(
         rf"(?:사용자가\s+입력할\s+|kubectl로\s+확인할\s+)?"
-        rf"{section}\s*필드는\s*다음과\s*같습니다\.\s*",
+        rf"{section}\s*(?:은|는|필드는)\s*다음(?:\s+값)?과\s*같습니다\.\s*",
         text,
         re.I,
     )
     if inline_heading:
         tail = text[inline_heading.end() :]
         end_pattern = (
-            r"(?:kubectl로\s+확인할\s+)?status\s*필드는"
+            r"(?:kubectl로\s+확인할\s+)?status\s*(?:은|는|필드는)"
             if section.lower() == "spec"
             else r"(?:Controller|컨트롤러)(?:는|가|를|를\s+)"
         )
@@ -1008,6 +1012,57 @@ def requests_retention(line: str) -> bool:
             "retain",
         )
     )
+
+
+def detect_requirement_conflicts(text: str) -> list[str]:
+    normalized = " ".join(text.split())
+    conflicts: list[str] = []
+    for resource in dict.fromkeys(extract_k8s_resources(normalized)):
+        resource_sentences = [
+            sentence
+            for sentence in re.split(r"[.!?]", normalized)
+            if resource.lower() in sentence.lower()
+        ]
+        scoped = " ".join(resource_sentences)
+        if (
+            any(
+                token in scoped
+                for token in (
+                    "유지",
+                    "남겨",
+                    "삭제하지",
+                    "자동 삭제하지",
+                    "retain",
+                )
+            )
+            and any(
+                token in scoped
+                for token in (
+                    "함께 삭제",
+                    "도 함께 삭제",
+                    "도 삭제",
+                    "삭제되어야",
+                    "삭제해야",
+                )
+            )
+        ):
+            conflicts.append(
+                f"{resource} 삭제 시 유지와 함께 삭제가 동시에 요청됐습니다."
+            )
+        if (
+            any(
+                token in scoped
+                for token in ("읽기만", "조회만", "read-only", "수정하지")
+            )
+            and any(
+                token in scoped
+                for token in ("복구", "원래 상태로", "spec 기준으로 되돌")
+            )
+        ):
+            conflicts.append(
+                f"{resource} 읽기 전용과 외부 변경 복구가 동시에 요청됐습니다."
+            )
+    return list(dict.fromkeys(conflicts))
 
 
 def find_after_heading(text: str, heading: str) -> str:

@@ -303,6 +303,43 @@ message: string
         policy = spec["controller"]["resourcePolicies"][0]
         self.assertEqual((policy["ownership"], policy["deletionPolicy"]), ("none", "retain"))
 
+    def test_korean_section_heading_and_deletion_conflict_blocks_generation(self) -> None:
+        spec = generated("""
+DataVolume Operator를 만들어 주세요.
+
+API는 storage.sample.io/v1alpha1입니다.
+Custom Resource 이름은 DataVolume입니다.
+
+spec은 다음과 같습니다.
+- storageClassName: string
+- size: string
+- accessMode: string
+
+status는 다음과 같습니다.
+- phase: string
+- pvcName: string
+- message: string
+
+Controller는 PVC를 생성해야 합니다.
+DataVolume 삭제 시 PVC는 유지해야 합니다.
+그리고 DataVolume 삭제 시 PVC도 함께 삭제해야 합니다.
+""")
+
+        self.assertEqual(
+            [item["name"] for item in spec["specFields"]],
+            ["storageClassName", "size", "accessMode"],
+        )
+        self.assertEqual(
+            [item["name"] for item in spec["statusFields"]],
+            ["phase", "pvcName", "message"],
+        )
+        self.assertTrue(
+            any(
+                "Conflicting requirement: PVC 삭제 시 유지와 함께 삭제" in item
+                for item in spec["errors"]
+            )
+        )
+
     def test_unknown_field_types_are_not_treated_as_go_types(self) -> None:
         text = """
 InvalidExample이라는 Custom Resource를 만들고 싶습니다.
