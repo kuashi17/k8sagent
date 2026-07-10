@@ -122,6 +122,43 @@ AppService가 삭제되면 Controller가 생성한 Deployment도 함께 삭제�
         self.assertEqual(spec["controller"]["managedResources"], ["Deployment"])
         self.assertEqual(spec["errors"], [])
 
+    def test_dotted_spec_field_path_does_not_break_resource_intent(self) -> None:
+        spec = generate_spec(
+            """
+AppConfig라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
+
+domain은 beginner.sample.io, group은 app, version은 v1alpha1, kind는 AppConfig로 한다.
+
+spec에는 다음 필드를 포함한다.
+- appName:string - 설정을 적용할 애플리케이션 이름
+- configData:map[string]string - ConfigMap에 저장할 설정 값
+- enabled:bool - 설정 활성화 여부
+
+status에는 다음 필드를 포함한다.
+- phase:string - AppConfig의 현재 상태
+- configMapName:string - 생성된 ConfigMap 이름
+- message:string - 현재 상태 설명 또는 오류 메시지
+
+Controller는 AppConfig Custom Resource 변경을 감지하고 ConfigMap을 생성한다.
+ConfigMap 이름은 AppConfig 이름을 기준으로 생성한다.
+ConfigMap data에는 spec.configData 값을 반영한다.
+spec.enabled가 false이면 ConfigMap을 생성하지 않고 status.phase를 Disabled로 갱신한다.
+Controller는 ConfigMap 생성 여부를 확인하여 status.phase, status.configMapName, status.message를 갱신한다.
+""",
+            Path("requirements/appconfig.txt"),
+        )
+
+        self.assertEqual(spec["controller"]["managedResources"], ["ConfigMap"])
+        self.assertIn(
+            {
+                "apiGroup": "",
+                "resource": "configmaps",
+                "verbs": ["get", "list", "watch", "create", "update", "patch", "delete"],
+            },
+            spec["rbac"]["resources"],
+        )
+        self.assertEqual(spec["errors"], [])
+
     def test_requirement_sample_spec_is_parsed_without_profile(self) -> None:
         warnings: list[str] = []
         values = parse_sample_defaults(

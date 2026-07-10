@@ -890,6 +890,8 @@ def has_read_intent(line: str) -> bool:
 
 
 def is_negative_mutation(line: str) -> bool:
+    if is_conditional_non_creation(line):
+        return False
     return has_resource_mutation_intent(line) and any(
         token in line
         for token in (
@@ -922,6 +924,11 @@ def negative_mutation_resources(line: str) -> list[str]:
         re.I,
     )
     for match in pattern.finditer(line):
+        if (
+            match.group("operation") in {"생성", "만들"}
+            and is_conditional_non_creation(line)
+        ):
+            continue
         prefix = re.split(r"[.!?]\s*", line[: match.start()])[-1]
         # Keep a preceding positive action outside the prohibition scope:
         # "Deployment만 생성하고 Service는 만들지 마세요" denies only Service.
@@ -942,6 +949,18 @@ def negative_mutation_resources(line: str) -> list[str]:
     return unique(denied)
 
 
+def is_conditional_non_creation(line: str) -> bool:
+    return any(
+        token in line.lower()
+        for token in (
+            "false이면",
+            "false인 경우",
+            "false일 때",
+            "disabled",
+        )
+    ) or any(token in line for token in ("비활성", "활성화 여부"))
+
+
 def resource_roles_for_line(
     line: str,
 ) -> tuple[list[str], list[str], list[str]]:
@@ -956,7 +975,7 @@ def resource_roles_for_line(
         r"\1, ",
         line,
     )
-    for clause in re.split(r"(?:\s*,\s*|[.!?]\s*)", role_scoped_line):
+    for clause in re.split(r"(?:\s*,\s*|(?<=[.!?])\s+)", role_scoped_line):
         resources = extract_k8s_resources(clause)
         if not resources:
             continue

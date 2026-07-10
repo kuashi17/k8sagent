@@ -4,6 +4,8 @@
 특정 Operator 예제에 종속되지 않고, 요구사항 입력부터 계획 확인, 코드 생성,
 검증, 실패 처리까지의 사용자 여정을 기준으로 작성했습니다.
 
+동영상 촬영 흐름은 [Demo Video Scenario](demo-video-scenario.md)를 기준으로 진행합니다.
+
 ## 1. 실행 전 환경 확인
 
 ### Python 패키지

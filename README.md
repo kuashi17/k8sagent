@@ -401,6 +401,7 @@ flowchart LR
 ## 참고 문서
 
 - [시각적 전체 흐름](docs/visual-overview.md)
+- [시연 동영상 시나리오](docs/demo-video-scenario.md)
 - [요구사항 작성 가이드](docs/requirement-writing-guide.md)
 - [품질 기준](docs/quality-thresholds.md)
 - [평가 지표](docs/evaluation-metrics.md)
