@@ -11,7 +11,7 @@ from agent.retrieval_context import requirement_rag_limit, select_context
 
 
 class RetrievalContextTest(unittest.TestCase):
-    def test_requirement_context_balances_reference_and_few_shot(self) -> None:
+    def test_requirement_context_balances_reference_and_example(self) -> None:
         selected = select_context(
             {
                 "hybridResults": [
@@ -29,7 +29,7 @@ class RetrievalContextTest(unittest.TestCase):
             ["guide.md", "example.md", "other.md"],
         )
         self.assertEqual(selected[0]["contextType"], "reference")
-        self.assertEqual(selected[1]["contextType"], "few-shot")
+        self.assertEqual(selected[1]["contextType"], "example")
 
     def test_duplicate_sources_are_removed(self) -> None:
         selected = select_context(

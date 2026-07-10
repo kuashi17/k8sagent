@@ -73,10 +73,10 @@ def select_context(
 
     if purpose == "requirement":
         add_matching({"guide", "troubleshooting"}, 2, "reference")
-        add_matching({"example", "few-shot"}, 1, "few-shot")
+        add_matching({"example"}, 1, "example")
     elif purpose in {"recovery", "log-analysis"}:
         add_matching({"troubleshooting", "guide"}, 2, "reference")
-        add_matching({"few-shot", "example"}, 1, "few-shot")
+        add_matching({"example"}, 1, "example")
 
     for item in pool:
         if len(selected) >= limit:
@@ -86,9 +86,7 @@ def select_context(
             continue
         row = dict(item)
         row["contextType"] = row.get("contextType") or (
-            "few-shot"
-            if row.get("category") in {"example", "few-shot"}
-            else "reference"
+            "example" if row.get("category") == "example" else "reference"
         )
         row["reason"] = row.get("reason") or (
             f"Selected as fallback context for {purpose}."

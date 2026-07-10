@@ -13,7 +13,6 @@ Agent는 `knowledge-base/` 아래 Markdown 문서를 검색해 LLM planner 입�
 - `knowledge-base/kubebuilder-guides/`: Kubebuilder 개발 흐름, CRD 설계, RBAC, Reconcile, make 검증, kind e2e
 - `knowledge-base/troubleshooting/`: controller-gen, make generate/manifests, RBAC, PVC, ImagePullBackOff, GPU 부족, envtest 등 오류 대응
 - `knowledge-base/examples/`: AppConfig, TrainingJob, RedisCache, 복구 예시, GPU Pending 분석 예시
-- `knowledge-base/few-shot/`: 요구사항 변환, Tool 계획, 최종 평가, 복구 계획, warning/failure 분류 예시
 
 문서는 내부 작성 문서이며, 각 문서 상단에 metadata를 포함한다.
 
@@ -116,20 +115,18 @@ python3 agent/evaluation/rag_evaluator.py \
 - `hybrid-rerank-results.json`
 - `rag-evaluation-report.md`: 사람이 읽는 Markdown 리포트
 
-## Few-Shot Context 정책
+## Context 선택 정책
 
-Requirement planning에서는 guide/reference 문서를 최대 2개, example 또는 few-shot 문서를 최대 1개 선택한다.
+Requirement planning에서는 guide/reference 문서를 최대 2개, example 문서를 최대 1개 선택한다.
 
-Recovery planning에서는 troubleshooting/reference 문서를 최대 2개, recovery few-shot을 최대 1개 선택한다.
+Recovery planning에서는 troubleshooting/reference 문서를 최대 2개, recovery example을 최대 1개 선택한다.
 
 Agent는 `selected-context.json` 또는 Agent summary에 다음 정보를 기록한다.
 
 ```json
 {
-  "contextType": "reference | few-shot",
+  "contextType": "reference | example",
   "sourcePath": "knowledge-base/...",
   "reason": "why this context was selected"
 }
 ```
-
-Few-shot 문서는 형식과 판단 예시로만 사용한다. 사용자 requirement의 domain, kind, field 이름을 few-shot 값으로 덮어쓰면 안 된다.

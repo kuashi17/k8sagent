@@ -237,8 +237,6 @@ def category_for(path: Path) -> str:
         return "troubleshooting"
     if "examples" in parts:
         return "example"
-    if "few-shot" in parts:
-        return "few-shot"
     return "guide"
 
 

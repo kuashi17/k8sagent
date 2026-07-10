@@ -362,7 +362,7 @@ flowchart LR
 | `evaluation/` | RAG 품질, response consistency, profileless compile/kind, unified evaluation runner |
 | `config/resource-capabilities.yaml` | Kubernetes 리소스 capability catalog |
 | `config/capability-support.yaml` | UI에 표시하는 stable/beta/experimental evidence |
-| `knowledge-base/` | RAG가 참조하는 Kubebuilder guide, troubleshooting, few-shot 문서 |
+| `knowledge-base/` | RAG가 참조하는 Kubebuilder guide, troubleshooting, example 문서 |
 | `docs/` | 상세 설계, 품질 기준, 요구사항 작성 가이드, 데모 시나리오 |
 
 ## 주요 산출물

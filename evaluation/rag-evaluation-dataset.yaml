@@ -48,7 +48,6 @@ queries:
     expectedSources:
       - knowledge-base/troubleshooting/invalid-go-field-type.md
       - knowledge-base/examples/invalid-field-type-recovery.md
-      - knowledge-base/few-shot/invalid-field-type-recovery-plan.md
     expectedKeywords:
       - notatype
       - invalid-field-type
@@ -134,7 +133,6 @@ queries:
     expectedSources:
       - knowledge-base/troubleshooting/insufficient-gpu.md
       - knowledge-base/examples/gpu-pending-analysis.md
-      - knowledge-base/few-shot/warning-vs-failure-classification.md
     expectedKeywords:
       - Insufficient nvidia.com/gpu
       - Pending
@@ -229,27 +227,27 @@ queries:
     query: 자연어 요구사항에서 spec 생성과 command plan 그리고 scaffold dry-run 순서를 잡고 싶다
     category: requirement
     expectedSources:
-      - knowledge-base/few-shot/requirement-to-tool-plan.md
       - knowledge-base/kubebuilder-guides/basic-flow.md
-      - knowledge-base/few-shot/requirement-to-operator-spec.md
+      - knowledge-base/kubebuilder-guides/project-initialization.md
+      - knowledge-base/kubebuilder-guides/api-crd-design.md
     expectedKeywords:
       - spec_generator
       - command_planner
       - scaffold_runner
-    notes: few-shot tool plan과 기본 흐름이 검색되어야 함
+    notes: 기본 Kubebuilder 흐름과 API 설계 문서가 검색되어야 함
 
-  - id: successful-execution-evaluation-001
-    query: make generate manifests test가 모두 성공한 실행 결과를 어떻게 요약하나
+  - id: validation-success-summary-001
+    query: make generate manifests test가 모두 성공했을 때 어떤 검증이 끝난 것인가
     category: validation
     expectedSources:
-      - knowledge-base/few-shot/successful-execution-evaluation.md
       - knowledge-base/kubebuilder-guides/make-generate.md
       - knowledge-base/kubebuilder-guides/make-manifests.md
+      - knowledge-base/kubebuilder-guides/envtest.md
     expectedKeywords:
-      - executionDecision
-      - succeeded
+      - make generate
+      - make manifests
       - make test
-    notes: 최종 평가 few-shot 검색
+    notes: 생성 코드와 manifest/test 검증 의미를 설명하는 guide 검색
 
   - id: validation-defaulting-001
     query: CRD 필드에 validation marker와 default 값을 추가하려면 어떻게 해야 하나
