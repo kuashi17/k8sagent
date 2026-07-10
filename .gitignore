@@ -3,7 +3,6 @@ logs/*
 !logs/.gitkeep
 generated/*
 !generated/.gitkeep
-!generated/*.yaml
 workspace/*
 !workspace/.gitkeep
 knowledge-base/.index/

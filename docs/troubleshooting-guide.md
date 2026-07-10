@@ -80,4 +80,4 @@ controller-gen --version
 사례:
 
 - Kubebuilder 기본 e2e 테스트는 Prometheus Operator와 cert-manager 원격 YAML을 GitHub에서 가져오므로, 네트워크 제한 환경에서는 `go test ./...`가 실패할 수 있습니다.
-- 1차 MVP의 scaffold 검증에서는 e2e를 제외하고 `go test ./api/... ./cmd/... ./test/utils`로 기본 컴파일 검증을 수행합니다.
+- 네트워크가 제한된 환경에서는 원격 manifest를 사용하는 e2e 대신 `go test ./api/... ./cmd/... ./test/utils` 같은 로컬 컴파일 검증을 우선 수행합니다.

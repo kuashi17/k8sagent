@@ -26,7 +26,14 @@
 - RBAC 권한 범위가 과도하거나 부족하지 않은지 확인합니다.
 - 검증 실패 시 전체 재생성보다 부분 수정이 가능한지 우선 판단합니다.
 
-## 1차 MVP 범위
+## 실행 단계
 
-1차 MVP에서는 실제 RAG, MCP, CI/CD 연계 구현보다 Agent 흐름과 검증 기준을 먼저 문서화합니다.
+현재 Agent는 계획 단계와 실행 단계를 분리한다.
 
+1. `dry-run` 단계에서는 요구사항을 구조화하고 Tool 계획, 위험, 누락 정보를 보여준다.
+2. 사용자가 승인하면 `execute` 단계에서 허용된 Tool만 실제 파일을 생성한다.
+3. 코드 생성 후 `make generate`, `make manifests`, `make test`를 실행한다.
+4. Docker/kind가 준비된 경우 별도 승인으로 runtime lifecycle을 검증한다.
+5. 실패 시 구조화 errorCode와 실제 stdout/stderr 근거를 기록하고, 복구 계획은 자동 실행하지 않는다.
+
+이 구조 덕분에 LLM은 계획과 설명을 담당하고, 실제 변경은 검증된 Tool wrapper만 수행한다.

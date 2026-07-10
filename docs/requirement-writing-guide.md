@@ -319,4 +319,4 @@ Final target project directory: workspace/generated-operators/app-config-operato
 - 복잡한 finalizer
 - 외부 API 연계
 - 여러 리소스 간 복잡한 상태 전이
-- GitHub/Jenkins/Harbor/Argo CD 자동 연계
+- 외부 CI/CD나 배포 시스템 연계

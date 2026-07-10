@@ -18,11 +18,11 @@ Timing report와 artifact 업로드는 측정 결과를 만드는 단계이므�
 
 각 Web job은 `journeyTimings`에 다음 값을 기록합니다.
 
-- `queueSeconds`: 제출부터 worker 시작까지
+- `queueSeconds`: 요청 접수부터 worker 시작까지
 - `executionSeconds`: worker 실행 시간
 - `automationSeconds`: 계획과 실제 생성에 사용된 자동 처리 시간 합계
 - `approvalWaitingSeconds`: 계획 완료부터 사용자가 실제 생성을 승인할 때까지
-- `totalJourneySeconds`: 최초 계획 제출부터 최종 결과까지
+- `totalJourneySeconds`: 최초 계획 요청부터 최종 결과까지
 - `agentSeconds`: Agent 내부에서 측정한 전체 실행 시간
 
 Web 성능 목표는 cold/warm, dry-run/execute, kind 사용 여부를 구분해 이후 실제 사용

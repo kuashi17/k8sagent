@@ -231,7 +231,7 @@ LLM 입출력 파일:
 
 ## 근거 추적과 안전성 검증
 
-심사와 운영 관점에서 중요한 것은 LLM이 답을 만들었다는 사실만이 아니라, 어떤 근거와 어떤 안전장치를 거쳐 실행됐는지 확인할 수 있는 것이다.
+운영 관점에서 중요한 것은 LLM이 답을 만들었다는 사실만이 아니라, 어떤 근거와 어떤 안전장치를 거쳐 실행됐는지 확인할 수 있는 것이다.
 
 Agent는 매 실행마다 다음 파일을 추가로 생성한다.
 
@@ -280,11 +280,12 @@ Safety Evaluation
 - Agent는 실행 전 호출할 명령을 출력한다.
 - 실행 결과는 `logs/agent/<timestamp>/summary.json`과 `agent-report.md`에 저장한다.
 
-## 향후 연계 위치
+## 외부 시스템 연계 경계
 
-- GitHub: 생성 결과 branch, commit, PR 초안 생성
-- Jenkins: `make generate`, `make manifests`, `make test`, image build 검증 로그 수집
-- Harbor: Operator image build/push 결과 확인
-- Argo CD: 배포 반영, sync 상태, health 상태 수집
+현재 구현의 핵심 범위는 로컬 요구사항 해석, 코드 생성, 검증, kind lifecycle 확인이다.
+외부 시스템 연계가 필요할 경우에도 동일한 원칙을 적용한다.
 
-이 외부 시스템 연계도 Tool wrapper로 추가하고, Agent planner가 필요한 시점에 호출하는 구조로 확장한다.
+- LLM은 외부 시스템 명령을 직접 실행하지 않는다.
+- 연계 기능은 별도 Tool wrapper와 allowlist를 통해 추가한다.
+- 실행 결과는 AgentResult와 evidence trace에 남긴다.
+- 실패는 구조화 errorCode로 분류하고 자동 복구 실행은 하지 않는다.

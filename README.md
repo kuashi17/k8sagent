@@ -365,9 +365,12 @@ flowchart LR
 | `knowledge-base/` | RAG가 참조하는 Kubebuilder guide, troubleshooting, example 문서 |
 | `docs/` | 상세 설계, 품질 기준, 요구사항 작성 가이드, 데모 시나리오 |
 
-## 주요 산출물
+## 실행 산출물
 
-| 산출물 | 위치 |
+아래 파일들은 실행할 때 생성되는 산출물입니다. 저장소에는 예시 실행 결과를 누적하지 않고,
+필요한 디렉터리만 `.gitkeep`으로 유지합니다.
+
+| 산출물 | 기본 위치 |
 | --- | --- |
 | Agent 실행 로그 | `logs/agent/<timestamp>/` |
 | Web 작업 로그 | `logs/web/jobs/<job-id>/` |
@@ -385,9 +388,9 @@ flowchart LR
 - LLM planning은 local cache와 schema repair로 안정화했지만, 최종 판단은 Tool 결과와 구조화 evidence를 우선합니다.
 - 복구 계획은 자동 실행하지 않습니다. 사용자가 검토하고 승인해야 합니다.
 
-## 보고서 작성 시 강조할 점
+## 기술적 특징
 
-심사 기준에 맞춰 다음 내용을 중심으로 설명할 수 있습니다.
+이 프로젝트를 이해할 때는 다음 관점을 중심으로 보면 됩니다.
 
 - 문제 정의: Operator 개발 과정의 복잡도, 반복 작업, 실패 원인 파악 어려움
 - 기술 선택 타당성: Local LLM, RAG, Pydantic 계약, 안전한 Tool wrapper, kind evidence 조합
@@ -400,6 +403,7 @@ flowchart LR
 - [시각적 전체 흐름](docs/visual-overview.md)
 - [요구사항 작성 가이드](docs/requirement-writing-guide.md)
 - [품질 기준](docs/quality-thresholds.md)
+- [평가 지표](docs/evaluation-metrics.md)
 - [안전성과 증거 설계](docs/agent-evidence-and-safety.md)
-- [현재 MVP 상태](docs/current-mvp-status.md)
+- [현재 시스템 상태](docs/current-system-status.md)
 - [문제 해결 가이드](docs/troubleshooting-guide.md)

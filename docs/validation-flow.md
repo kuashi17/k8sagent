@@ -14,7 +14,7 @@
 
 ## Make 미설치 환경의 대체 검증 명령
 
-현재 WSL 환경처럼 `make`가 설치되어 있지 않은 경우, 1차 MVP에서는 Kubebuilder Makefile의 핵심 동작을 다음 명령으로 직접 검증합니다.
+일부 로컬 환경에서 `make`를 사용할 수 없는 경우, Agent는 Kubebuilder Makefile의 핵심 동작을 다음 명령으로 직접 검증할 수 있습니다.
 
 | 대체 명령 | 대응되는 Make target | 목적 |
 | --- | --- | --- |
@@ -41,7 +41,7 @@
 - `config/crd`, `config/rbac` 산출물이 정상 갱신됩니다.
 - 테스트가 실패 없이 완료됩니다.
 
-1차 MVP의 RedisCache scaffold 검증에서는 e2e 테스트가 원격 YAML을 가져오므로, 제한된 네트워크 환경에서는 e2e를 제외한 컴파일 검증을 우선 성공 기준으로 둡니다.
+Kubebuilder 기본 e2e 테스트는 원격 manifest를 가져올 수 있으므로, 네트워크가 제한된 환경에서는 생성 코드, manifest, envtest 중심 검증을 우선합니다.
 
 ## 실패 시 수집 정보
 
