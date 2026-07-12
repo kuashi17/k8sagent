@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Legacy dependency-free Web UI for the Kubebuilder Agent MVP.
+"""Legacy dependency-free Web UI for k8sagent.
 
 The beginner-facing UI is implemented in web.app. Use this fallback only when
 FastAPI dependencies cannot be installed. It serves limited flows using only
@@ -185,13 +185,13 @@ def render_page(
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Kubebuilder Agent MVP</title>
+    <title>k8sagent</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <header class="topbar">
       <div>
-        <h1>Kubebuilder Agent MVP</h1>
+        <h1>k8sagent</h1>
         <p>자연어 요구사항과 실행 로그를 Agent가 해석하고, RAG 문서와 Tool 실행 결과를 함께 요약합니다.</p>
       </div>
       <div class="badge">Dry-run first</div>
@@ -354,7 +354,7 @@ def main() -> int:
         "Legacy fallback UI. For the beginner-facing UI run: "
         "uvicorn web.app:app --host 0.0.0.0 --port 8000"
     )
-    print(f"Kubebuilder Agent fallback UI: http://localhost:{port}")
+    print(f"k8sagent fallback UI: http://localhost:{port}")
     server.serve_forever()
     return 0
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Beginner-facing FastAPI UI for the Kubebuilder Agent."""
+"""Beginner-facing FastAPI UI for k8sagent."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ PHASE_LABELS = {
     "interrupted": "작업 중단",
 }
 
-app = FastAPI(title="Kubebuilder Agent")
+app = FastAPI(title="k8sagent")
 app.mount(
     "/static",
     StaticFiles(directory=REPO_ROOT / "web" / "static"),
