@@ -1,8 +1,29 @@
-# Kubebuilder Operator AI Agent
+# k8sagent
 
-자연어 요구사항을 입력하면 Kubernetes Operator 개발에 필요한 구조화 스펙, Kubebuilder 프로젝트, Controller 코드, RBAC, 검증 로그와 실행 근거를 생성하는 로컬 실행형 AI 개발지원 시스템입니다.
+### 자연어 요구사항을 실행 가능한 Kubernetes Operator 프로젝트로 변환하고, 빌드·테스트·로컬 Kubernetes 동작까지 검증하는 AI Agent
 
-이 프로젝트는 LLM 답변을 그대로 복사해 쓰는 챗봇이 아니라, AI 계획을 Pydantic 계약과 Tool allowlist로 검증한 뒤 제한된 자동화 도구만 실행하는 생성·검증 중심 Agent입니다.
+[30초 소개](#처음-보는-분을-위한-30초-설명) · [대표 사용 사례](#대표-사용-사례) · [빠른 실행](#web-ui-실행) · [검증 결과](#검증과-성과-지표) · [시연 시나리오](docs/demo-video-scenario.md)
+
+자연어 요구사항을 입력하면 Kubernetes Operator 개발에 필요한 구조화 스펙, Kubebuilder 프로젝트, Controller 코드, RBAC, 검증 로그와 실행 근거를 생성합니다.
+
+이 프로젝트는 LLM 답변을 그대로 복사해 쓰는 챗봇이 아닙니다. AI가 만든 계획을 Pydantic 계약과 Tool allowlist로 검증하고, 사용자 승인 후 제한된 자동화 도구만 실행하는 **생성·검증 중심의 로컬 AI 개발지원 시스템**입니다.
+
+## 처음 보는 분을 위한 30초 설명
+
+**Kubernetes Operator**는 사람이 반복하던 배포, 설정 변경, 상태 확인, 장애 복구 같은 운영 작업을 Kubernetes 안에서 자동 수행하는 프로그램입니다.
+
+**Kubebuilder**는 Operator에 필요한 API, Controller, 권한과 테스트 프로젝트의 기본 골격을 만드는 Go 기반 개발 도구입니다.
+
+Operator 개발자는 일반적으로 리소스와 필드 설계, Go Controller 작성, 권한 설정, 빌드·테스트, 실제 Kubernetes 검증을 모두 수행해야 합니다. k8sagent는 이 과정을 다음과 같이 단순화합니다.
+
+```text
+자연어 요구사항
+  → 구조화 Operator 스펙
+  → 안전한 실행 계획과 사용자 승인
+  → Kubebuilder 프로젝트·API·Controller·RBAC 생성
+  → 빌드·테스트·로컬 Kubernetes 검증
+  → 결과·오류 원인·검증 근거 제공
+```
 
 ## 과제 요약
 
@@ -13,7 +34,7 @@
 | 대상 사용자 | Kubernetes Operator를 처음 만들거나 반복적으로 작성해야 하는 플랫폼/서비스 개발자 |
 | 해결 문제 | 자연어 요구사항을 CRD, Controller, RBAC, 검증 가능한 Operator 프로젝트로 바꾸는 과정이 어렵고 수작업 오류가 많음 |
 | 핵심 접근 | Local LLM + RAG + 구조화 계약 + 안전한 Tool 실행 + kind lifecycle evidence |
-| 현재 수준 | 로컬/내부 사용 가능한 제품형 MVP |
+| 현재 수준 | 정의된 지원 패턴에서 로컬 실행과 내부 시범 사용이 가능한 제품형 MVP |
 
 ## 해결하려는 Pain Point
 
@@ -29,6 +50,15 @@ Kubernetes Operator 개발은 다음 지식과 절차가 동시에 필요합니�
 - 실패 로그를 보고 원인과 복구 방향 판단
 
 초보 개발자에게는 이 과정이 길고, 중간에 실패하면 어디를 고쳐야 하는지 알기 어렵습니다. 이 Agent는 사용자가 자연어로 원하는 Operator를 설명하면 안전한 계획을 먼저 보여주고, 승인 후 코드 생성과 검증을 자동화합니다.
+
+| 기존 개발 방식 | k8sagent 사용 방식 |
+| --- | --- |
+| 요구사항을 API와 Go 타입으로 직접 변환 | 자연어 요구사항을 구조화 스펙으로 변환 |
+| Kubebuilder 명령과 프로젝트 구조를 직접 구성 | 검증된 Tool로 프로젝트 골격 생성 |
+| Controller와 RBAC를 반복 작성 | 지원 패턴과 구조화 정보로 코드 생성 |
+| 빌드·테스트 명령을 수동으로 반복 | `generate`, `manifests`, `test`를 순서대로 검증 |
+| Kubernetes 동작을 수작업으로 확인 | kind에서 생성·변경·복구·삭제 lifecycle 검증 |
+| 긴 로그에서 실패 원인을 직접 탐색 | 구조화 오류 코드, 원인과 다음 조치 제공 |
 
 ## 전체 동작 흐름
 
@@ -51,6 +81,20 @@ flowchart TD
     E --> O["AgentResult<br/>초보자 요약 + 기술 세부정보"]
     O --> W
 ```
+
+## 일반적인 AI 코드 생성과 다른 점
+
+LLM이 전체 코드와 명령을 자유롭게 만들어 실행하게 하면 요구사항에는 유연하게 대응할 수 있지만, 결과 편차와 임의 명령 실행 위험이 커지고 성공 여부도 재현하기 어렵습니다. 반대로 고정 템플릿만 사용하면 안정적이지만 다양한 요구사항을 처리하기 어렵습니다.
+
+k8sagent는 두 접근의 장점을 결합합니다.
+
+1. Local LLM과 RAG가 자연어 요구사항을 해석하고 관련 개발 지식을 찾습니다.
+2. LLM 출력은 정해진 Pydantic 계약을 통과해야 합니다.
+3. 실제 작업은 Tool allowlist에 등록된 도구와 검증된 인자·경로로만 수행합니다.
+4. Controller는 구조화 스펙과 중간 표현(IR)을 기반으로 생성해 결과 편차를 줄입니다.
+5. 최종 성공 여부는 LLM의 설명이 아니라 make와 kind의 실행 Evidence로 판정합니다.
+
+따라서 k8sagent는 프롬프트만으로 코드를 생성하는 시스템이 아니라, **AI의 유연한 해석과 결정론적 자동화·실행 검증을 결합한 개발지원 시스템**입니다.
 
 ## 안전 실행 구조
 
@@ -86,6 +130,17 @@ sequenceDiagram
 - Tool 이름, 인자, 경로, 실행 모드는 코드에서 검증합니다.
 - 실패 복구는 자동 실행하지 않고, 근거 기반 계획만 제안합니다.
 - Docker/kind 같은 인프라 실패는 Operator 코드 실패와 분리합니다.
+
+## 기술 선택 근거
+
+| 검토 방식 | 장점 | 한계 | 적용 방식 |
+| --- | --- | --- | --- |
+| LLM이 전체 코드를 직접 생성 | 다양한 요구에 유연함 | 결과 편차, 임의 명령, 재현성 부족 | 계획과 요구사항 해석에만 제한적으로 활용 |
+| 고정 템플릿만 사용 | 결과가 안정적임 | 새로운 리소스 조합 처리에 제약 | scaffold와 결정론적 코드 생성에 활용 |
+| LLM + 구조화 계약 + 제한된 Tool | 유연성과 실행 안정성을 함께 확보 | 계약과 검증 코드가 필요함 | 핵심 Agent 구조로 선택 |
+| 빌드 검증만 수행 | 실행 비용이 낮음 | 실제 Kubernetes 동작을 증명하지 못함 | 중간 품질 게이트로 사용 |
+| kind lifecycle 검증 | 생성·변경·복구·삭제를 실제로 확인 | Docker 환경이 필요함 | 최종 runtime Evidence로 사용 |
+| 외부 API LLM | 운영과 확장이 쉬움 | 사내 코드·요구사항 전송 우려 | Local LLM을 기본값으로 선택 |
 
 ## 필수 실행 환경
 
@@ -186,7 +241,9 @@ python3 agent/evaluation/profileless_kind_runner.py \
   --output-dir evaluation/results/profileless-kind/local
 ```
 
-## 요구사항 작성에 필요한 정보
+## 대표 사용 사례
+
+### 요구사항 작성에 필요한 정보
 
 초보자도 아래 네 가지만 쓰면 Agent가 안정적으로 계획을 세울 수 있습니다.
 
@@ -221,11 +278,13 @@ CustomerPortal이 삭제되면 Deployment도 함께 삭제해야 합니다.
 
 Capability 등급은 새 Custom Resource 이름이 아니라, 관리하려는 Kubernetes 리소스와 lifecycle 패턴의 검증 증거를 기준으로 판단합니다.
 
+> 이 등급은 생성된 Operator가 운영 환경에 즉시 배포 가능하다는 의미가 아닙니다. 본 시스템이 해당 리소스와 lifecycle 패턴에 대해 확보한 **컴파일 및 로컬 Kubernetes 검증 근거의 수준**을 의미합니다.
+
 | 등급 | 의미 |
 | --- | --- |
-| stable | compile, kind lifecycle, drift 복구, RBAC, 삭제 정책 등 runtime evidence가 충분함 |
-| beta | 일부 runtime evidence가 있으나 조합/edge case 검증이 제한적임 |
-| experimental | catalog/schema 또는 compile 증거는 있으나 kind lifecycle evidence가 부족함 |
+| 검증 충분 `stable` | compile, kind lifecycle, drift 복구, RBAC, 삭제 정책 등 runtime evidence가 충분함 |
+| 일부 검증 `beta` | 일부 runtime evidence가 있으나 조합/edge case 검증이 제한적임 |
+| 실험적 지원 `experimental` | catalog/schema 또는 compile 증거는 있으나 kind lifecycle evidence가 부족함 |
 
 예를 들어 처음 보는 `CustomerPortal` CR이라도 내부에서 검증된 Deployment lifecycle을 사용하면 stable로 볼 수 있습니다. 반대로 `NetworkPolicy`처럼 아직 kind lifecycle 증거가 부족한 리소스 패턴은 experimental로 표시합니다.
 
