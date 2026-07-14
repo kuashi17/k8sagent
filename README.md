@@ -14,6 +14,12 @@ Kubernetes Operator를 만들려면 CRD 설계, Go 타입, Reconcile 로직, RBA
 
 k8sagent의 대상 사용자는 Operator를 처음 만들거나 비슷한 Controller를 반복해서 작성하는 플랫폼·서비스 개발자입니다.
 
+### Kubebuilder란?
+
+Kubebuilder는 Kubernetes Custom Resource와 이를 관리하는 Controller를 Go로 개발할 때 사용하는 프로젝트 생성 도구입니다. `kubebuilder init`과 `kubebuilder create api` 명령으로 API 타입, Controller, CRD, RBAC, 테스트에 필요한 기본 디렉터리와 파일을 만듭니다.
+
+Kubebuilder가 프로젝트의 기본 골격을 제공한다면, k8sagent는 사용자의 API·필드·관리 동작 요구사항을 그 골격에 연결합니다. Controller의 Reconcile 동작과 최소 RBAC을 생성하고, `make` 검증과 kind lifecycle 확인까지 이어주는 역할을 합니다.
+
 | 일반적인 개발 흐름 | k8sagent가 제공하는 흐름 |
 | --- | --- |
 | 요구사항을 API와 Go 타입으로 직접 변환 | API·필드·관리 동작 설명을 구조화된 Operator 스펙으로 변환 |
