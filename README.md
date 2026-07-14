@@ -1,12 +1,12 @@
 # k8sagent
 
-### 자연어 요구사항을 실행 가능한 Kubernetes Operator 프로젝트로 변환하고, 코드와 로컬 Kubernetes 동작까지 검증하는 AI Agent
+### Operator의 API·필드·관리 동작을 정리해 Kubernetes 프로젝트를 생성하고 검증하는 AI Agent
 
 [해결하는 문제](#해결하는-문제) · [동작 방식](#동작-방식) · [빠른 시작](#빠른-시작) · [입력 예시](#입력-예시) · [검증](#검증) · [저장소 구조](#저장소-구조)
 
-k8sagent는 자연어 요구사항에서 구조화된 Operator 스펙, Kubebuilder 프로젝트, Controller, CRD, RBAC을 생성합니다. 생성 전에는 계획과 위험을 보여주고, 승인 후에는 빌드·테스트와 선택적인 kind lifecycle 검증을 수행합니다.
+k8sagent는 사용자가 작성한 Custom Resource 이름과 API, spec/status 필드, 관리 동작을 바탕으로 Kubebuilder 프로젝트, Controller, CRD, RBAC을 생성합니다. 생성 전에는 이해한 내용과 작업 계획을 보여주고, 승인 후에는 빌드·테스트와 선택적인 kind lifecycle 검증을 수행합니다.
 
-LLM의 답변이나 명령을 그대로 실행하지 않습니다. 계획은 Pydantic 계약과 Tool allowlist를 통과해야 하며, 최종 성공 여부는 실제 Tool 결과와 검증 근거로 판단합니다.
+AI가 만든 답변이나 명령을 그대로 실행하지 않습니다. 필요한 정보와 작업 순서가 올바른 형식인지 먼저 확인하고, 시스템에 미리 등록된 안전한 작업만 실행합니다. 최종 성공 여부는 설명이 아니라 실제 빌드·테스트와 Kubernetes 검증 결과로 판단합니다.
 
 ## 해결하는 문제
 
@@ -16,7 +16,7 @@ k8sagent의 대상 사용자는 Operator를 처음 만들거나 비슷한 Contro
 
 | 일반적인 개발 흐름 | k8sagent가 제공하는 흐름 |
 | --- | --- |
-| 요구사항을 API와 Go 타입으로 직접 변환 | 자연어를 구조화된 Operator 계약으로 변환 |
+| 요구사항을 API와 Go 타입으로 직접 변환 | API·필드·관리 동작 설명을 구조화된 Operator 스펙으로 변환 |
 | Kubebuilder 명령과 프로젝트 구조를 직접 구성 | 검증된 Tool로 프로젝트와 API 골격 생성 |
 | Controller와 RBAC을 반복 작성 | 동작 중심 IR을 이용해 Controller와 최소 권한 생성 |
 | 빌드와 테스트를 수동으로 반복 | `make generate`, `make manifests`, `make test` 자동 검증 |
@@ -27,16 +27,16 @@ k8sagent의 대상 사용자는 Operator를 처음 만들거나 비슷한 Contro
 
 ```mermaid
 flowchart TD
-    U["사용자<br/>자연어 요구사항"] --> W["Web UI 또는 CLI"]
+    U["사용자<br/>API · 필드 · 관리 동작 요구사항"] --> W["Web UI 또는 CLI"]
     W --> O["Agent Orchestrator"]
     O --> N["요구사항 정규화<br/>API · spec · status · 동작"]
     O --> R["RAG 검색<br/>로컬 knowledge-base"]
     N --> L["Local LLM Planner<br/>Ollama"]
     R --> L
-    L --> C["Pydantic 계약 검증<br/>RequirementPlan · ToolCall"]
+    L --> C["AI 계획 형식 확인<br/>필수 정보 · 작업 순서"]
     C --> P["계획 · 위험 · 누락 정보 표시"]
     P --> A["사용자 승인"]
-    A --> V["Tool allowlist<br/>경로 · 모드 · 인자 검증"]
+    A --> V["허용 작업 확인<br/>경로 · 실행 모드 · 입력값"]
     V --> T["안전한 Tool 실행"]
     T --> G["Kubebuilder · Controller · RBAC 생성"]
     T --> M["make 검증"]
@@ -53,10 +53,10 @@ flowchart TD
 | 원칙 | 적용 방식 |
 | --- | --- |
 | AI와 실행 책임 분리 | LLM은 요구사항 해석과 계획을 담당하고 셸 명령을 직접 실행하지 않음 |
-| 구조화 계약 | RequirementPlan, ToolCall, ToolResult, FinalEvaluation을 Pydantic으로 검증 |
+| AI 출력 형식 확인 | 리소스, 필드와 작업 목록이 정해진 형식을 갖췄는지 Pydantic으로 검사 |
 | 결정론적 코드 생성 | `operator_spec → controller_ir → generated_code` 단방향 경계 사용 |
 | 명시적 승인 | 기본은 dry-run이며 파일 생성과 kind 검증은 사용자 승인 후 실행 |
-| 제한된 실행 | 등록된 Tool, 허용 경로, 허용 인자와 검증 명령만 실행 |
+| 허용된 작업만 실행 | 미리 등록된 작업(Tool allowlist), 경로, 입력값과 검증 명령만 실행 |
 | 실행 근거 우선 | LLM 설명보다 make 결과와 kind lifecycle evidence를 우선 |
 | 안전한 실패 | 필수 정보가 없거나 모순되면 Tool을 실행하지 않고 필요한 질문을 반환 |
 | 근거 기반 복구 | 실제 오류 코드와 로그가 있을 때만 복구 계획을 제안하며 자동 실행하지 않음 |
@@ -135,7 +135,7 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 
 Web UI에서는 다음 순서로 진행합니다.
 
-1. 만들고 싶은 Operator를 자연어로 설명합니다.
+1. Custom Resource 이름과 API, 필드, 관리 동작을 문장으로 설명합니다.
 2. Agent가 정리한 API, 필드, 관리 리소스, 권한과 제한사항을 확인합니다.
 3. 계획을 승인하면 Kubebuilder 프로젝트와 코드를 생성하고 make 검증을 수행합니다.
 4. Docker가 준비된 경우 kind lifecycle 검증을 실행합니다.
