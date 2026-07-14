@@ -422,7 +422,7 @@ flowchart LR
 | `config/resource-capabilities.yaml` | Kubernetes 리소스 capability catalog |
 | `config/capability-support.yaml` | UI에 표시하는 stable/beta/experimental evidence |
 | `knowledge-base/` | RAG가 참조하는 Kubebuilder guide, troubleshooting, example 문서 |
-| `docs/` | 상세 설계, 품질 기준, 요구사항 작성 가이드, 데모 시나리오 |
+| `docs/` | 아키텍처, 계약, 품질 기준, 요구사항 작성 및 운영 가이드 |
 
 ## 실행 산출물
 
@@ -459,10 +459,24 @@ flowchart LR
 
 ## 참고 문서
 
+### 시작과 운영
+
 - [시각적 전체 흐름](docs/visual-overview.md)
 - [요구사항 작성 가이드](docs/requirement-writing-guide.md)
-- [품질 기준](docs/quality-thresholds.md)
-- [평가 지표](docs/evaluation-metrics.md)
-- [안전성과 증거 설계](docs/agent-evidence-and-safety.md)
-- [현재 시스템 상태](docs/current-system-status.md)
+- [제품 검증 체크리스트](docs/product-validation-checklist.md)
 - [문제 해결 가이드](docs/troubleshooting-guide.md)
+
+### 구조와 계약
+
+- [AI Agent 아키텍처](docs/ai-agent-architecture.md)
+- [Operator 스펙 계약](docs/spec-schema.md)
+- [안전성과 실행 근거](docs/agent-evidence-and-safety.md)
+- [Local LLM 사용 정책](docs/local-model-usage-policy.md)
+- [RAG 평가 구조](docs/rag-evaluation.md)
+
+### 품질과 현재 범위
+
+- [평가 지표](docs/evaluation-metrics.md)
+- [품질 기준](docs/quality-thresholds.md)
+- [현재 시스템 상태](docs/current-system-status.md)
+- [Legacy 경로 정책](docs/legacy-path-policy.md)

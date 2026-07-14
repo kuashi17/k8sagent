@@ -27,7 +27,7 @@
 
 - Go `1.26.3` 환경에서 Kubebuilder v4.1.1 기본값인 `controller-tools v0.15.0` 설치가 실패할 수 있습니다.
 - 이 경우 `Makefile`의 `CONTROLLER_TOOLS_VERSION`을 Go 버전과 호환되는 버전으로 상향합니다.
-- RedisCache MVP에서는 `controller-tools v0.21.0`으로 상향하여 `controller-gen object`와 `controller-gen crd` 생성을 통과했습니다.
+- 현재 생성 파이프라인은 `controller-tools v0.21.0`을 사용해 `controller-gen object`와 `controller-gen crd`를 검증합니다.
 
 권장 조치:
 
