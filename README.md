@@ -2,7 +2,7 @@
 
 ### 자연어 요구사항을 실행 가능한 Kubernetes Operator 프로젝트로 변환하고, 빌드·테스트·로컬 Kubernetes 동작까지 검증하는 AI Agent
 
-[30초 소개](#처음-보는-분을-위한-30초-설명) · [대표 사용 사례](#대표-사용-사례) · [빠른 실행](#web-ui-실행) · [검증 결과](#검증과-성과-지표) · [시연 시나리오](docs/demo-video-scenario.md)
+[30초 소개](#처음-보는-분을-위한-30초-설명) · [대표 사용 사례](#대표-사용-사례) · [빠른 실행](#web-ui-실행) · [검증 결과](#검증과-성과-지표)
 
 자연어 요구사항을 입력하면 Kubernetes Operator 개발에 필요한 구조화 스펙, Kubebuilder 프로젝트, Controller 코드, RBAC, 검증 로그와 실행 근거를 생성합니다.
 
@@ -460,7 +460,6 @@ flowchart LR
 ## 참고 문서
 
 - [시각적 전체 흐름](docs/visual-overview.md)
-- [시연 동영상 시나리오](docs/demo-video-scenario.md)
 - [요구사항 작성 가이드](docs/requirement-writing-guide.md)
 - [품질 기준](docs/quality-thresholds.md)
 - [평가 지표](docs/evaluation-metrics.md)
