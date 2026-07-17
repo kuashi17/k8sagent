@@ -95,7 +95,7 @@ k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 �
 | 일부 검증 `beta` | PersistentVolumeClaim, ServiceAccount, Role, ClusterRole |
 | 검증 근거 부족 `experimental` | HorizontalPodAutoscaler, Pod |
 
-처음 보는 Custom Resource 이름이라도 이미 검증된 Deployment 관리 패턴을 사용하면 동일한 근거를 적용할 수 있습니다. 새로운 Kubernetes 리소스는 capability catalog와 Controller IR을 통해 추가할 수 있으며, 검증이 부족한 패턴은 다른 리소스로 임의 대체하지 않고 `experimental` 또는 미지원 상태로 구분합니다.
+예를 들어 처음 보는 `CustomerPortal` Custom Resource라도 검증된 Deployment lifecycle을 사용하면 해당 관리 패턴의 검증 근거를 재사용할 수 있습니다. 검증 수준이 낮거나 새로운 리소스·동작 조합은 `beta`, `experimental` 또는 미지원 상태로 구분하며, 다른 리소스로 임의 대체하지 않습니다.
 
 등급은 생성된 Operator가 운영 환경에 즉시 배포 가능하다는 뜻이 아닙니다.
 k8sagent가 해당 관리 패턴에 대해 확보한 compile·kind·drift·RBAC·삭제 검증 수준을 의미합니다. 최신 지원 기준과 제한사항은 [config/capability-support.yaml](config/capability-support.yaml)에서 확인할 수 있습니다.
