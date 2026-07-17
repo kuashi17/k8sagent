@@ -254,16 +254,6 @@ python3 scripts/run-regression-tests.py \
 
 Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코드 회귀 검사입니다.
 
-### GitHub Actions 자동 검증
-
-검증 비용과 필요한 실행 환경에 따라 자동화 범위를 나눕니다.
-
-| 실행 시점 | Workflow | 목적 |
-| --- | --- | --- |
-| Pull Request 생성·변경 | [quick.yml](.github/workflows/quick.yml) | 병합 전에 빠른 회귀 검사 수행 |
-| `main` 반영 및 주간 정기 실행 | [standard.yml](.github/workflows/standard.yml) | Local LLM을 포함한 실제 Agent 흐름 확인 |
-| Docker/kind 통합 확인이 필요할 때 수동 실행 | [full.yml](.github/workflows/full.yml) | compile과 Kubernetes lifecycle 전체 검증 |
-
 검증 결과는 `evaluation/results/`에 생성되며 Git에는 누적하지 않습니다.
 
 ## 저장소 구조
