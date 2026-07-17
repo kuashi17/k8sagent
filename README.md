@@ -323,9 +323,6 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 
 - [Operator 스펙 구조](docs/spec-schema.md)
 
-### 품질과 현재 범위
+### 품질 검증
 
 - [품질 지표와 측정 방법](docs/evaluation-metrics.md)
-- [품질 기준](docs/quality-thresholds.md)
-- [현재 시스템 상태](docs/current-system-status.md)
-- [Legacy 경로 정책](docs/legacy-path-policy.md)
