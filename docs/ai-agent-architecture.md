@@ -1,291 +1,229 @@
-# AI Agent Architecture
+# k8sagent 아키텍처
 
 ## 목적
 
-이 프로젝트는 단순 Python 자동화 스크립트 모음이 아니라, Kubebuilder 기반 Operator 개발 절차를 이해하고 단계별 도구를 선택해 실행하는 AI Agent 구조를 지향한다.
+k8sagent는 Operator 요구사항을 이해하는 Local LLM과 실제 프로젝트를 만드는 결정론적 Tool을 분리한 개발지원 시스템입니다. 모델의 출력을 그대로 실행하지 않고, 구조화 계약과 안전 정책을 통과한 작업만 사용자 승인 후 수행합니다.
 
-기존 CLI 도구는 그대로 유지하고, 그 위에 LangChain 기반 Orchestrator 계층과 RAG 검색 계층을 추가한다.
+아키텍처의 핵심 목표는 다음과 같습니다.
 
-구현의 정확한 형태는 `Custom Agent Orchestrator + LangChain-compatible Tool wrapper`다. 핵심 orchestration은 직접 작성한 Python workflow이며, `langchain_core.tools.Tool`은 선택적 adapter다.
+- 요구사항 해석과 실제 실행의 책임 분리
+- `operator_spec → controller_ir → generated_code` 단방향 생성
+- 계획, 코드 생성과 Kubernetes 검증의 승인 경계 분리
+- LLM 설명보다 실제 Tool과 runtime Evidence 우선
+- Web UI와 CLI가 같은 Agent 계약과 실행 엔진 사용
+- 작업별 workspace와 로그 격리
 
-## 계층 구조
+## 전체 구조
+
+```mermaid
+flowchart TD
+    U["사용자"] --> I["Web UI · CLI"]
+
+    subgraph A["Agent Core"]
+        O["Requirement Orchestrator"]
+        C["Context Builder<br/>요구사항 정규화"]
+        R["RAG Retrieval"]
+        L["Local LLM Planner"]
+        P["Pydantic 계약 · 안전 정책"]
+        X["Execution Engine"]
+        E["Error · Evidence · Recovery"]
+    end
+
+    subgraph T["Deterministic Tool Layer"]
+        S["Operator Spec"]
+        B["Kubebuilder Scaffold"]
+        IR["Controller IR"]
+        G["Controller · CRD · RBAC"]
+        M["make Validation"]
+        K["kind Lifecycle"]
+    end
+
+    I --> O
+    O --> C
+    C --> R
+    C --> L
+    R --> L
+    L --> P
+    P --> X
+    X --> S
+    X --> B
+    S --> IR
+    IR --> G
+    G --> M
+    M --> K
+    M --> E
+    K --> E
+    E --> O
+    O --> I
+```
+
+## 계층별 책임
+
+| 계층 | 주요 역할 | 대표 코드 |
+| --- | --- | --- |
+| Interface | 요청 검증, 비동기 작업, 진행 상태와 결과 표시 | `web/`, `agent/langchain_agent.py` |
+| Orchestration | 요구사항 분석부터 계획·실행·결과 조립까지 전체 흐름 관리 | `requirement_orchestrator.py`, `context_builder.py` |
+| AI/RAG | 관련 문서 검색, 누락·위험 요소와 Tool 계획 작성 | `agent/llm/`, `agent/rag/`, `retrieval_context.py` |
+| Contract/Policy | LLM 출력, Tool 이름·인자·경로·실행 모드와 승인 상태 검사 | `contracts.py`, `tool_validator.py` |
+| Execution | 검증된 Tool 정렬, 순차 실행, 첫 실패 중단과 시간 수집 | `execution_engine.py` |
+| Generation | Operator 스펙, scaffold, Controller IR, Go 코드와 RBAC 생성 | `agent/tools/` |
+| Validation | make와 kind를 실행하고 lifecycle Evidence 수집 | `langchain_wrappers.py`, `profileless_kind_runner.py` |
+| Result/Recovery | 공통 결과 계약, 구조화 오류, 사용자 설명과 복구 계획 생성 | `result_builder.py`, `error_registry.py`, `recovery_orchestrator.py` |
+
+## 요구사항 처리 흐름
+
+```mermaid
+sequenceDiagram
+    participant U as 사용자
+    participant A as Agent
+    participant L as Local LLM
+    participant P as Policy
+    participant T as Tool
+    participant K as Kubernetes
+
+    U->>A: API · 필드 · 관리 동작 요구사항
+    A->>A: 누락 · 모순 · 리소스 의도 분석
+    alt 추가 정보 필요
+        A-->>U: clarification-required와 보완 질문
+    else 계획 가능
+        A->>L: 정규화된 요구사항과 RAG 문서
+        L-->>A: 구조화된 RequirementPlan
+        A->>P: 계약 · Tool · 경로 · 승인 검증
+        A-->>U: 계획과 제한사항 표시
+        U->>A: 코드 생성 승인
+        A->>T: 검증된 Tool 순차 실행
+        T-->>A: ToolResult와 make 결과
+        A-->>U: 생성 파일과 검증 결과
+        opt Kubernetes 검증 승인
+            A->>K: kind 배포와 lifecycle 확인
+            K-->>A: runtime Evidence
+            A-->>U: AgentResult와 kubectl 확인 정보
+        end
+    end
+```
+
+필수 정보가 없거나 삭제 정책처럼 요구사항이 모순되면 LLM 계획이나 생성 Tool을 실행하기 전에 중단합니다. 이 상태는 실행 실패가 아니라 사용자 입력을 보완하는 `clarification-required`로 처리합니다.
+
+## 핵심 데이터 계약
+
+Agent 내부와 Web UI는 `agent/contracts.py`의 Pydantic 모델을 공통 계약으로 사용합니다.
+
+| 계약 | 역할 |
+| --- | --- |
+| `RequirementPlan` | 요구사항 요약, 누락 정보, 계획 단계와 Tool 호출 |
+| `ToolCall` | Tool 이름, 실행 모드, 인자, 변경 여부와 승인 요구 |
+| `ToolResult` | 명령, stdout/stderr, 종료 코드, 구조화 오류와 배포 결과 |
+| `StructuredToolError` | errorCode, 사용자 메시지, 재시도 가능 여부와 UI 심각도 |
+| `FailureContext` | 실제 실패 단계와 로그 일부, 이전 성공 단계와 생성 산출물 |
+| `RecoveryPlan` | 실패 근거, 제안 조치, 승인받아야 할 재실행 계획 |
+| `AgentResult` | 초보자 요약, 기술 세부정보, 검증 결과와 승인 요청을 담는 최종 계약 |
+
+LLM 응답은 목적에 따라 필요한 필드와 타입을 갖춘 `RequirementPlan`, `FinalEvaluation` 또는 `RecoveryPlan`이어야 합니다. Web UI는 LLM 원문을 직접 해석하지 않고, 최종 `AgentResult`를 화면 데이터로 변환합니다.
+
+## Controller 생성 경계
+
+```mermaid
+flowchart LR
+    R["사용자 요구사항"] --> S["operator-spec.yaml"]
+    S --> B["Controller IR Builder"]
+    C["Resource Capability Catalog"] --> B
+    V["Capability Adapter<br/>Validation Policy"] --> B
+    B --> I["ControllerGenerationIR"]
+    I --> G["Go Controller Renderer"]
+    G --> O["Go Controller"]
+    S --> P["Artifact Patcher"]
+    P --> A["API 타입 · RBAC marker · sample"]
+    O --> M["make generate · manifests"]
+    A --> M
+    M --> Y["Controller · CRD · RBAC"]
+```
+
+`agent/tools/controller_pipeline.py`는 Operator 스펙을 한 번 IR로 변환한 뒤 Renderer에는 IR만 전달합니다. Renderer가 원본 요구사항이나 legacy profile을 직접 참조하지 않게 하여 코드 생성 기준이 여러 곳으로 분산되는 것을 막습니다.
+
+IR에는 다음 정보가 포함됩니다.
+
+- 관리·관찰 리소스와 create-or-update/read-only 전략
+- spec 필드와 Kubernetes 리소스 필드 매핑
+- status 값의 출처
+- OwnerReference, retain, finalizer와 삭제 정책
+- 리소스별 최소 RBAC
+- immutable 필드와 update 정책
+
+새 Kubernetes 리소스는 Resource Capability Catalog에 동작을 정의하고, 필요한 예외만 Adapter와 Validation Policy에 격리합니다. catalog에 없는 리소스는 비슷한 리소스로 대체하지 않고 `CAPABILITY_UNSUPPORTED`로 중단합니다.
+
+## Local LLM과 RAG의 역할
+
+Local LLM은 판단과 설명을 담당합니다.
+
+- 정규화된 요구사항과 검색 문서를 바탕으로 작업 계획 작성
+- 누락 정보, 위험 요소와 제한사항 정리
+- 실제 Tool 결과를 사용자에게 설명
+- 규칙으로 확정할 수 없는 실패의 복구 방향 제안
+
+Local LLM은 셸 명령을 실행하거나 Go Controller 코드를 직접 생성하지 않습니다. 모델이 실패하거나 timeout되더라도 이미 성공한 Tool 결과를 실패로 뒤집지 않으며, 가능한 경우 실제 종료 코드와 검증 결과로 결정론적 요약을 만듭니다.
+
+RAG는 `knowledge-base/`의 Kubernetes·Kubebuilder·오류 대응 문서를 검색합니다. 기본 검색은 keyword와 vector 결과를 결합하고, embedding이나 index를 사용할 수 없으면 keyword 검색으로 전환합니다. 세부 검색 방식과 품질 측정은 [RAG 평가 구조](rag-evaluation.md), 모델 설정은 [Local LLM 사용 정책](local-model-usage-policy.md)에서 설명합니다.
+
+## Tool 실행과 안전 정책
+
+Tool 실행은 다음 원칙을 따릅니다.
+
+1. 기본 계획 단계에서는 변경 Tool을 실제 실행하지 않습니다.
+2. LLM이 제안한 Tool은 등록 목록, 필수 인자, 경로와 실행 모드를 검사합니다.
+3. 사용자 승인 이후에만 scaffold, 코드 생성과 검증을 실행합니다.
+4. 새로운 experimental Capability는 일반 실행 승인과 별도로 확인합니다.
+5. Tool은 정해진 순서로 실행하며 첫 실패에서 중단합니다.
+6. Recovery는 실제 오류와 로그가 있을 때만 제안하고 자동 실행하지 않습니다.
+
+대표 Tool 순서는 다음과 같습니다.
 
 ```text
-User requirement
-  -> Requirement Analyzer / Intent Router
-  -> LangChain-style Agent Orchestrator
-  -> Local RAG Retriever
-  -> Tool wrappers
-  -> Existing CLI tools
-  -> Generated specs, command plans, scaffold, patches, validation, kind deployment
-  -> Tool results returned to Local LLM
-  -> Final evaluation or recovery plan
+spec_generator
+  → capability_drafter
+  → command_planner
+  → scaffold_runner
+  → artifact_patcher
+  → validation
+  → optional kind lifecycle
 ```
 
-## 기존 자동화 파이프라인과 Agent 계층
+`error_registry.py`는 errorCode별 사용자 메시지, 분류, 재시도 가능 여부, Recovery 정책과 UI 심각도를 한곳에서 관리합니다. Docker, kind, kubectl, Ollama 같은 인프라 문제는 생성 코드 실패와 분리합니다.
 
-기존 파이프라인은 다음 도구로 구성되어 있다.
+## 검증 근거와 Capability
 
-- `spec_generator.py`: 자연어 요구사항을 `operator-spec.yaml`로 변환
-- `command_planner.py`: 스펙을 Kubebuilder 실행 계획으로 변환
-- `scaffold_runner.py`: scaffold dry-run, preflight, execute 수행
-- `artifact_patcher.py`: API 타입, sample YAML, RBAC marker 보정
-- `kind_deployment_runner.py`: 공통 kind lifecycle 검증
-- `log_analyzer.py`: 실행 로그와 summary 분석
+검증은 두 단계로 구분됩니다.
 
-Agent 계층은 이 도구를 직접 대체하지 않는다. 대신 각 도구를 Tool로 감싸고, 요구사항과 검색 문서를 바탕으로 어떤 도구를 어떤 순서로 호출할지 결정한다.
+| 단계 | 확인 내용 |
+| --- | --- |
+| make | 코드 생성, CRD/RBAC 생성과 Go 테스트 가능 여부 |
+| kind | 생성·변경·drift 복구·status·RBAC·삭제/retain 동작 |
 
-LLM 출력 schema, Tool 이름/모드 정규화, allowlist, 필수 인자, validation target, repository path 검증은 `agent/tool_validator.py`가 담당한다. Orchestrator는 검증 결과만 받아 실행 순서를 구성한다.
+각 lifecycle 항목은 `passed`, `failed`, `not-run`, `not-applicable` 상태로 기록됩니다. `not-run`은 실행하지 않았다는 뜻이므로 성공 Evidence나 Capability 승격 근거로 사용하지 않습니다.
 
-Tool capability 구성, `--resume-existing` 처리, 실행 순서 정렬, 첫 실패 중단, Tool timing 수집은 `agent/execution_engine.py`가 담당한다.
+Capability 등급은 새 Custom Resource 이름이 아니라 Kubernetes 리소스와 lifecycle 동작 조합의 Evidence를 기준으로 계산합니다. 검증이 부족한 패턴은 `experimental`로 표시하고 실행 전 별도 확인을 요구합니다.
 
-결정론적 오류 분류, 지원되지 않는 API field type 검사, recovery Tool allowlist, 승인 대기 계획 생성은 `agent/recovery_policy.py`가 담당한다. recovery LLM은 제안을 만들 수 있지만 정책 모듈을 우회해 Tool을 자동 실행할 수 없다.
+## Web 작업 격리
 
-Tool 거부, Tool 실행 실패, 필수 산출물 누락을 recovery 입력 계약으로 변환하고 stdout/stderr tail과 이전 성공 단계를 제한해 수집하는 작업은 `agent/failure_context.py`가 담당한다.
-
-Agent summary, LLM 입력/출력, Tool stdout/stderr, evidence/safety, recovery 체크포인트 파일 기록은 `agent/report_writer.py`가 담당한다.
-
-사용자용 requirement 실행 보고서와 log-analysis Markdown 렌더링은 `agent/report_renderer.py`가 담당한다.
-
-자연어 requirement 파싱, 누락 정보 검사, profile hint와 RAG 결과의 planning context 조립은 `agent/context_builder.py`가 담당한다. safety evaluation과 requirement/log-analysis evidence trace 조립은 `agent/evidence_builder.py`가 담당한다.
-
-검색기 출력 정규화, 용도별 reference/example 균형 선택, requirement RAG limit과 log-analysis query 조립은 `agent/retrieval_context.py`가 담당한다.
-
-planner, Tool 실행, final/recovery 결과를 최종 Agent summary 계약으로 합치는 작업은 `agent/summary_builder.py`가 담당한다.
-
-planning cache key/저장은 `agent/llm_cache.py`, Tool 결과의 최종 평가와 fallback 진입은 `agent/final_evaluator.py`, deterministic/LLM recovery 선택과 정책 적용은 `agent/recovery_orchestrator.py`가 담당한다.
-
-Local LLM 역할별 설정은 분리된다. `LOCAL_LLM_PLANNING_MODEL`, `LOCAL_LLM_FINAL_MODEL`, `LOCAL_LLM_RECOVERY_MODEL`, `LOCAL_LLM_LOG_ANALYSIS_MODEL`과 각 역할의 `_TIMEOUT_SECONDS`, `_MAX_TOKENS`를 사용할 수 있다. planning/final/recovery는 역할별 값이 없으면 기존 `LOCAL_LLM_MODEL`, `LOCAL_LLM_TIMEOUT_SECONDS`, `LOCAL_LLM_MAX_TOKENS`를 사용한다. 기본 timeout은 planning/recovery 90초, final 30초다. deterministic 분류가 `unknown`인 로그 분석은 공용 timeout과 무관하게 10초와 240토큰으로 제한하며, `LOCAL_LLM_LOG_ANALYSIS_TIMEOUT_SECONDS`와 `LOCAL_LLM_LOG_ANALYSIS_MAX_TOKENS`로만 명시적으로 조정한다.
-
-## Profile-backed Kind Deployment
-
-kind 배포는 모든 Operator에 임의 적용하지 않는다. profile이 `kindDeployment` capability를 제공하고 사용자가 `--kind-deploy`를 명시한 경우에만 Agent allowlist에 Tool이 추가된다.
-
-`kind_deployment_runner.py`의 공통 엔진은 Docker/kind 준비, image build/load, CRD 설치, Controller Deployment 확인과 service account RBAC preflight를 담당한다. profile의 `kindDeployment.validator`와 `validatorConfig`는 Custom Resource 적용, 관리 리소스 확인, status 및 lifecycle 검증 구현을 선택한다. AppConfig는 `appconfig-configmap`, TrainingJob과 RedisCache는 선언형 `managed-resources` validator를 사용한다.
-
-Artifact patcher profile은 `artifactPatcher.rbacResources`와 제한된 exact-match `controllerPatches`를 제공할 수 있다. patcher는 Custom Resource/status 기본 권한을 보존하고, 적용 후 모든 RBAC marker 존재 여부를 검증한다. 같은 profile patch를 반복 적용해도 결과가 변하지 않아야 한다.
-
-실행 순서:
+Web UI는 Agent CLI를 백그라운드 job으로 실행하므로 Web과 CLI가 같은 계약과 안전 정책을 사용합니다.
 
 ```text
-artifact_patcher
-  -> validation(make generate/manifests/test)
-  -> kind_deployment
-  -> deployment summary/checks
-  -> final Local LLM evaluation
+logs/web/jobs/<job-id>/
+  ├─ artifacts/   # Operator 스펙과 계획
+  ├─ workspace/   # Kubebuilder 프로젝트
+  ├─ summary.json # Agent 결과
+  └─ stdout/stderr
 ```
 
-Tool 실행과 kind 검증이 모두 성공한 뒤 final Local LLM 평가만 timeout되거나 실패하면, 성공한 실행을 실패로 뒤집지 않는다. Tool exit code와 validation/deployment summary를 사용한 deterministic final summary로 강등하고 LLM 오류는 warning과 `finalLLM.fallbackError`에 기록한다.
-
-기존 scaffold를 보존하고 배포 검증을 이어갈 때는 `--resume-existing`을 사용한다. 이 옵션은 기존 디렉터리를 삭제하지 않고 scaffold_runner만 건너뛴다.
-
-kind runner의 `--dry-run`은 Docker build, kind cluster, kubectl apply, 파일 수정을 실행하지 않고 계획만 기록한다.
-
-Docker daemon 연결 실패는 `docker-kind-connection`으로 분류한다. recovery plan은 Docker 연결 확인 후 `kind_deployment`만 재실행하도록 제안하지만, `requiresApproval=true` 상태로 저장되고 자동 실행되지 않는다.
-
-Docker 연결 실패처럼 로컬 정책으로 확정할 수 있는 오류는 recovery LLM 호출을 생략한다. Tool 실패 직후에는 recovery planning 전에 plan, Tool 결과, failure context를 Agent log에 체크포인트로 기록한다.
-
-Web UI는 Agent CLI를 백그라운드 job으로 실행한다. 각 job은 `logs/web/jobs/<job-id>`에 상태와 stdout/stderr를 기록하고, `artifacts/`와 `workspace/` 아래에 생성 산출물과 Kubebuilder 프로젝트를 격리한다. 재시도는 새 job ID와 새 가변 경로를 사용하며 capability 승인은 부모 계획 job의 `artifacts/`에 있는 제안만 참조할 수 있다. embedded 개발 모드와 외부 `web/worker.py` 모드를 지원하며, 외부 모드에서는 여러 worker가 원자적 claim 파일로 작업을 분배한다. UI는 SSE 상태 API로 현재 단계와 로그를 갱신한다. 최근 작업 목록, 실행 중 취소, 제한된 재시도를 지원한다. kind 작업의 rollback은 자동화하지 않고 수동 승인 정책만 기록한다.
-
-## Requirement Analyzer와 Profile Hint
-
-이 시스템의 중심은 특정 profile이 아니라 사용자의 현재 자연어 요구사항이다.
-
-`agent/requirement_analyzer.py`는 LLM 호출 전에 다음을 수행한다.
-
-- 요구사항 intent 추정
-- 관리 대상 Kubernetes 리소스 hint 추정
-- `profiles/*.yaml` 후보 순위 계산
-- 명시 profile과 자동 profile hint 구분
-
-profile은 `hint-only`로 취급한다. AppConfig, TrainingJob, RedisCache profile은 sample 기본값, e2e 규칙, warning 해석을 돕는 참고 자료일 뿐이다. Operator의 kind, spec/status field, controller 책임, 관리 리소스는 requirement text가 우선한다.
-
-`requirements/appconfig.txt`와 `profiles/appconfig.yaml`은 내부 회귀 테스트와 kind lifecycle 검증용 fixture다. 이 프로젝트가 AppConfig 전용 생성기라는 의미가 아니다.
-
-## Tool Wrapping 구조
-
-`agent/tools/langchain_wrappers.py`는 기존 Python CLI를 subprocess로 호출한다.
-
-각 Tool wrapper는 다음 값을 반환한다.
-
-- command
-- stdout
-- stderr
-- exitCode
-- status
-
-실패해도 예외로 즉시 종료하지 않고 결과 객체를 반환하므로, Agent가 실패 단계와 다음 조치를 자연어로 설명할 수 있다.
-
-## Hybrid RAG 검색 구조
-
-`agent/rag/retriever.py`는 `knowledge-base` 아래 Markdown 문서를 검색한다. 초기 MVP의 keyword 검색은 fallback 및 비교용으로 유지하고, 기본 검색 흐름은 FAISS Vector DB 기반 Hybrid RAG로 확장한다.
-
-현재 검색 대상:
-
-- Kubebuilder 기본 흐름
-- RBAC marker
-- Reconcile 패턴
-- 공통 오류 해결
-- 내부 fixture 예시
-- TrainingJob 예시
-
-현재 기본 흐름:
-
-```text
-knowledge-base Markdown
-  -> document_loader chunk 분할
-  -> Ollama embedding
-  -> FAISS index
-  -> vector search
-  -> keyword search
-  -> hybrid score 결합
-  -> optional Local LLM reranker
-  -> Top 3 context
-  -> LLM Planner 입력
-```
-
-관련 파일:
-
-- `agent/rag/document_loader.py`: Markdown 문서 로딩 및 chunk 분할
-- `agent/rag/embedding_client.py`: Ollama local embedding 호출
-- `agent/rag/vector_store.py`: FAISS index 저장/로드/검색
-- `agent/rag/hybrid_retriever.py`: vector + keyword 검색 결과 결합
-- `agent/rag/reranker.py`: Local LLM 기반 context reranking
-- `agent/rag/build_index.py`: index build CLI
-- `agent/rag/retriever.py`: keyword/vector/hybrid/hybrid-rerank 통합 API
-
-RAG 관련 환경변수:
-
-- `RAG_MODE`, 기본값 `hybrid`
-- `RAG_TOP_K`, 기본값 `8`
-- `RAG_FINAL_TOP_N`, 기본값 `3`
-- `RAG_RERANK_ENABLED`, 기본값 `false`
-- `RAG_KEYWORD_FALLBACK`, 기본값 `true`
-- `OLLAMA_BASE_URL`, 기본값 `http://127.0.0.1:11434`
-- `LOCAL_EMBEDDING_MODEL`, 기본값 `nomic-embed-text`
-
-Vector index가 없거나 embedding model이 준비되지 않은 개발 환경에서는 keyword fallback을 사용할 수 있다. fallback 발생 여부는 Agent log의 `retrievalDetails.fallbackUsed`와 `selected-context.json`에서 확인한다.
-
-CPU 노트북 기본값은 Hybrid 검색이며 reranker는 꺼져 있다. reranker 검증이 필요할 때만 다음처럼 별도 실행한다.
-
-```bash
-export RAG_MODE=hybrid-rerank
-export RAG_RERANK_ENABLED=true
-export LOCAL_LLM_TIMEOUT_SECONDS=120
-```
-
-검색 품질은 `evaluation/rag-evaluation-dataset.yaml`과 `agent/evaluation/rag_evaluator.py`로 정량 평가한다. 평가기는 `keyword`, `vector`, `hybrid`, `hybrid-rerank`를 비교하고 Hit@1, Hit@3, Recall@3, Recall@5, MRR, 평균 latency, P95 latency, fallback count, reranker timeout count를 저장한다.
-
-`agent/evaluation/rag_quality_gate.py`는 외부 모델 없이 requirement fixture의 selected context Hit@3를 검사하므로 PR quick regression에서 실행할 수 있다. 전체 평가 결과에는 reranker 자체의 평균/P95 latency도 별도로 기록한다.
-
-Agent report에는 검색 결과만 나열하지 않고, LLM이 각 문서를 어떤 판단에 사용했는지도 별도 섹션으로 기록한다.
-
-```text
-RAG Evidence Used By LLM
-- knowledge-base/kubebuilder-guides/basic-flow.md
-  - used for: Kubebuilder scaffold, generate, manifests, test 단계 계획
-- knowledge-base/kubebuilder-guides/rbac-marker.md
-  - used for: 관리 대상 리소스에 필요한 RBAC marker 판단
-- knowledge-base/kubebuilder-guides/reconcile-pattern.md
-  - used for: Controller Reconcile 책임과 status 갱신 방식 판단
-```
-
-## LLM Planner
-
-본 시스템은 LLM planner 기반 Agent 구조를 사용한다. LLM planner는 실제 Chat Model 호출을 수행하고, RAG 검색 결과를 입력으로 받아 요구사항 요약, 부족 정보 판단, profile 추천, Tool 호출 계획, 위험 요소, 다음 조치를 JSON으로 생성한다.
-
-현재 지원 provider:
-
-- `local`: Ollama OpenAI-compatible endpoint 사용
-
-환경변수:
-
-- `LOCAL_LLM_BASE_URL`, 기본값 `http://localhost:11434/v1`
-- `LOCAL_LLM_MODEL`, 기본값 `qwen2.5-coder:3b`
-
-본 시스템은 외부 API 기반 LLM을 사용하지 않는다. 사내 예제 코드, Kubernetes 로그, YAML 산출물, 오류 로그, RAG 문서는 로컬 환경 안에서 처리된다. 이 구조는 내부망/폐쇄망 환경을 고려한 로컬 실행형 AI Agent 구조다.
-
-모델은 직접 `kubectl`, `make`, `python` 명령을 실행하지 않는다. 모델은 요구사항 해석, RAG 근거 연결, Tool 호출 계획, 로그 분석 판단을 JSON으로 생성하는 판단 엔진 역할만 수행한다. 실제 실행은 `agent/tools/langchain_wrappers.py`의 허용된 Tool wrapper가 담당한다.
-
-LLM planner 역할:
-
-- 요구사항 요약
-- 부족한 정보 식별
-- RAG 검색 결과 요약 및 판단 근거 연결
-- profile 추천
-- Tool 호출 계획과 호출 이유 생성
-- 위험 요소와 다음 조치 제안
-- 로그 분석 시 성공/실패/warning 판단과 beginner-friendly 설명 생성
-
-LLM은 명령을 직접 실행하지 않는다. 실제 실행은 기존 Tool wrapper가 담당하며, `--execute`가 명시되지 않으면 scaffold, patch, e2e는 dry-run 중심으로 제한된다.
-
-LLM 호출에 실패하거나 Ollama 서버/모델이 준비되지 않으면 Agent는 다른 provider로 대체하지 않는다. 대신 실패 원인과 필요한 환경변수를 출력하고, `logs/agent/<timestamp>/summary.json`, `agent-report.md`, `llm-output.json`, `llm-raw-output.txt`에 기록한다.
-
-LLM 입출력 파일:
-
-- `llm-input.json`
-- `llm-output.json`
-- `llm-raw-output.txt`
-- `retrieved-docs.json`
-- `tool-results.json`
-
-## 근거 추적과 안전성 검증
-
-운영 관점에서 중요한 것은 LLM이 답을 만들었다는 사실만이 아니라, 어떤 근거와 어떤 안전장치를 거쳐 실행됐는지 확인할 수 있는 것이다.
-
-Agent는 매 실행마다 다음 파일을 추가로 생성한다.
-
-- `evidence-trace.json`: RAG 검색 결과, LLM 판단, Tool 검증, Tool 실행 결과, 최종 판단을 하나의 흐름으로 연결한다.
-- `safety-evaluation.json`: LLM provider 정책, Tool allowlist, dry-run/execute gate, path safety, validation command allowlist, recovery approval gate를 기록한다.
-
-`agent-report.md`에도 같은 내용이 사람이 읽기 쉬운 섹션으로 포함된다.
-
-```text
-Evidence Trace
-  -> RAG selected documents
-  -> LLM reasoning and RAG evidence mapping
-  -> validated / rejected / deferred Tool calls
-  -> Tool exitCode evidence
-  -> final LLM decision evidence
-
-Safety Evaluation
-  -> local Ollama LLM only
-  -> Tool allowlist
-  -> --execute gate
-  -> repository path guard
-  -> validation target allowlist
-  -> recovery approval required
-```
-
-이 계층은 CPU 환경에서도 중요하다. GPU가 없어도 Agent가 관련 문서를 검색하고, Local LLM이 계획을 만들고, Tool 호출을 안전하게 검증하고, 실행 결과를 다시 평가하는 과정을 명확히 증명할 수 있다.
-
-## 왜 AI Agent 구조인가
-
-단순 자동화 스크립트는 정해진 명령을 순서대로 실행한다.
-
-이 프로젝트의 Agent 구조는 다음 점에서 다르다.
-
-- 자연어 요구사항을 요약하고 누락 정보를 점검한다.
-- 관련 Kubebuilder 지식 문서를 검색해 실행 근거로 사용한다.
-- profile과 요구사항을 함께 보고 단계별 Tool을 선택한다.
-- Tool 실행 결과를 수집하고 다음 행동을 제안한다.
-- 실제 LLM planner가 RAG 문서와 실행 로그를 함께 읽고 JSON 계획 또는 분석 결과를 생성할 수 있다.
-
-즉, CLI 도구는 실행 능력을 제공하고 Agent는 판단, 검색, 설명, 단계 선택을 담당한다.
-
-## 안전장치
-
-- 기본 실행은 dry-run이다.
-- `--execute`가 명시되지 않으면 scaffold, patch, e2e 같은 변경 작업은 실제 실행하지 않는다.
-- Agent는 실행 전 호출할 명령을 출력한다.
-- 실행 결과는 `logs/agent/<timestamp>/summary.json`과 `agent-report.md`에 저장한다.
-
-## 외부 시스템 연계 경계
-
-현재 구현의 핵심 범위는 로컬 요구사항 해석, 코드 생성, 검증, kind lifecycle 확인이다.
-외부 시스템 연계가 필요할 경우에도 동일한 원칙을 적용한다.
-
-- LLM은 외부 시스템 명령을 직접 실행하지 않는다.
-- 연계 기능은 별도 Tool wrapper와 allowlist를 통해 추가한다.
-- 실행 결과는 AgentResult와 evidence trace에 남긴다.
-- 실패는 구조화 errorCode로 분류하고 자동 복구 실행은 하지 않는다.
+각 재시도는 새로운 job ID를 사용해 이전 산출물을 덮어쓰지 않습니다. 코드 생성 job과 kind 검증 job도 분리해 Docker 실패가 이미 성공한 코드 생성 결과를 변경하지 않게 합니다. UI는 SSE 상태 API를 통해 현재 단계, 로그와 경과 시간을 갱신합니다.
+
+## 확장 지점
+
+| 확장 대상 | 변경 위치 |
+| --- | --- |
+| Kubernetes 관리 리소스 | Resource Capability Catalog, Adapter/Validation Policy, compile/kind fixture |
+| Agent Tool | Tool wrapper, 실행 순서, 입력·경로 검증 정책 |
+| 오류 코드 | 중앙 Error Registry와 오류 정규화 규칙 |
+| 사용자 결과 | `AgentResult` 계약과 Web presenter |
+| RAG 문서 | `knowledge-base/`와 RAG 품질 데이터셋 |
+
+새 기능은 LLM prompt만 수정해 추가하지 않습니다. 실행 계약, 결정론적 생성 경로와 검증 Evidence를 함께 추가해야 지원 범위로 인정합니다.
