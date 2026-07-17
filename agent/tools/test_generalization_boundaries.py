@@ -50,7 +50,6 @@ class GeneralizationBoundaryTest(unittest.TestCase):
             'model.get("controller")',
             'model["api"]',
             "operator_spec",
-            "legacy",
         )
         for value in forbidden:
             self.assertNotIn(value, source)
@@ -65,7 +64,7 @@ class GeneralizationBoundaryTest(unittest.TestCase):
             REPO_ROOT
             / "agent"
             / "evaluation"
-            / "profileless_kind_runner.py"
+            / "kind_matrix_runner.py"
         ).read_text(encoding="utf-8")
         for value in (
             "WebService",

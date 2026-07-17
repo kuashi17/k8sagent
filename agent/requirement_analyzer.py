@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""Requirement intent analysis and profile hinting for the generic Agent core."""
+"""Requirement intent analysis for the generic Agent core."""
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
 from typing import Any
-
-import yaml
 
 
 INTENT_PATTERNS = [
@@ -47,7 +43,7 @@ def analyze_requirement_intent(requirement_text: str) -> dict[str, Any]:
         "managedResourceHints": managed_resources,
         "confidence": "high" if scores and scores[0]["score"] >= 2 else "medium" if scores else "low",
         "notes": [
-            "Profile is treated as a hint, not as a fixed product template.",
+            "The current requirement is the source of truth for planning.",
             "The Agent should ask for missing Operator details before executing mutating tools.",
         ],
     }
@@ -64,116 +60,3 @@ def infer_managed_resources(requirement_text: str) -> list[str]:
             for item in controller.get("managedResources") or []
         }
     )
-
-
-def select_profile_hint(
-    requirement_text: str,
-    explicit_profile_path: str | None,
-    explicit_profile: dict[str, Any] | None,
-    profiles_dir: Path | str = "profiles",
-    allow_auto_hint: bool = True,
-) -> dict[str, Any]:
-    if explicit_profile_path and explicit_profile:
-        candidates = rank_profile_candidates(
-            requirement_text,
-            profiles_dir,
-        )
-        selected = summarize_profile(explicit_profile_path, explicit_profile)
-        selected["selectionMode"] = "explicit-hint"
-        selected["reason"] = "User provided this profile path; the Agent still plans from the requirement text."
-        return {"selectedProfile": selected, "profileCandidates": candidates}
-    if not allow_auto_hint:
-        return {
-            "selectedProfile": {
-                "path": "",
-                "name": "",
-                "description": "",
-                "managedResources": [],
-                "referencedResources": [],
-                "kindDeployment": {},
-                "selectionMode": "disabled",
-                "reason": (
-                    "Automatic profile hints were disabled; the generic "
-                    "Agent core must plan only from the current requirement."
-                ),
-            },
-            "profileCandidates": [],
-        }
-    candidates = rank_profile_candidates(requirement_text, profiles_dir)
-    if candidates and is_strong_profile_match(candidates[0], requirement_text):
-        selected = dict(candidates[0])
-        selected["selectionMode"] = "auto-hint"
-        selected["reason"] = selected.get("reason") or "Best matching profile hint from managed resource overlap."
-        return {"selectedProfile": selected, "profileCandidates": candidates}
-    return {
-        "selectedProfile": {
-            "path": "",
-            "name": "",
-            "description": "",
-            "managedResources": [],
-            "selectionMode": "none",
-            "reason": "No matching profile hint was found; generic Agent core still proceeds from requirement text.",
-        },
-        "profileCandidates": [],
-    }
-
-
-def is_strong_profile_match(candidate: dict[str, Any], requirement_text: str) -> bool:
-    requirement_resources = set(infer_managed_resources(requirement_text))
-    if not requirement_resources:
-        return False
-    matched = set(candidate.get("matchedResources") or [])
-    coverage = len(matched) / max(len(requirement_resources), 1)
-    return int(candidate.get("score", 0)) >= 5 and coverage >= 0.67
-
-
-def rank_profile_candidates(requirement_text: str, profiles_dir: Path | str = "profiles") -> list[dict[str, Any]]:
-    requirement_resources = set(infer_managed_resources(requirement_text))
-    text = requirement_text.lower()
-    candidates: list[dict[str, Any]] = []
-    root = Path(profiles_dir)
-    if not root.is_dir():
-        return []
-    for path in sorted(root.glob("*.yaml")):
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        profile = summarize_profile(str(path), data)
-        profile_resources = set(profile["managedResources"])
-        overlap = sorted(requirement_resources & profile_resources)
-        name = str(profile.get("name") or "").lower()
-        description = str(profile.get("description") or "").lower()
-        name_hits = 1 if name and name in text else 0
-        description_hits = sum(1 for token in requirement_resources if token.lower() in description)
-        score = len(overlap) * 3 + name_hits * 2 + description_hits
-        if score <= 0:
-            continue
-        profile["score"] = score
-        profile["matchedResources"] = overlap
-        profile["reason"] = (
-            "Matched managed resources: " + ", ".join(overlap)
-            if overlap
-            else "Matched profile name or description."
-        )
-        candidates.append(profile)
-    candidates.sort(key=lambda item: item.get("score", 0), reverse=True)
-    return candidates
-
-
-def summarize_profile(path: str, data: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "path": path,
-        "name": data.get("profileName", ""),
-        "description": data.get("description", ""),
-        "managedResources": data.get("managedResources") or [],
-        "referencedResources": data.get("referencedResources") or [],
-        "e2e": {
-            "validator": str(
-                (data.get("e2e") or {}).get("validator") or ""
-            )
-        },
-        "kindDeployment": data.get("kindDeployment") or {},
-    }

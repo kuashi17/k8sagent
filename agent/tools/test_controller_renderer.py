@@ -1,4 +1,4 @@
-"""Tests for profile-less Controller rendering."""
+"""Tests for Controller rendering from generation IR."""
 
 from __future__ import annotations
 

@@ -43,7 +43,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Patch Kubebuilder artifacts from operator-spec.yaml.")
     parser.add_argument("--input", required=True, help="Path to generated operator spec YAML.")
     parser.add_argument("--project", required=True, help="Path to generated Kubebuilder project.")
-    parser.add_argument("--profile", help="Path to an Operator profile YAML. Profile sample defaults override generic sample values.")
     parser.add_argument("--dry-run", action="store_true", help="Print diffs without changing files. This is the default.")
     parser.add_argument("--execute", action="store_true", help="Apply patches. Validation commands are not run automatically.")
     args = parser.parse_args()
@@ -60,7 +59,6 @@ def main() -> int:
     spec_path = Path(args.input)
     project_dir = Path(args.project)
     spec = load_spec(spec_path)
-    profile = load_profile(Path(args.profile)) if args.profile else {}
     errors = spec.get("errors") or []
     if errors:
         print("Cannot patch artifacts because operator spec has errors:", file=sys.stderr)
@@ -73,7 +71,7 @@ def main() -> int:
         )
         return 2
 
-    model = normalize_spec(spec, profile, args.profile)
+    model = normalize_spec(spec)
     missing = required_missing(model)
     if missing:
         print("Cannot patch artifacts because required fields are missing:", file=sys.stderr)
@@ -111,19 +109,9 @@ def load_spec(path: Path) -> dict[str, Any]:
     return data
 
 
-def load_profile(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        raise SystemExit(f"profile YAML not found: {path}")
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise SystemExit(f"profile YAML must be a mapping: {path}")
-    data["_profilePath"] = str(path)
-    return data
-
-
-def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: str | None) -> dict[str, Any]:
-    # 여러 버전의 spec/profile 입력을 하나의 내부 모델로 정규화한다.
-    # Controller 생성기는 legacy profile 구조가 아니라 이 normalized model과 IR을 기준으로 동작한다.
+def normalize_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    # 스펙 표현 차이를 하나의 내부 모델로 정규화한다. 이후 Controller 생성은
+    # 자연어 원문이나 예시별 설정을 다시 읽지 않고 이 모델과 IR만 사용한다.
     api = spec.get("api") or spec.get("resource") or {}
     project = spec.get("project") or {}
     spec_fields = spec.get("specFields") or spec.get("spec", {}).get("fields") or []
@@ -132,22 +120,13 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
         or spec.get("status", {}).get("fields")
         or []
     )
-    patcher_profile = profile.get("artifactPatcher") or {}
     rbac_resources = list(spec.get("rbac", {}).get("resources") or [])
-    rbac_resources.extend(
-        item
-        for item in patcher_profile.get("rbacResources") or []
-        if isinstance(item, dict)
-    )
     requirement_sample_defaults = spec.get("sampleDefaults") or {}
-    profile_sample_defaults = {
-        **(
-            requirement_sample_defaults
-            if isinstance(requirement_sample_defaults, dict)
-            else {}
-        ),
-        **(profile.get("sampleDefaults", {}).get("spec") or {}),
-    }
+    sample_defaults = (
+        requirement_sample_defaults
+        if isinstance(requirement_sample_defaults, dict)
+        else {}
+    )
 
     kind = api.get("kind", "")
     version = api.get("version", "")
@@ -194,16 +173,7 @@ def normalize_spec(spec: dict[str, Any], profile: dict[str, Any], profile_path: 
         "statusFields": status_fields,
         "controller": spec.get("controller") or {},
         "rbacResources": normalized_rbac,
-        "profile": {
-            "path": profile_path or "",
-            "name": profile.get("profileName", ""),
-            "sampleDefaults": profile_sample_defaults,
-        },
-        "controllerPatches": [
-            item
-            for item in patcher_profile.get("controllerPatches") or []
-            if isinstance(item, dict)
-        ],
+        "sampleDefaults": sample_defaults,
         "rbacSource": "spec.rbac.resources" if rbac_resources else "fallback",
         "validationCommands": spec.get("validation", {}).get("commands") or ["make generate", "make manifests", "make test"],
     }
@@ -355,21 +325,17 @@ def build_changes(project_dir: Path, model: dict[str, Any]) -> list[dict[str, An
 
 
 def print_patch_context(model: dict[str, Any]) -> None:
-    profile = model.get("profile") or {}
-    profile_label = profile.get("path") or "not provided"
-    profile_name = profile.get("name") or "none"
-    sample_defaults = profile.get("sampleDefaults") or {}
+    sample_defaults = model.get("sampleDefaults") or {}
     print("Patch context")
-    print(f"- profile: {profile_name} ({profile_label})")
     print(f"- spec fields: {', '.join(field['name'] for field in model['specFields'])}")
     print(f"- status fields: {', '.join(field['name'] for field in model['statusFields'])}")
     print(f"- RBAC source: {model.get('rbacSource')}")
     print(f"- RBAC resources: {', '.join(format_rbac_resource(item) for item in model['rbacResources'])}")
     if sample_defaults:
-        print(f"- profile sample defaults: {', '.join(sample_defaults.keys())}")
+        print(f"- requirement sample defaults: {', '.join(sample_defaults.keys())}")
     else:
-        print("- profile sample defaults: none")
-    if not profile.get("path") and controller_resources(model):
+        print("- requirement sample defaults: none")
+    if controller_resources(model):
         ir = build_controller_ir(model)
         print(
             "- controller IR: "
@@ -441,20 +407,16 @@ def validation_markers(go_type: str) -> list[str]:
 
 def patch_sample(text: str, model: dict[str, Any]) -> str:
     sample = yaml.safe_load(text)
-    profile_defaults = model.get("profile", {}).get("sampleDefaults") or {}
+    sample_defaults = model.get("sampleDefaults") or {}
     sample["spec"] = {
-        field["name"]: profile_defaults.get(field["name"], sample_value(field.get("type", "string"), field["name"]))
+        field["name"]: sample_defaults.get(field["name"], sample_value(field.get("type", "string"), field["name"]))
         for field in model["specFields"]
     }
     return yaml.safe_dump(sample, sort_keys=False, allow_unicode=True)
 
 
 def patch_controller(text: str, model: dict[str, Any]) -> str:
-    if (
-        not (model.get("profile") or {}).get("path")
-        and model.get("project")
-        and controller_resources(model)
-    ):
+    if model.get("project") and controller_resources(model):
         _, rendered = generate_controller(model)
         validate_controller_markers(rendered, model)
         validate_controller_behavior(rendered, model)
@@ -470,35 +432,8 @@ def patch_controller(text: str, model: dict[str, Any]) -> str:
     updated, count = re.subn(pattern, replacement, text, flags=re.S)
     if count != 1:
         raise SystemExit(f"failed to update RBAC markers for {kind} controller")
-    updated = apply_controller_patches(
-        updated,
-        model.get("controllerPatches") or [],
-    )
     validate_controller_markers(updated, model)
     validate_controller_behavior(updated, model)
-    return updated
-
-
-def apply_controller_patches(
-    text: str,
-    patches: list[dict[str, Any]],
-) -> str:
-    updated = text
-    for index, patch in enumerate(patches):
-        before = str(patch.get("before") or "")
-        after = str(patch.get("after") or "")
-        if not before or not after:
-            raise SystemExit(
-                f"profile controllerPatches[{index}] requires before and after"
-            )
-        if after in updated:
-            continue
-        count = updated.count(before)
-        if count != 1:
-            raise SystemExit(
-                f"profile controllerPatches[{index}] expected one match, got {count}"
-            )
-        updated = updated.replace(before, after, 1)
     return updated
 
 
@@ -572,9 +507,7 @@ def execute_patch(spec_path: Path, project_dir: Path, model: dict[str, Any], cha
     log_dir = Path("logs") / "patch" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "diff.patch").write_text(diff_text, encoding="utf-8")
-    if not (model.get("profile") or {}).get("path") and controller_resources(
-        model
-    ):
+    if controller_resources(model):
         (log_dir / "controller-ir.json").write_text(
             json.dumps(
                 build_controller_ir(model).to_dict(),
@@ -587,7 +520,6 @@ def execute_patch(spec_path: Path, project_dir: Path, model: dict[str, Any], cha
     summary: dict[str, Any] = {
         "input": str(spec_path),
         "projectDir": str(project_dir),
-        "profile": model.get("profile", {}),
         "execute": True,
         "logDir": str(log_dir),
         "changedFiles": [str(change["path"]) for change in changes if change["old"] != change["new"]],
@@ -682,7 +614,13 @@ def semantic_sample_value(name: str) -> Any:
     normalized = name.lower()
     if normalized == "protocol" or normalized.endswith("protocol"):
         return "TCP"
-    if normalized == "port" or normalized.endswith("port"):
+    if normalized in {"port", "containerport", "serviceport"}:
+        # 기본 이미지인 nginx가 실제로 수신하는 포트를 사용해야 생성된 sample이
+        # Service 연결과 health probe 검증에서도 실행 가능한 상태가 된다.
+        return 80
+    if normalized in {"healthport", "readinessport"}:
+        return 80
+    if normalized.endswith("port"):
         return 8080
     if "namespace" in normalized:
         return "default"
@@ -695,15 +633,13 @@ def semantic_sample_value(name: str) -> Any:
         "command": ["echo", "hello"],
         "cpuLimit": "100m",
         "env": {"MODE": "test"},
-        "healthPath": "/healthz",
-        "healthPort": 8080,
+        "healthPath": "/",
         "image": "nginx:latest",
         "memoryLimit": "128Mi",
         "mountPath": "/workspace",
         "namespaceName": "default",
         "pvcName": "sample-workload-pvc",
-        "readinessPath": "/readyz",
-        "readinessPort": 8080,
+        "readinessPath": "/",
         "resourceLimits": {"cpu": "100m", "memory": "128Mi"},
         "schedule": "*/5 * * * *",
         "storageClassName": "standard",

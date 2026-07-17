@@ -21,9 +21,8 @@ def build_requirement_safety_evaluation(
         "scaffold_runner",
         "artifact_patcher",
         "validation",
-        "kind_deployment",
     ]
-    mutating_tools = {"scaffold_runner", "artifact_patcher", "kind_deployment"}
+    mutating_tools = {"scaffold_runner", "artifact_patcher"}
     validated = execution.get("validatedToolCalls") or []
     rejected = execution.get("rejectedToolCalls") or []
     deferred = execution.get("deferredToolCalls") or []
@@ -83,7 +82,7 @@ def build_requirement_safety_evaluation(
             "status": "passed",
             "allowedTargets": ["make generate", "make manifests", "make test"],
             "rule": "The validation Tool only accepts generate, manifests, and test targets.",
-            "evidence": "agent/tools/langchain_wrappers.py validation()",
+            "evidence": "agent/tools/tool_runner.py validation()",
         },
         "deferredToolPolicy": {
             "status": "passed",
@@ -132,11 +131,6 @@ def build_requirement_evidence_trace(summary: dict[str, Any]) -> dict[str, Any]:
             "parsedSummary": summary.get("requirementSummary") or {},
             "intentAnalysis": summary.get("intentAnalysis") or {},
             "missingInformation": summary.get("missingInformation") or [],
-        },
-        "profileHintEvidence": {
-            "policy": summary.get("profilePolicy") or {},
-            "selectedProfile": summary.get("selectedProfile") or {},
-            "profileCandidates": summary.get("profileCandidates") or [],
         },
         "ragEvidence": build_rag_trace(
             summary.get("retrievalDetails") or {},

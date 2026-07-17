@@ -14,6 +14,8 @@ def normalize_tool_result(
     result: dict[str, Any],
     tool: str = "",
 ) -> dict[str, Any]:
+    # Tool이 직접 남긴 구조화 오류를 최우선으로 사용한다.
+    # 구조화 값이 없을 때만 stdout/stderr 패턴을 보조 분류에 사용한다.
     normalized = dict(result)
     if int(normalized.get("exitCode") or 0) == 0:
         normalized["errorCode"] = ""
@@ -94,6 +96,8 @@ def infer_tool_error(
     result: dict[str, Any],
     tool: str = "",
 ) -> dict[str, Any]:
+    # 문자열 추론은 이전 Tool과 외부 명령의 비구조화 로그를 위한 마지막 경계다.
+    # 추론 결과도 중앙 Error Registry의 표준 코드와 사용자 안내로 변환한다.
     summary = result.get("deploymentSummary") or {}
     failed_step = str(summary.get("failedStep") or failed_result_step(result))
     text = " ".join(

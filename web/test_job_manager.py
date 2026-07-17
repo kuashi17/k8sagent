@@ -23,7 +23,7 @@ class JobManagerTest(unittest.TestCase):
             "requirement",
             [
                 "python3",
-                "agent/langchain_agent.py",
+                "agent/cli.py",
                 "--requirement",
                 "requirement.txt",
                 "--workspace",
@@ -52,7 +52,7 @@ class JobManagerTest(unittest.TestCase):
             )
             base = [
                 "python3",
-                "agent/langchain_agent.py",
+                "agent/cli.py",
                 "--requirement",
                 "requirement.txt",
             ]
@@ -79,7 +79,7 @@ class JobManagerTest(unittest.TestCase):
             "kind-validation",
             [
                 "python3",
-                "agent/evaluation/profileless_kind_runner.py",
+                "agent/evaluation/kind_matrix_runner.py",
                 "--requirement",
                 "requirement.txt",
             ],

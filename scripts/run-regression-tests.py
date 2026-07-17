@@ -28,7 +28,7 @@ def main() -> int:
         "--suite",
         choices=["quick", "standard", "full"],
         default="quick",
-        help="quick avoids LLM/Docker; standard adds one Agent run; full adds kind and profileless checks.",
+        help="quick avoids LLM/Docker; standard adds one Agent run; full adds compile and kind matrices.",
     )
     parser.add_argument(
         "--history-file",
@@ -137,15 +137,6 @@ def run_suite(
                 str(output_dir / "response-consistency.json"),
             ],
         ),
-        run_check(
-            "legacy-usage",
-            [
-                sys.executable,
-                "agent/evaluation/legacy_usage.py",
-                "--output",
-                str(output_dir / "legacy-usage.json"),
-            ],
-        ),
     ]
 
     reliability_command = [
@@ -158,8 +149,6 @@ def run_suite(
     ]
     if suite == "quick":
         reliability_command.append("--skip-agent-consistency")
-    if suite != "full":
-        reliability_command.append("--skip-kind-idempotency")
     checks.append(run_check("reliability", reliability_command))
 
     if suite == "full":
@@ -168,23 +157,12 @@ def run_suite(
         )
         checks.append(
             run_check(
-                "profile-kind-matrix",
+                "requirement-matrix",
                 [
                     sys.executable,
-                    "agent/evaluation/profile_kind_matrix.py",
+                    "agent/evaluation/requirement_matrix_runner.py",
                     "--output-dir",
-                    str(output_dir / "profile-kind"),
-                ],
-            )
-        )
-        checks.append(
-            run_check(
-                "profileless-requirements",
-                [
-                    sys.executable,
-                    "agent/evaluation/profileless_requirement_runner.py",
-                    "--output-dir",
-                    str(output_dir / "profileless"),
+                    str(output_dir / "requirement-matrix"),
                     "--run-level",
                     "fast",
                 ],
@@ -193,12 +171,12 @@ def run_suite(
         try:
             checks.append(
                 run_check(
-                    "profileless-compile",
+                    "compile-matrix",
                     [
                         sys.executable,
-                        "agent/evaluation/profileless_compile_runner.py",
+                        "agent/evaluation/compile_matrix_runner.py",
                         "--output-dir",
-                        str(output_dir / "profileless-compile"),
+                        str(output_dir / "compile-matrix"),
                         "--work-root",
                         str(full_work_root),
                         "--jobs",
@@ -208,17 +186,17 @@ def run_suite(
             )
             checks.append(
                 run_check(
-                    "profileless-kind",
+                    "kind-matrix",
                     [
                         sys.executable,
-                        "agent/evaluation/profileless_kind_runner.py",
+                        "agent/evaluation/kind_matrix_runner.py",
                         "--output-dir",
-                        str(output_dir / "profileless-kind"),
+                        str(output_dir / "kind-matrix"),
                         "--precompiled-results",
                         str(
                             output_dir
-                            / "profileless-compile"
-                            / "profileless-compile-results.json"
+                            / "compile-matrix"
+                            / "compile-matrix-results.json"
                         ),
                     ],
                 )
@@ -230,9 +208,9 @@ def run_suite(
                         sys.executable,
                         "agent/evaluation/capability_matrix.py",
                         "--compile-results",
-                        str(output_dir / "profileless-compile" / "profileless-compile-results.json"),
+                        str(output_dir / "compile-matrix" / "compile-matrix-results.json"),
                         "--kind-results",
-                        str(output_dir / "profileless-kind" / "profileless-kind-results.json"),
+                        str(output_dir / "kind-matrix" / "kind-matrix-results.json"),
                         "--output",
                         str(output_dir / "capability-matrix.json"),
                     ],

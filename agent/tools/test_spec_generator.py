@@ -159,7 +159,7 @@ Controller는 ConfigMap 생성 여부를 확인하여 status.phase, status.confi
         )
         self.assertEqual(spec["errors"], [])
 
-    def test_requirement_sample_spec_is_parsed_without_profile(self) -> None:
+    def test_sample_spec_is_parsed_from_requirement(self) -> None:
         warnings: list[str] = []
         values = parse_sample_defaults(
             """

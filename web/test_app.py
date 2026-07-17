@@ -24,7 +24,7 @@ class FakeJobs:
             "jobId": job_id,
             "state": "running",
             "phase": "LLM planning",
-            "commandText": "python3 agent/langchain_agent.py",
+            "commandText": "python3 agent/cli.py",
             "metadata": {},
             "stdoutTail": "LLM Agent Orchestrator",
             "stderrTail": "",
@@ -63,10 +63,9 @@ class FakeCompletedJobs(FakeJobs):
             "jobType": "requirement",
             "state": "succeeded",
             "phase": "completed",
-            "commandText": "python3 agent/langchain_agent.py",
+            "commandText": "python3 agent/cli.py",
             "metadata": {
                 "requirementPath": "",
-                "profile": "",
                 "mode": "dry-run",
                 "runLevel": "fast",
             },
@@ -149,7 +148,7 @@ class FakeExperimentalJobs(FakeCompletedJobs):
                         "lastValidatedAt": "2026-06-28T21:24:24+09:00",
                         "evidenceRun": 28321990364,
                         "limitations": [
-                            "No profileless kind evidence is recorded."
+                            "No kind lifecycle evidence is recorded."
                         ],
                     }
                 ],
@@ -167,7 +166,7 @@ class FakeKindFailureJobs(FakeJobs):
             "jobType": "kind-validation",
             "state": "failed",
             "phase": "failed",
-            "commandText": "python3 profileless_kind_runner.py",
+            "commandText": "python3 kind_matrix_runner.py",
             "metadata": {},
             "stdoutTail": "",
             "stderrTail": "command failed exitCode=1",
@@ -244,7 +243,7 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
-        self.assertEqual(response.json()["service"], "kubebuilder-agent-web")
+        self.assertEqual(response.json()["service"], "k8sagent-web")
         self.assertEqual(response.json()["jobs"]["queued"], 0)
 
     async def test_job_can_be_canceled(self) -> None:
@@ -272,7 +271,6 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("안전한 계획 만들기", response.text)
         self.assertNotIn("개발자 설정", response.text)
-        self.assertNotIn("참고 Profile", response.text)
         self.assertIn("예시로 시작해보세요.", response.text)
         self.assertIn(
             "한 번에 계획을 만드는 데 필요한 4가지 보기",
@@ -356,20 +354,6 @@ class AsyncWebRouteTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 422)
         self.assertIn("실행 승인", response.text)
-
-    async def test_kind_deploy_requires_profile(self) -> None:
-        with patch("web.app.jobs", FakeJobs()):
-            response = await self.request(
-                "POST",
-                "/run-requirement",
-                data={
-                    "requirement_text": "ConfigMap을 생성하는 Operator를 만들어 주세요.",
-                    "kind_deploy": "on",
-                },
-            )
-
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("Profile", response.text)
 
     async def test_completed_plan_shows_beginner_execution_action(self) -> None:
         with patch("web.app.jobs", FakeCompletedJobs()):

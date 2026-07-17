@@ -61,13 +61,13 @@ flowchart TD
 
 | 계층 | 주요 역할 | 대표 코드 |
 | --- | --- | --- |
-| Interface | 요청 검증, 비동기 작업, 진행 상태와 결과 표시 | `web/`, `agent/langchain_agent.py` |
+| Interface | 요청 검증, 비동기 작업, 진행 상태와 결과 표시 | `web/`, `agent/cli.py` |
 | Orchestration | 요구사항 분석부터 계획·실행·결과 조립까지 전체 흐름 관리 | `requirement_orchestrator.py`, `context_builder.py` |
 | AI/RAG | 관련 문서 검색, 누락·위험 요소와 Tool 계획 작성 | `agent/llm/`, `agent/rag/`, `retrieval_context.py` |
 | Contract/Policy | LLM 출력, Tool 이름·인자·경로·실행 모드와 승인 상태 검사 | `contracts.py`, `tool_validator.py` |
 | Execution | 검증된 Tool 정렬, 순차 실행, 첫 실패 중단과 시간 수집 | `execution_engine.py` |
 | Generation | Operator 스펙, scaffold, Controller IR, Go 코드와 RBAC 생성 | `agent/tools/` |
-| Validation | make와 kind를 실행하고 lifecycle Evidence 수집 | `langchain_wrappers.py`, `profileless_kind_runner.py` |
+| Validation | make와 kind를 실행하고 lifecycle Evidence 수집 | `tool_runner.py`, `kind_matrix_runner.py` |
 | Result/Recovery | 공통 결과 계약, 구조화 오류, 사용자 설명과 복구 계획 생성 | `result_builder.py`, `error_registry.py`, `recovery_orchestrator.py` |
 
 ## 요구사항 처리 흐름
@@ -138,7 +138,7 @@ flowchart LR
     M --> Y["Controller · CRD · RBAC"]
 ```
 
-`agent/tools/controller_pipeline.py`는 Operator 스펙을 한 번 IR로 변환한 뒤 Renderer에는 IR만 전달합니다. Renderer가 원본 요구사항이나 legacy profile을 직접 참조하지 않게 하여 코드 생성 기준이 여러 곳으로 분산되는 것을 막습니다.
+`agent/tools/controller_pipeline.py`는 Operator 스펙을 한 번 IR로 변환한 뒤 Renderer에는 IR만 전달합니다. Renderer가 원본 요구사항이나 예제별 설정을 직접 참조하지 않게 하여 코드 생성 기준이 여러 곳으로 분산되는 것을 막습니다.
 
 IR에는 다음 정보가 포함됩니다.
 

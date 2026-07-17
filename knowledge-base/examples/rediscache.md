@@ -3,7 +3,6 @@
 metadata:
 - source: internal-authored
 - category: example
-- profile: rediscache
 
 ## Requirement Pattern
 

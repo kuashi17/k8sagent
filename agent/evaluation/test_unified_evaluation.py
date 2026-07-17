@@ -36,15 +36,12 @@ class UnifiedEvaluationTest(unittest.TestCase):
 
         self.assertEqual(evidence, [True] * 7)
 
-    def test_skipped_optional_idempotency_is_not_failed_evidence(self) -> None:
+    def test_kind_lifecycle_evidence_is_scored(self) -> None:
         result = e2e_section(
-            {"results": []},
-            {"status": "skipped", "reason": "context unavailable"},
             {
                 "results": [
                     {
                         "status": "passed",
-                        "profileUsed": False,
                         "deploymentSummary": {
                             "checks": {
                                 "lifecycleIdempotency": {
@@ -87,9 +84,8 @@ class UnifiedEvaluationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "reliability").mkdir()
-            (root / "profileless-compile").mkdir()
-            (root / "profile-kind").mkdir()
-            (root / "profileless-kind").mkdir()
+            (root / "compile-matrix").mkdir()
+            (root / "kind-matrix").mkdir()
             (root / "rag-quality.json").write_text(
                 json.dumps(
                     {
@@ -111,8 +107,8 @@ class UnifiedEvaluationTest(unittest.TestCase):
             )
             (
                 root
-                / "profileless-compile"
-                / "profileless-compile-results.json"
+                / "compile-matrix"
+                / "compile-matrix-results.json"
             ).write_text(
                 json.dumps(
                     {
@@ -135,50 +131,15 @@ class UnifiedEvaluationTest(unittest.TestCase):
             )
             (
                 root
-                / "profile-kind"
-                / "profile-kind-matrix.json"
-            ).write_text(
-                json.dumps(
-                    {
-                        "results": [
-                            {
-                                "status": "passed",
-                                "deploymentSummary": {
-                                    "checks": {
-                                        "lifecycleIdempotency": {
-                                            "reapplyStable": True
-                                        },
-                                        "lifecycleDelete": {
-                                            "managedResources": {
-                                                "job/sample": {
-                                                    "passed": True
-                                                }
-                                            }
-                                        },
-                                        "lifecycleRestore": {
-                                            "restored": True
-                                        },
-                                    }
-                                },
-                            }
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (
-                root
-                / "profileless-kind"
-                / "profileless-kind-results.json"
+                / "kind-matrix"
+                / "kind-matrix-results.json"
             ).write_text(
                 json.dumps(
                     {
                         "status": "passed",
-                        "profileUsed": False,
                         "results": [
                             {
                                 "status": "passed",
-                                "profileUsed": False,
                                 "deploymentSummary": {
                                     "checks": {
                                         "lifecycleIdempotency": {
@@ -229,7 +190,7 @@ class UnifiedEvaluationTest(unittest.TestCase):
         self.assertEqual(payload["artifactQuality"]["score"], 100.0)
         self.assertEqual(payload["e2eSuccess"]["score"], 100.0)
         self.assertEqual(
-            payload["e2eSuccess"]["profilelessKindRuns"],
+            payload["e2eSuccess"]["kindRuns"],
             1,
         )
         self.assertEqual(payload["safetyReliability"]["score"], 100.0)

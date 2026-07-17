@@ -31,7 +31,7 @@ def render_controller(ir: ControllerGenerationIR) -> str:
     state = ir.state_machine
     if not resources:
         raise SystemExit(
-            "profile-less controller generation requires at least one "
+            "controller generation requires at least one "
             "supported managed resource"
         )
 

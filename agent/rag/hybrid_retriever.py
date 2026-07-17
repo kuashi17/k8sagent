@@ -34,6 +34,8 @@ def hybrid_search(
     rerank_enabled: bool = True,
     allow_keyword_fallback: bool = True,
 ) -> dict[str, Any]:
+    # 의미가 비슷한 문서는 vector로, 정확한 Kubernetes 용어는 keyword로 찾은 뒤
+    # 두 점수를 합쳐 Local LLM에 전달할 소수의 근거 문서만 선택한다.
     started = time.time()
     vector_results: list[dict[str, Any]] = []
     fallback_used = False
@@ -46,6 +48,7 @@ def hybrid_search(
     except Exception as exc:  # noqa: BLE001
         if not allow_keyword_fallback:
             raise
+        # 임베딩 모델이나 index가 없어도 제품 흐름을 멈추지 않고 keyword 검색으로 축소한다.
         fallback_used = True
         fallback_reason = str(exc)
 

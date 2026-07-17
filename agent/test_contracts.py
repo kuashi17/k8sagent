@@ -24,7 +24,6 @@ class ContractTest(unittest.TestCase):
                 {
                     "requirementSummary": "Create an Operator.",
                     "missingInformation": [],
-                    "recommendedProfile": "",
                     "plannedSteps": [],
                     "toolCalls": [],
                     "risks": [],
@@ -38,7 +37,6 @@ class ContractTest(unittest.TestCase):
                 {
                     "requirementSummary": "Create an Operator.",
                     "missingInformation": [],
-                    "recommendedProfile": "",
                     "plannedSteps": [],
                     "toolCalls": [{"tool": "spec_generator"}],
                     "risks": [],

@@ -8,7 +8,7 @@ from agent.report_renderer import render_log_analysis_report, render_requirement
 
 
 class ReportRendererTest(unittest.TestCase):
-    def test_requirement_report_keeps_safety_recovery_and_kind_evidence(self) -> None:
+    def test_requirement_report_keeps_safety_and_recovery_evidence(self) -> None:
         report = render_requirement_report(
             {
                 "requirementSummary": {"kind": "AppConfig", "managedResources": ["ConfigMap"]},
@@ -25,7 +25,7 @@ class ReportRendererTest(unittest.TestCase):
                             "status": "failed",
                             "clusterName": "test",
                             "failedStep": "docker-info",
-                            "validator": {"name": "appconfig-configmap"},
+                            "validator": {"name": "managed-resources"},
                         },
                     }
                 ],
@@ -39,7 +39,6 @@ class ReportRendererTest(unittest.TestCase):
                     },
                 },
                 "safetyEvaluation": {"recoveryApprovalGate": {"status": "waiting-for-user-approval"}},
-                "selectedProfile": {},
                 "generatedFiles": {},
                 "warnings": [],
                 "errors": ["kind failed"],
@@ -47,8 +46,8 @@ class ReportRendererTest(unittest.TestCase):
             }
         )
 
-        self.assertIn("appconfig-configmap", report)
         self.assertIn("docker-kind-connection", report)
+        self.assertIn("`kind_deployment`: failed", report)
         self.assertIn("Waiting for user approval", report)
         self.assertIn("Safety Evaluation", report)
 

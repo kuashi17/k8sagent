@@ -30,24 +30,18 @@ class LLMOutputParseError(ValueError):
 def plan_requirement_with_llm(
     requirement_text: str,
     retrieved_docs: list[dict[str, Any]],
-    profile_summary: dict[str, Any],
     safety_mode: str,
     intent_analysis: dict[str, Any] | None = None,
-    profile_candidates: list[dict[str, Any]] | None = None,
     workflow_options: dict[str, Any] | None = None,
     config: LLMConfig | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     compact_docs = compact_retrieved_docs(retrieved_docs, excerpt_limit=320)
     compact_intent = compact_intent_analysis(intent_analysis or {})
-    compact_profile = compact_profile_summary(profile_summary)
-    compact_candidates = [compact_profile_summary(item) for item in (profile_candidates or [])[:2]]
     llm_input = {
         "mode": "requirement-planning",
         "requirementText": requirement_text,
         "retrievedDocs": compact_docs,
         "intentAnalysis": intent_analysis or {},
-        "profileSummary": profile_summary,
-        "profileCandidates": profile_candidates or [],
         "workflowOptions": workflow_options or {},
         "safetyMode": safety_mode,
     }
@@ -55,36 +49,25 @@ def plan_requirement_with_llm(
         requirement_text=requirement_text,
         retrieved_docs=compact_json(compact_docs),
         intent_analysis=compact_json(compact_intent),
-        profile_summary=compact_json(compact_profile),
-        profile_candidates=compact_json(compact_candidates),
         workflow_options=compact_json(workflow_options or {}),
-        tool_call_examples=requirement_tool_call_examples(
-            safety_mode,
-            bool((workflow_options or {}).get("kindDeploymentRequested")),
-        ),
-        kind_deployment_rule=(
-            "- kind_deployment was explicitly requested. Include it after validation."
-            if (workflow_options or {}).get("kindDeploymentRequested")
-            else "- kind_deployment is not available in this request. Do not include it."
-        ),
+        tool_call_examples=requirement_tool_call_examples(safety_mode),
         safety_mode=safety_mode,
     )
     planning_config = requirement_planning_config(config)
     raw = chat_json(SYSTEM_PROMPT, prompt, planning_config)
-    parsed = normalize_requirement_plan(parse_json_object(raw), profile_summary)
+    parsed = normalize_requirement_plan(parse_json_object(raw))
     errors = requirement_plan_validation_errors(parsed)
     if not errors:
         return parsed, llm_input, raw
 
     repair_prompt = REQUIREMENT_PLAN_REPAIR_PROMPT.format(
-        optional_kind_tool_name=", kind_deployment" if (workflow_options or {}).get("kindDeploymentRequested") else "",
         safety_mode=safety_mode,
         workflow_options=compact_json(workflow_options or {}),
         validation_errors="; ".join(errors),
         candidate=raw[:6000],
     )
     repaired_raw = chat_json(SYSTEM_PROMPT, repair_prompt, planning_config)
-    repaired = normalize_requirement_plan(parse_json_object(repaired_raw), profile_summary)
+    repaired = normalize_requirement_plan(parse_json_object(repaired_raw))
     llm_input["responseRepair"] = {
         "attempted": True,
         "validationErrors": errors,
@@ -231,7 +214,6 @@ def parse_json_object(raw: str) -> dict[str, Any]:
 
 def normalize_requirement_plan(
     data: dict[str, Any],
-    profile_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized = dict(data)
     aliases = {
@@ -240,7 +222,6 @@ def normalize_requirement_plan(
         "missing_information": "missingInformation",
         "steps": "plannedSteps",
         "next_actions": "nextActions",
-        "profile": "recommendedProfile",
         "summary": "requirementSummary",
     }
     for source, target in aliases.items():
@@ -265,8 +246,6 @@ def normalize_requirement_plan(
     for key in ("missingInformation", "plannedSteps", "risks", "nextActions"):
         if key not in normalized or normalized[key] is None:
             normalized[key] = []
-    if not isinstance(normalized.get("recommendedProfile"), str):
-        normalized["recommendedProfile"] = str((profile_summary or {}).get("path") or "")
     return normalized
 
 
@@ -274,7 +253,6 @@ def requirement_plan_validation_errors(data: dict[str, Any]) -> list[str]:
     schema = {
         "requirementSummary": str,
         "missingInformation": list,
-        "recommendedProfile": str,
         "plannedSteps": list,
         "toolCalls": list,
         "risks": list,
@@ -321,16 +299,7 @@ def compact_intent_analysis(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def compact_profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "path": profile.get("path", ""),
-        "name": profile.get("name", ""),
-        "managedResources": profile.get("managedResources") or [],
-        "selectionMode": profile.get("selectionMode", ""),
-    }
-
-
-def requirement_tool_call_examples(safety_mode: str, include_kind: bool) -> str:
+def requirement_tool_call_examples(safety_mode: str) -> str:
     calls = [
         {"tool": "spec_generator", "mode": "generate", "reason": "Generate the Operator spec."},
         {
@@ -351,14 +320,6 @@ def requirement_tool_call_examples(safety_mode: str, include_kind: bool) -> str:
                 {"tool": "artifact_patcher", "mode": "execute", "reason": "Apply requirement fields and controller logic."},
                 {"tool": "validation", "mode": "execute", "reason": "Run generate, manifests, and tests."},
             ]
-        )
-    if include_kind:
-        calls.append(
-            {
-                "tool": "kind_deployment",
-                "mode": "execute" if safety_mode == "execute" else "dry-run",
-                "reason": "Deploy to kind after validation.",
-            }
         )
     return ",\n    ".join(compact_json(item) for item in calls)
 
@@ -409,7 +370,6 @@ def compact_execution_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "clean": summary.get("clean"),
         "expected": summary.get("expected") or {},
         "jobSpecValidation": summary.get("jobSpecValidation") or {},
-        "profileConfig": summary.get("profileConfig") or {},
         "steps": steps[:80],
     }
 

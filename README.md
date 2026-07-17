@@ -75,7 +75,7 @@ flowchart TD
 | 사용 단계 | 모델의 역할 |
 | --- | --- |
 | 요구사항 계획 | 정규화된 요구사항과 RAG 검색 결과를 바탕으로 누락 정보, 위험 요소와 Tool 실행 순서를 구성 |
-| 결과 평가 | `run-level standard/full`에서 실제 Tool 결과를 읽고 성공 여부와 사용자 설명을 정리 |
+| 결과 평가 | `run-level standard`에서 실제 Tool 결과를 읽고 성공 여부와 사용자 설명을 정리 |
 | 실패 분석과 복구 계획 | 구조화된 오류 규칙만으로 원인을 확정할 수 없을 때 실제 로그와 검색 근거를 바탕으로 다음 조치를 제안 |
 | 선택적 RAG 재정렬 | 여러 검색 문서 중 요구사항이나 오류와 관련성이 높은 문서를 우선 배치 |
 
@@ -91,9 +91,9 @@ k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 �
 
 | 수준 | 현재 리소스 |
 | --- | --- |
-| 검증 충분 `stable` | ConfigMap, Secret, CronJob, Deployment, StatefulSet, Service, Namespace, DaemonSet, Job |
+| 검증 충분 `stable` | ConfigMap, Secret, CronJob, Deployment, StatefulSet, Service, Namespace, DaemonSet, Job, NetworkPolicy |
 | 일부 검증 `beta` | PersistentVolumeClaim, ServiceAccount, Role, ClusterRole |
-| 검증 근거 부족 `experimental` | NetworkPolicy, HorizontalPodAutoscaler, Pod |
+| 검증 근거 부족 `experimental` | HorizontalPodAutoscaler, Pod |
 
 처음 보는 Custom Resource 이름이라도 이미 검증된 Deployment 관리 패턴을 사용하면 동일한 근거를 적용할 수 있습니다. 새로운 Kubernetes 리소스는 capability catalog와 Controller IR을 통해 추가할 수 있으며, 검증이 부족한 패턴은 다른 리소스로 임의 대체하지 않고 `experimental` 또는 미지원 상태로 구분합니다.
 
@@ -203,7 +203,7 @@ CustomerPortal이 삭제되면 Deployment도 함께 삭제해야 합니다.
 계획만 확인합니다.
 
 ```bash
-python3 agent/langchain_agent.py \
+python3 agent/cli.py \
   --requirement requirements/web-service.txt \
   --mode dry-run \
   --run-level fast
@@ -212,7 +212,7 @@ python3 agent/langchain_agent.py \
 계획된 파일 생성과 make 검증을 실행합니다.
 
 ```bash
-python3 agent/langchain_agent.py \
+python3 agent/cli.py \
   --requirement requirements/web-service.txt \
   --mode execute \
   --execute \
@@ -248,7 +248,7 @@ python3 scripts/run-regression-tests.py \
 
 2026-07-17 로컬 Quick 기준:
 
-- Unit test: 306개 통과, 조건부 제외 1개, 실패 0개
+- Unit test: 299개 통과, 실패 0개
 - 요구사항 의미 일관성: 29/29 시나리오 통과
 - RAG 검색 품질 기준 통과
 - Tool 실행 안전성과 오류 처리 정책 통과
@@ -266,7 +266,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 | `agent/llm/` | Ollama 호환 Local LLM client와 planner |
 | `agent/rag/` | Markdown 로딩, keyword/vector 검색과 reranking |
 | `agent/tools/` | 스펙, scaffold, IR, Controller, RBAC, kind 검증 Tool |
-| `config/` | 리소스 capability, 검증 수준, legacy 정책 |
+| `config/` | Kubernetes 리소스 capability와 검증 수준 |
 | `knowledge-base/` | RAG가 검색하는 Kubebuilder와 오류 대응 문서 |
 | `requirements/` | 회귀 검증에 사용하는 자연어 요구사항 fixture |
 | `evaluation/` | RAG, 일관성, compile, kind와 통합 결과 검증 |
@@ -276,7 +276,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 주요 실행 진입점:
 
 - `web/app.py`: Web UI
-- `agent/langchain_agent.py`: Agent CLI
+- `agent/cli.py`: Agent CLI
 - `agent/requirement_orchestrator.py`: 계획부터 최종 결과까지의 중심 흐름
 - `agent/execution_engine.py`: 검증된 Tool 순차 실행
 - `agent/tools/controller_ir_builder.py`: Operator 스펙을 Controller IR로 변환

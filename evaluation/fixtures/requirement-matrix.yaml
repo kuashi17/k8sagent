@@ -1,3 +1,4 @@
+# 자연어 요구사항 계획을 비교하는 고정 입력 목록입니다.
 requirements:
   - requirements/redis-cache.txt
   - requirements/secret-sync.txt

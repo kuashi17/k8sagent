@@ -46,22 +46,19 @@ class RequirementPlanStabilityTest(unittest.TestCase):
             {
                 "requirementSummary": "Create a WebService Operator.",
                 "toolCalls": [{"tool": "spec_generator", "mode": "generate", "reason": "Generate spec."}],
-            },
-            {"path": ""},
+            }
         )
 
         self.assertEqual(output["missingInformation"], [])
         self.assertEqual(output["plannedSteps"], [])
         self.assertEqual(output["risks"], [])
         self.assertEqual(output["nextActions"], [])
-        self.assertEqual(output["recommendedProfile"], "")
 
     def test_missing_tool_calls_triggers_one_schema_repair(self) -> None:
         incomplete = json.dumps(
             {
                 "requirementSummary": "Create a WebService Operator.",
                 "missingInformation": [],
-                "recommendedProfile": "",
                 "plannedSteps": [],
                 "risks": [],
                 "nextActions": [],
@@ -72,7 +69,6 @@ class RequirementPlanStabilityTest(unittest.TestCase):
                 "requirementSummary": "Create a WebService Operator.",
                 "toolCalls": [{"tool": "spec_generator", "mode": "generate", "reason": "Generate spec."}],
                 "missingInformation": [],
-                "recommendedProfile": "",
                 "plannedSteps": ["Generate the spec."],
                 "risks": [],
                 "nextActions": [],
@@ -83,7 +79,6 @@ class RequirementPlanStabilityTest(unittest.TestCase):
             output, llm_input, raw = plan_requirement_with_llm(
                 "Create a WebService Operator.",
                 [],
-                {},
                 "dry-run",
                 config=LLMConfig(max_tokens=700),
             )

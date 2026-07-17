@@ -5,7 +5,7 @@ from __future__ import annotations
 
 SYSTEM_PROMPT = """\
 You plan safe Kubebuilder Operator workflows.
-Use the requirement as the source of truth; profiles and retrieved documents are hints.
+Use the requirement as the source of truth; retrieved documents are supporting references.
 Never invent tools or shell commands. Keep mutating tools in dry-run unless execute is allowed.
 Return one compact JSON object only, with no Markdown.
 """
@@ -20,7 +20,6 @@ Required shape and key order:
     {tool_call_examples}
   ],
   "missingInformation": [],
-  "recommendedProfile": "...",
   "plannedSteps": [],
   "risks": [],
   "nextActions": []
@@ -38,12 +37,6 @@ References:
 Intent:
 {intent_analysis}
 
-Profile hint:
-{profile_summary}
-
-Profile candidates:
-{profile_candidates}
-
 Workflow:
 {workflow_options}
 
@@ -54,7 +47,6 @@ Rules:
 - dry-run: spec_generator, capability_drafter, command_planner, scaffold_runner.
 - execute: also artifact_patcher and validation.
 - validation means make generate, make manifests, make test.
-{kind_deployment_rule}
 - Never copy example fields absent from the requirement.
 - Missing important data keeps mutating steps dry-run.
 """
@@ -66,12 +58,11 @@ Required keys and types:
 - requirementSummary: string
 - toolCalls: array of objects with non-empty tool, mode, reason
 - missingInformation: array
-- recommendedProfile: string
 - plannedSteps: array
 - risks: array
 - nextActions: array
 
-Allowed tools: spec_generator, capability_drafter, command_planner, scaffold_runner, artifact_patcher, validation{optional_kind_tool_name}
+Allowed tools: spec_generator, capability_drafter, command_planner, scaffold_runner, artifact_patcher, validation
 Safety mode: {safety_mode}
 Workflow: {workflow_options}
 Validation errors: {validation_errors}

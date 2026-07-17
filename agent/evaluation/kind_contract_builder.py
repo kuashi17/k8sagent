@@ -104,7 +104,9 @@ def build_validation_contract(
     sample_spec = sample.get("spec") or {}
     managed = []
     observed = []
-    setup = []
+    # 관리 리소스가 기존 PVC처럼 외부 선행 리소스를 참조하면 kind 검증에서만
+    # 최소 fixture를 준비한다. 생성되는 Controller의 소유권이나 동작은 바꾸지 않는다.
+    setup = dependent_setup_resources(ir, sample_spec)
     status_projections = []
     update_spec: dict[str, Any] = {}
     assertions = []
@@ -338,6 +340,38 @@ def observed_setup_resource(
     return {}
 
 
+def dependent_setup_resources(
+    ir: ControllerGenerationIR,
+    sample_spec: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Create lifecycle fixtures for external dependencies referenced by spec."""
+    if any(
+        resource.kind == "PersistentVolumeClaim"
+        for resource in ir.renderable_resources()
+    ):
+        return []
+    for resource in ir.renderable_resources():
+        for mapping in resource.field_mappings:
+            if "persistentVolumeClaim.claimName" not in mapping.target_path:
+                continue
+            field = mapping.source_path.removeprefix("spec.")
+            claim_name = sample_spec.get(field)
+            if not isinstance(claim_name, str) or not claim_name.strip():
+                continue
+            return [
+                {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "metadata": {"name": claim_name},
+                    "spec": {
+                        "accessModes": ["ReadWriteOnce"],
+                        "resources": {"requests": {"storage": "1Mi"}},
+                    },
+                }
+            ]
+    return []
+
+
 def lifecycle_update(
     resource: ManagedResourceSpec,
     sample_spec: dict[str, Any],
@@ -495,7 +529,7 @@ def update_candidate(
             updated = f"{int(match.group(1)) + 1}{match.group(2)}"
             return field, updated, updated
     if mapping.transform == "env-map" and isinstance(current, dict):
-        updated = {**current, "PROFILELESS_E2E": "updated"}
+        updated = {**current, "K8SAGENT_E2E": "updated"}
         expected = [
             {"name": key, "value": str(updated[key])}
             for key in sorted(updated)
@@ -517,7 +551,7 @@ def update_candidate(
         current,
         dict,
     ):
-        updated = {**current, "profileless-e2e": "updated"}
+        updated = {**current, "k8sagent-e2e": "updated"}
         return (
             field,
             updated,
@@ -544,7 +578,7 @@ def assertion_path(mapping: FieldMapping) -> str:
     if mapping.assertion_path:
         return mapping.assertion_path
     if mapping.target_path == "metadata.labels":
-        return "metadata.labels.profileless-e2e"
+        return "metadata.labels.k8sagent-e2e"
     return mapping.target_path
 
 

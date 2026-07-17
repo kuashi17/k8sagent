@@ -1,22 +1,59 @@
 version: 1
-evidenceRun: 28321990364
-lastValidatedAt: '2026-06-28T21:24:24+09:00'
-evidenceSource: full-ci-runtime-evidence
+evidenceRun:
+lastValidatedAt: ''
+evidenceSource: capability-catalog
 resourceEvidence:
+  ClusterRole:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
   ConfigMap:
-    evidenceRun:
-    lastValidatedAt: '2026-07-03T15:38:50+09:00'
-    source: web-profileless-kind
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  CronJob:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  DaemonSet:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  Deployment:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  Job:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  Namespace:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  NetworkPolicy:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  PersistentVolumeClaim:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  Role:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  Secret:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  Service:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  ServiceAccount:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
+  StatefulSet:
+    lastValidatedAt: '2026-07-17T14:38:02+09:00'
+    source: kind-matrix
 limitations:
   PersistentVolumeClaim:
     - Safe mutable drift evidence is not available.
     - storageClassName and access modes are immutable; changing them requires an explicit recreate or retain decision.
-  NetworkPolicy: [No profileless kind evidence is recorded.]
   ServiceAccount: [Drift recovery evidence is shared at scenario level.]
   Role: [Drift recovery evidence is shared at scenario level.]
   ClusterRole: [Safe mutable drift evidence is not available.]
-  HorizontalPodAutoscaler: [No profileless kind evidence is recorded.]
-  Pod: [No profileless kind evidence is recorded.]
+  HorizontalPodAutoscaler: [No kind lifecycle evidence is recorded.]
+  Pod: [No kind lifecycle evidence is recorded.]
 levels:
   ConfigMap: stable
   Secret: stable
@@ -27,7 +64,7 @@ levels:
   Service: stable
   Namespace: stable
   DaemonSet: stable
-  NetworkPolicy: experimental
+  NetworkPolicy: stable
   ServiceAccount: beta
   Role: beta
   ClusterRole: beta

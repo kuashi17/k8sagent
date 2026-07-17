@@ -13,10 +13,8 @@ class WebModel(BaseModel):
 
 class RequirementRunRequest(WebModel):
     requirement_text: str = Field(min_length=10)
-    profile: str = ""
     mode: Literal["dry-run", "execute"] = "dry-run"
     run_level: Literal["fast", "standard"] = "fast"
-    kind_deploy: bool = False
     resume_existing: bool = False
     confirm_execute: bool = False
     capability_proposal: str = ""
@@ -65,10 +63,8 @@ class RequirementRunRequest(WebModel):
                 "requirement_text": str(
                     form.get("requirement_text") or ""
                 ).strip(),
-                "profile": str(form.get("profile") or "").strip(),
                 "mode": str(form.get("mode") or "dry-run"),
                 "run_level": str(form.get("run_level") or "fast"),
-                "kind_deploy": checkbox(form.get("kind_deploy")),
                 "resume_existing": checkbox(
                     form.get("resume_existing")
                 ),

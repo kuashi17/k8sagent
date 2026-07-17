@@ -54,9 +54,7 @@ def build_ir(
             or [{"name": "phase", "type": "string"}],
             "controller": controller,
             "rbac": {"resources": []},
-        },
-        {},
-        None,
+        }
     )
     return build_controller_ir(model)
 
@@ -247,7 +245,7 @@ class KindContractBuilderTest(unittest.TestCase):
         self.assertEqual(contract.updateMode, "in-place")
         self.assertEqual(
             contract.updateAssertions[0].path,
-            "metadata.labels.profileless-e2e",
+            "metadata.labels.k8sagent-e2e",
         )
 
     def test_immutable_only_update_uses_recreate_mode(self) -> None:
@@ -336,15 +334,15 @@ class KindContractBuilderTest(unittest.TestCase):
             {
                 "env": {
                     "MODE": "test",
-                    "PROFILELESS_E2E": "updated",
+                    "K8SAGENT_E2E": "updated",
                 }
             },
         )
         self.assertEqual(
             contract.updateAssertions[0].equals,
             [
+                {"name": "K8SAGENT_E2E", "value": "updated"},
                 {"name": "MODE", "value": "test"},
-                {"name": "PROFILELESS_E2E", "value": "updated"},
             ],
         )
         initial = {
@@ -358,6 +356,42 @@ class KindContractBuilderTest(unittest.TestCase):
         self.assertEqual(
             contract.driftAssertions[0].path,
             "spec.template.spec.containers[0].image",
+        )
+
+    def test_existing_pvc_reference_adds_kind_setup_fixture(self) -> None:
+        contract = build_validation_contract(
+            build_ir(
+                "Deployment",
+                [
+                    {"name": "image", "type": "string"},
+                    {"name": "pvcName", "type": "string"},
+                    {"name": "mountPath", "type": "string"},
+                ],
+            ),
+            {
+                "metadata": {"name": "workload"},
+                "spec": {
+                    "image": "nginx:latest",
+                    "pvcName": "workload-data",
+                    "mountPath": "/data",
+                },
+            },
+            "genericpolicies",
+            "policy.sample.io",
+        )
+
+        self.assertEqual(len(contract.setupResources), 1)
+        self.assertEqual(
+            contract.setupResources[0],
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {"name": "workload-data"},
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": "1Mi"}},
+                },
+            },
         )
 
 

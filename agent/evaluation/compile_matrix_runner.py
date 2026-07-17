@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile and evaluate profile-less Operators in isolated workspaces."""
+"""Compile generated Operators in isolated workspaces."""
 
 from __future__ import annotations
 
@@ -23,14 +23,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.evaluation.controller_quality import evaluate_controller_quality
-from agent.evaluation.profileless_requirement_runner import load_matrix
+from agent.evaluation.requirement_matrix_runner import load_matrix
 
 
 DEFAULT_MATRIX = (
     REPO_ROOT
     / "evaluation"
     / "fixtures"
-    / "profileless-compile-matrix.yaml"
+    / "compile-matrix.yaml"
 )
 
 
@@ -67,7 +67,7 @@ def main() -> int:
     work_root = (
         resolve(args.work_root)
         if args.work_root
-        else Path(tempfile.mkdtemp(prefix="k8sagent-profileless-"))
+        else Path(tempfile.mkdtemp(prefix="k8sagent-compile-matrix-"))
     )
     work_root.mkdir(parents=True, exist_ok=True)
     try:
@@ -112,8 +112,8 @@ def main() -> int:
         ),
         "requirements": results,
     }
-    write_json(output_dir / "profileless-compile-results.json", summary)
-    (output_dir / "profileless-compile-report.md").write_text(
+    write_json(output_dir / "compile-matrix-results.json", summary)
+    (output_dir / "compile-matrix-report.md").write_text(
         render_report(summary),
         encoding="utf-8",
     )
@@ -306,7 +306,7 @@ def failed_case(
 
 def render_report(summary: dict[str, Any]) -> str:
     lines = [
-        "# Profile-less Compile Report",
+        "# Operator Compile Matrix Report",
         "",
         f"- Status: `{summary['status']}`",
         f"- Created at: `{summary['createdAt']}`",

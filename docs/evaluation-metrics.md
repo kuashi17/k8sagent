@@ -27,12 +27,12 @@ k8sagent는 “AI가 코드를 만들었다”는 설명만으로 결과를 성�
 
 | 영역 | 확인하는 내용 | 주요 근거 |
 | --- | --- | --- |
-| 요구사항 이해 | API, 필드, 관리·관찰 리소스, 부정 표현과 삭제 정책을 기대한 구조로 추출했는가 | profileless requirement 결과, response consistency matrix |
+| 요구사항 이해 | API, 필드, 관리·관찰 리소스, 부정 표현과 삭제 정책을 기대한 구조로 추출했는가 | requirement matrix, response consistency matrix |
 | RAG 검색 품질 | 관련 guide와 example을 상위 검색 결과에서 찾는가 | Hit@3, Recall@3, MRR |
 | Controller 산출물 품질 | CRD, RBAC, Reconcile, status, 멱등성과 삭제 동작이 스펙과 일치하는가 | 생성 프로젝트와 Controller 품질 검사 |
 | 빌드·테스트 검증 | Python 단위 테스트와 생성된 Operator의 검증 명령이 성공하는가 | test exit code, `make generate`, `make manifests`, `make test` |
 | 안전성·신뢰성 | 허용되지 않은 Tool·경로·명령을 차단하고 오류를 근거에 맞게 분류하는가 | reliability policy tests |
-| Kubernetes lifecycle | 생성, 재적용, 변경, drift 복구, 삭제·유지와 외부 watch가 실제 kind에서 동작하는가 | profileless kind evidence |
+| Kubernetes lifecycle | 생성, 재적용, 변경, drift 복구, 삭제·유지와 외부 watch가 실제 kind에서 동작하는가 | kind matrix evidence |
 | 실행시간 | 선택한 suite가 정해진 시간 예산 안에 완료되는가 | check별 elapsed time과 전체 소요 시간 |
 
 ## 영역별 계산 방법
@@ -189,8 +189,8 @@ python3 scripts/run-regression-tests.py \
 | `rag-quality.json` | Quick RAG gate의 질의별 결과와 지표 |
 | `response-consistency.json` | 요구사항 의미 계약의 정확성과 반복 일관성 |
 | `reliability/reliability-test-results.json` | Tool·경로·실행·복구 안전 정책 결과 |
-| `profileless-compile/profileless-compile-results.json` | 생성 Operator별 compile·Controller 품질 결과 |
-| `profileless-kind/profileless-kind-results.json` | 실제 Kubernetes lifecycle evidence |
+| `compile-matrix/compile-matrix-results.json` | 생성 Operator별 compile·Controller 품질 결과 |
+| `kind-matrix/kind-matrix-results.json` | 실제 Kubernetes lifecycle evidence |
 | `capability-matrix.json` | compile과 kind 근거를 합친 리소스별 검증 수준 |
 
 결과 파일은 `evaluation/results/` 아래에 생성되며 기본적으로 Git에 누적하지 않습니다.

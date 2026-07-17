@@ -1,15 +1,15 @@
-"""Tests for isolated profile-less compile orchestration."""
+"""Tests for isolated Operator compile orchestration."""
 
 from __future__ import annotations
 
 import unittest
 from unittest.mock import patch
 
-from agent.evaluation.profileless_compile_runner import run_step
+from agent.evaluation.compile_matrix_runner import run_step
 
 
-class ProfilelessCompileRunnerTest(unittest.TestCase):
-    @patch("agent.evaluation.profileless_compile_runner.subprocess.run")
+class CompileMatrixRunnerTest(unittest.TestCase):
+    @patch("agent.evaluation.compile_matrix_runner.subprocess.run")
     def test_run_step_adds_stable_go_environment(self, run) -> None:
         run.return_value.returncode = 0
         run.return_value.stdout = "ok"

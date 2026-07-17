@@ -136,13 +136,13 @@ class ErrorTaxonomyTest(unittest.TestCase):
         self.assertEqual(result["errorCode"], "")
         self.assertNotIn("errorDetails", result)
 
-    def test_native_tool_error_wins_over_legacy_text_inference(self) -> None:
+    def test_native_tool_error_wins_over_fallback_text_inference(self) -> None:
         result = normalize_tool_result(
             {
                 "exitCode": 2,
                 "status": "failed",
                 "stderr": (
-                    "forbidden legacy text\n"
+                    "forbidden fallback text\n"
                     'TOOL_ERROR_JSON={"errorCode":"REQUIRED_INPUT_MISSING",'
                     '"category":"contract","message":"kind is missing",'
                     '"stage":"spec-generation","resource":"",'

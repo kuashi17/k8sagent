@@ -388,7 +388,6 @@
     </div>
     <form method="post" action="/run-requirement" class="execute-form">
       <textarea name="requirement_text" hidden>{{ requirement_text }}</textarea>
-      <input type="hidden" name="profile" value="{{ selected_profile }}">
       <input type="hidden" name="mode" value="execute">
       <input type="hidden" name="run_level" value="{{ selected_run_level }}">
       <input type="hidden" name="confirm_execute" value="on">
@@ -411,7 +410,6 @@
         <span>위 관리 리소스 지원 계약을 별도로 확인하고 승인합니다.</span>
       </label>
       {% endif %}
-      {% if selected_kind_deploy %}<input type="hidden" name="kind_deploy" value="on">{% endif %}
       {% if selected_resume_existing %}<input type="hidden" name="resume_existing" value="on">{% endif %}
       <button class="primary-button" type="submit">{% if result_view.capability_proposal %}계약 확인 후 코드 생성 및 검증{% elif result_view.has_experimental_capability %}검토 후 {{ result_view.experimental_resources|join(", ") }} 코드 생성 및 검증{% else %}Operator 코드 생성 및 검증{% endif %}</button>
     </form>
@@ -449,8 +447,7 @@
     <ul>
       <li>실행 단계: {{ "Operator 코드 생성 및 검증" if job.metadata.mode == "execute" else "안전한 계획 생성" }}</li>
       <li>평가 방식: {{ job.metadata.runLevel or "fast" }}</li>
-      <li>참고 Profile: {{ job.metadata.profile or "사용 안 함 — 요구사항 기준 자동 생성" }}</li>
-      <li>초기 Kubernetes 배포: {{ "포함" if job.metadata.kindDeploy else "포함하지 않음 — 완료 후 별도 검증 가능" }}</li>
+      <li>Kubernetes 검증: 코드 생성 완료 후 별도 승인으로 실행</li>
     </ul>
     {% endif %}
     {% if developer.agent_report %}<h3>Agent Report</h3><pre>{{ developer.agent_report }}</pre>{% endif %}

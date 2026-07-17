@@ -25,7 +25,7 @@ from agent.orchestration_common import (
 from agent.report_writer import write_agent_artifacts
 from agent.retrieval_context import build_log_rag_query, perform_retrieval
 from agent.tool_validator import validate_llm_output_schema
-from agent.tools import langchain_wrappers as tools
+from agent.tools import tool_runner as tools
 from agent.tools.log_analyzer import analyze_summary
 
 

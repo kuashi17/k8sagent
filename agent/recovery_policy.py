@@ -356,7 +356,9 @@ def generic_validated_recovery_calls(
                 "requiresApproval": True,
                 "evidenceRefs": evidence_refs,
                 "expectedEffect": "PVC reference is valid for the target environment.",
-                "verificationStep": "Run e2e manually after approval.",
+                "verificationStep": (
+                    "Run kind lifecycle validation manually after approval."
+                ),
             }
         ]
     if classification == "docker-kind-connection":

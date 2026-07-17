@@ -6,8 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from agent.tools.capability_drafter import load_proposal, proposal_digest
 from web.schemas import LogAnalysisRequest, RequirementRunRequest
 
@@ -17,11 +15,9 @@ class WorkflowService:
         self,
         repo_root: Path,
         log_root: Path,
-        profile_dir: Path,
     ) -> None:
         self.repo_root = repo_root
         self.log_root = log_root
-        self.profile_dir = profile_dir
 
     def submit_requirement(
         self,
@@ -30,7 +26,6 @@ class WorkflowService:
     ) -> dict[str, Any]:
         # Web 요청을 직접 처리하지 않고 Agent CLI 명령으로 변환한다.
         # 이렇게 해야 Web과 CLI가 같은 안전 정책, 같은 로그 형식, 같은 Tool 계약을 공유한다.
-        profile = self.validate_profile(request.profile)
         if request.approval_parent_job_id:
             parent = jobs.get(request.approval_parent_job_id)
             parent_metadata = (parent or {}).get("metadata") or {}
@@ -61,17 +56,6 @@ class WorkflowService:
                 )
         if request.capability_proposal:
             self.validate_capability_approval(request, jobs)
-        if request.kind_deploy and not profile:
-            raise ValueError(
-                "kind 배포는 배포 설정이 있는 Profile을 먼저 선택해야 합니다."
-            )
-        if request.kind_deploy:
-            data = yaml.safe_load(profile.read_text(encoding="utf-8")) or {}
-            if not (data.get("kindDeployment") or {}).get("enabled"):
-                raise ValueError(
-                    "선택한 Profile은 kind 배포를 지원하지 않습니다."
-                )
-
         run_dir = self.make_run_dir("requirement")
         requirement_path = run_dir / "requirement.txt"
         requirement_path.write_text(
@@ -87,10 +71,8 @@ class WorkflowService:
             command,
             metadata={
                 "requirementPath": self.relative(requirement_path),
-                "profile": request.profile,
                 "mode": request.mode,
                 "runLevel": request.run_level,
-                "kindDeploy": request.kind_deploy,
                 "resumeExisting": request.resume_existing,
                 "approvalParentJobId": request.approval_parent_job_id,
                 "experimentalConfirmed": request.confirm_experimental,
@@ -111,7 +93,7 @@ class WorkflowService:
             "log-analysis",
             [
                 "python3",
-                "agent/langchain_agent.py",
+                "agent/cli.py",
                 "--analyze-log",
                 self.relative(source),
             ],
@@ -154,7 +136,7 @@ class WorkflowService:
             "kind-validation",
             [
                 "python3",
-                "agent/evaluation/profileless_kind_runner.py",
+                "agent/evaluation/kind_matrix_runner.py",
                 "--requirement",
                 self.relative(requirement),
             ],
@@ -171,7 +153,7 @@ class WorkflowService:
     ) -> list[str]:
         command = [
             "python3",
-            "agent/langchain_agent.py",
+            "agent/cli.py",
             "--requirement",
             self.relative(requirement_path),
             "--mode",
@@ -179,8 +161,6 @@ class WorkflowService:
             "--run-level",
             request.run_level,
         ]
-        if request.profile:
-            command.extend(["--profile", request.profile])
         if request.mode == "execute":
             command.append("--execute")
         if request.capability_proposal:
@@ -192,8 +172,6 @@ class WorkflowService:
                     request.capability_approval,
                 ]
             )
-        if request.kind_deploy:
-            command.append("--kind-deploy")
         if request.resume_existing:
             command.append("--resume-existing")
         return command
@@ -225,20 +203,6 @@ class WorkflowService:
             raise ValueError("Capability 제안 내용이 검토 후 변경되었습니다.")
         if proposal.status != "pending-approval" or proposal.approved:
             raise ValueError("대기 중인 capability 제안만 승인할 수 있습니다.")
-
-    def validate_profile(self, value: str) -> Path | None:
-        if not value:
-            return None
-        path = self.resolve_repo_path(value)
-        try:
-            path.relative_to(self.profile_dir.resolve())
-        except ValueError as exc:
-            raise ValueError(
-                "Profile은 저장소의 profiles 폴더에서만 선택할 수 있습니다."
-            ) from exc
-        if not path.is_file() or path.suffix not in {".yaml", ".yml"}:
-            raise ValueError("선택한 Profile 파일을 찾을 수 없습니다.")
-        return path
 
     def resolve_repo_path(self, value: str) -> Path:
         candidate = Path(value)

@@ -12,7 +12,6 @@ import yaml
 from agent.requirement_analyzer import (
     analyze_requirement_intent,
     infer_managed_resources,
-    select_profile_hint,
 )
 from agent.tools.spec_generator import (
     extract_k8s_resources,
@@ -28,23 +27,16 @@ RetrievalFunction = Callable[[str, int, str], dict[str, Any]]
 def build_requirement_context(
     requirement_path: Path,
     requirement_text: str,
-    profile_path: str | None,
-    profile: dict[str, Any],
     workspace: str,
     artifact_dir: str,
     retrieve: RetrievalFunction,
     rag_limit: int,
-    allow_profile_hints: bool = True,
 ) -> dict[str, Any]:
+    # 실행 판단에 필요한 값은 먼저 결정론적 파서로 정규화한다.
+    # 검색 문서는 판단을 보완하는 근거이며 API·필드·리소스를 덮어쓰지 않는다.
     retrieval_started = time.perf_counter()
     summary = summarize_requirement(requirement_text)
     intent = analyze_requirement_intent(requirement_text)
-    profile_hint = select_profile_hint(
-        requirement_text,
-        profile_path,
-        profile,
-        allow_auto_hint=allow_profile_hints,
-    )
     kind = summary.get("kind") or "operator"
     kind_slug = kind.lower()
     artifact_root = Path(artifact_dir)
@@ -53,7 +45,6 @@ def build_requirement_context(
         Path(workspace) != Path("workspace/generated-operators")
         or artifact_root != Path("generated")
     )
-    selected_profile = profile_hint["selectedProfile"]
     retrieval = retrieve(requirement_text, rag_limit, "requirement")
     retrieved = retrieval["selectedContext"]
     return {
@@ -63,17 +54,12 @@ def build_requirement_context(
         "missingInformation": missing_information(summary, requirement_text),
         "retrievedKnowledge": retrieved,
         "retrievalDetails": retrieval,
-        "selectedProfile": selected_profile,
-        "profileCandidates": profile_hint["profileCandidates"],
         "workspace": workspace,
         "isolatedOutputs": isolated_outputs,
         "targetProjectDir": target_project_dir(
             workspace,
             kind,
-            kind_slug,
-            selected_profile,
             str(operator_spec),
-            isolated_outputs,
         ),
         "generatedFiles": {
             "operatorSpec": str(operator_spec),
@@ -136,6 +122,7 @@ def summarize_requirement(text: str) -> dict[str, Any]:
 
 
 def missing_information(summary: dict[str, Any], text: str) -> list[str]:
+    # 필수 정보와 모순을 LLM 호출 전에 차단해 임의 보완과 불필요한 Tool 실행을 막는다.
     checks = {
         "kind": summary.get("kind"),
         "domain": summary.get("domain"),
@@ -241,15 +228,8 @@ def detect_requirement_conflicts(text: str) -> list[str]:
 def target_project_dir(
     workspace: str,
     kind: str,
-    kind_slug: str,
-    selected_profile: dict[str, Any],
     operator_spec: str,
-    isolated_outputs: bool = False,
 ) -> str:
-    capability = selected_profile.get("kindDeployment") or {}
-    profile_project = str(capability.get("project") or "")
-    if profile_project and not isolated_outputs:
-        return profile_project
     return str(
         Path(workspace)
         / infer_project_name(

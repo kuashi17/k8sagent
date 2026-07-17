@@ -12,7 +12,7 @@ from typing import MutableMapping
 DOCKER_DESKTOP_CLI = Path(
     "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
 )
-DEFAULT_DOCKER_INFO_TIMEOUT_SECONDS = 5.0
+DEFAULT_DOCKER_INFO_TIMEOUT_SECONDS = 12.0
 
 
 def configure_docker_cli(

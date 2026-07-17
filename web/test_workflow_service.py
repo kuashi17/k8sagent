@@ -37,12 +37,9 @@ class WorkflowServiceTest(unittest.TestCase):
     def test_execute_command_requires_contract_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            profiles = root / "profiles"
-            profiles.mkdir()
             service = WorkflowService(
                 root,
                 root / "logs" / "web",
-                profiles,
             )
             request = RequirementRunRequest(
                 requirement_text="Create a ConfigMap Operator.",
@@ -60,9 +57,7 @@ class WorkflowServiceTest(unittest.TestCase):
     def test_experimental_execute_requires_parent_review_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            profiles = root / "profiles"
-            profiles.mkdir()
-            service = WorkflowService(root, root / "logs", profiles)
+            service = WorkflowService(root, root / "logs")
             parent = {
                 "jobId": "plan-job",
                 "jobType": "requirement",
@@ -101,17 +96,15 @@ class WorkflowServiceTest(unittest.TestCase):
             submitted["metadata"]["experimentalConfirmed"]
         )
 
-    def test_completed_execute_job_can_start_profileless_kind(self) -> None:
+    def test_completed_execute_job_can_start_kind_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            profiles = root / "profiles"
-            profiles.mkdir()
             requirement = root / "requirement.txt"
             requirement.write_text(
                 "Create a ConfigBundle Operator.",
                 encoding="utf-8",
             )
-            service = WorkflowService(root, root / "logs", profiles)
+            service = WorkflowService(root, root / "logs")
             jobs = self.KindJobs(
                 {
                     "jobId": "source-job",
@@ -128,31 +121,14 @@ class WorkflowServiceTest(unittest.TestCase):
 
         self.assertEqual(result["jobType"], "kind-validation")
         self.assertIn(
-            "agent/evaluation/profileless_kind_runner.py",
+            "agent/evaluation/kind_matrix_runner.py",
             result["command"],
         )
         self.assertEqual(result["metadata"]["sourceJobId"], "source-job")
 
-    def test_profile_path_cannot_escape_profile_directory(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            profiles = root / "profiles"
-            profiles.mkdir()
-            outside = root / "outside.yaml"
-            outside.write_text("profileName: outside", encoding="utf-8")
-            service = WorkflowService(
-                root,
-                root / "logs" / "web",
-                profiles,
-            )
-
-            with self.assertRaisesRegex(ValueError, "profiles"):
-                service.validate_profile("outside.yaml")
-
     def test_reviewed_capability_is_added_to_execute_command(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "profiles").mkdir()
             generated = root / "generated"
             generated.mkdir()
             proposal = ProposalModel(
@@ -180,7 +156,6 @@ class WorkflowServiceTest(unittest.TestCase):
             service = WorkflowService(
                 root,
                 root / "logs" / "web",
-                root / "profiles",
             )
             request = RequirementRunRequest(
                 requirement_text="Create a QuantumQueue Operator.",
@@ -203,7 +178,6 @@ class WorkflowServiceTest(unittest.TestCase):
     def test_tampered_capability_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "profiles").mkdir()
             generated = root / "generated"
             generated.mkdir()
             path = generated / "proposal.yaml"
@@ -229,7 +203,6 @@ class WorkflowServiceTest(unittest.TestCase):
             service = WorkflowService(
                 root,
                 root / "logs" / "web",
-                root / "profiles",
             )
             request = RequirementRunRequest(
                 requirement_text="Create a QuantumQueue Operator.",
@@ -246,7 +219,6 @@ class WorkflowServiceTest(unittest.TestCase):
     def test_parent_job_capability_artifact_can_be_approved(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "profiles").mkdir()
             job_id = "20260701-parent"
             artifacts = root / "logs" / "web" / "jobs" / job_id / "artifacts"
             artifacts.mkdir(parents=True)
@@ -275,7 +247,6 @@ class WorkflowServiceTest(unittest.TestCase):
             service = WorkflowService(
                 root,
                 root / "logs" / "web",
-                root / "profiles",
             )
             request = RequirementRunRequest(
                 requirement_text="Create a QuantumQueue Operator.",

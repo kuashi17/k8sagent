@@ -78,8 +78,7 @@ class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "agent").mkdir()
-            (root / "profiles").mkdir()
-            agent = root / "agent" / "langchain_agent.py"
+            agent = root / "agent" / "cli.py"
             agent.write_text(textwrap.dedent(FAKE_AGENT), encoding="utf-8")
             manager = JobManager(
                 root,
@@ -89,15 +88,12 @@ class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
             workflows = WorkflowService(
                 root,
                 root / "logs" / "web",
-                root / "profiles",
             )
             requirement = "정보가 부족한 Deployment Operator를 만들고 싶습니다."
 
             with patch("web.app.jobs", manager), patch(
                 "web.app.workflows", workflows
-            ), patch("web.app.REPO_ROOT", root), patch(
-                "web.app.PROFILE_DIR", root / "profiles"
-            ):
+            ), patch("web.app.REPO_ROOT", root):
                 async with AsyncClient(
                     transport=ASGITransport(app=app),
                     base_url="http://testserver",
@@ -122,8 +118,7 @@ class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "agent").mkdir()
-            (root / "profiles").mkdir()
-            agent = root / "agent" / "langchain_agent.py"
+            agent = root / "agent" / "cli.py"
             agent.write_text(textwrap.dedent(FAKE_AGENT), encoding="utf-8")
             manager = JobManager(
                 root,
@@ -133,7 +128,6 @@ class BeginnerJourneyTest(unittest.IsolatedAsyncioTestCase):
             workflows = WorkflowService(
                 root,
                 root / "logs" / "web",
-                root / "profiles",
             )
             requirement = (
                 "설정 데이터를 입력받아 ConfigMap을 관리하고 상태를 표시해 주세요."

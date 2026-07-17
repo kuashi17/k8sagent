@@ -304,7 +304,7 @@ class ResultPresenterTest(unittest.TestCase):
         self.assertEqual(result.error_severity, "error")
         self.assertTrue(result.error_retryable)
 
-    def test_legacy_english_actions_are_presented_in_korean(self) -> None:
+    def test_known_english_actions_are_presented_in_korean(self) -> None:
         result = present_run_result(
             {
                 "state": "succeeded",

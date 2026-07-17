@@ -67,9 +67,7 @@ def render_requirement_report(summary: dict[str, Any]) -> str:
     append_optional_calls(lines, "Rejected Tool Calls", summary.get("rejectedToolCalls") or [])
     append_optional_calls(lines, "Deferred Tool Calls", summary.get("deferredToolCalls") or [])
     lines.extend(["", "## Safety Evaluation", "", *format_safety_evaluation(summary.get("safetyEvaluation") or {})])
-    append_profile(lines, summary)
     append_tool_results(lines, summary.get("toolResults") or [])
-    append_kind_result(lines, summary.get("toolResults") or [])
     append_recovery(lines, summary.get("recovery") or {})
     append_final_evaluation(lines, summary.get("finalLLM") or {})
     generated = summary.get("generatedFiles") or {}
@@ -158,21 +156,6 @@ def render_log_analysis_report(summary: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def append_profile(lines: list[str], summary: dict[str, Any]) -> None:
-    profile = summary.get("selectedProfile") or {}
-    lines.extend(
-        [
-            "",
-            "## Profile Hint",
-            "",
-            f"- Path: `{profile.get('path') or 'none'}`",
-            f"- Name: `{profile.get('name') or 'none'}`",
-            f"- Selection mode: `{profile.get('selectionMode') or 'unknown'}`",
-            f"- Role: `hint-only`",
-        ]
-    )
-
-
 def append_tool_results(lines: list[str], results: list[dict[str, Any]]) -> None:
     lines.extend(["", "## Tool Execution Results", ""])
     if not results:
@@ -181,25 +164,6 @@ def append_tool_results(lines: list[str], results: list[dict[str, Any]]) -> None
     for result in results:
         lines.append(f"- `{result.get('tool')}`: {result.get('status')} exitCode={result.get('exitCode')}")
         lines.append(f"  - command: `{' '.join(result.get('command') or [])}`")
-
-
-def append_kind_result(lines: list[str], results: list[dict[str, Any]]) -> None:
-    deployments = [item.get("deploymentSummary") or {} for item in results if item.get("tool") == "kind_deployment"]
-    if not deployments:
-        return
-    deployment = deployments[-1]
-    lines.extend(
-        [
-            "",
-            "## Kind Deployment Result",
-            "",
-            f"- Status: `{deployment.get('status') or 'unknown'}`",
-            f"- Cluster: `{deployment.get('clusterName') or 'unknown'}`",
-            f"- Validator: `{(deployment.get('validator') or {}).get('name') or 'unknown'}`",
-            f"- Failed step: `{deployment.get('failedStep') or 'none'}`",
-            f"- Log directory: `{deployment.get('logDir') or 'unknown'}`",
-        ]
-    )
 
 
 def append_recovery(lines: list[str], recovery: dict[str, Any]) -> None:

@@ -11,12 +11,10 @@ from agent.summary_builder import build_requirement_summary
 class SummaryBuilderTest(unittest.TestCase):
     def test_final_llm_fallback_is_a_warning_not_an_error(self) -> None:
         args = argparse.Namespace(
-            profile="",
             mode="execute",
             run_level="standard",
             skip_final_llm_evaluation=False,
             execute=True,
-            kind_deploy=False,
             resume_existing=False,
         )
         summary = build_requirement_summary(
@@ -28,8 +26,6 @@ class SummaryBuilderTest(unittest.TestCase):
                 "missingInformation": [],
                 "retrievedKnowledge": [],
                 "retrievalDetails": {},
-                "selectedProfile": {},
-                "profileCandidates": [],
                 "generatedFiles": {
                     "operatorSpec": "generated/spec.yaml",
                     "commandPlan": "generated/plan.md",
@@ -73,12 +69,10 @@ class SummaryBuilderTest(unittest.TestCase):
 
     def test_failure_summary_keeps_recovery_and_removes_internal_wait_error(self) -> None:
         args = argparse.Namespace(
-            profile="",
             mode="execute",
             run_level="standard",
             skip_final_llm_evaluation=False,
             execute=True,
-            kind_deploy=True,
             resume_existing=True,
         )
         summary = build_requirement_summary(
@@ -90,8 +84,6 @@ class SummaryBuilderTest(unittest.TestCase):
                 "missingInformation": [],
                 "retrievedKnowledge": [],
                 "retrievalDetails": {},
-                "selectedProfile": {},
-                "profileCandidates": [],
                 "generatedFiles": {
                     "operatorSpec": "generated/spec.yaml",
                     "commandPlan": "generated/plan.md",

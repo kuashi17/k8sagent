@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command-line entry point for the Kubebuilder Agent orchestrators."""
+"""Command-line entry point for k8sagent workflows."""
 
 from __future__ import annotations
 
@@ -12,21 +12,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.log_analysis_orchestrator import run_log_analysis_agent  # noqa: E402
-from agent.recovery_policy import (  # noqa: E402,F401
-    deterministic_recovery_classification,
-    validate_recovery_plan,
-)
 from agent.requirement_orchestrator import run_requirement_agent  # noqa: E402
-from agent.tool_validator import (  # noqa: E402,F401
-    validate_llm_output_schema,
-    validate_planned_tool_calls,
-)
-from agent.tools import langchain_wrappers as tools  # noqa: E402,F401
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the LLM-based Kubebuilder Agent orchestrator."
+        description="Run the k8sagent planning and validation workflow."
     )
     parser.add_argument(
         "--requirement",
@@ -34,18 +25,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--log-dir",
-        help="Existing logs/scaffold, logs/patch, or logs/e2e directory to analyze.",
-    )
-    parser.add_argument("--analyze-log", help="Alias of --log-dir.")
-    parser.add_argument("--profile", help="Profile YAML path.")
-    parser.add_argument(
-        "--disable-profile-hints",
-        action="store_true",
         help=(
-            "Disable automatic profile selection and force generic "
-            "requirement-only planning."
+            "Existing logs/scaffold, logs/patch, or "
+            "logs/kind-deployment directory to analyze."
         ),
     )
+    parser.add_argument("--analyze-log", help="Alias of --log-dir.")
     parser.add_argument(
         "--planner",
         default="llm",
@@ -61,10 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--run-level",
         default="fast",
-        choices=["fast", "standard", "full"],
+        choices=["fast", "standard"],
         help=(
             "Execution depth. fast skips final LLM evaluation; standard adds "
-            "it; full is reserved for heavier checks."
+            "it. Compile and kind matrices are run through the regression "
+            "script's full suite."
         ),
     )
     parser.add_argument(
@@ -109,16 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reviewed proposalId required to approve that exact proposal.",
     )
     parser.add_argument(
-        "--kind-deploy",
-        action="store_true",
-        help="Include profile-backed kind deployment after validation.",
-    )
-    parser.add_argument(
         "--resume-existing",
         action="store_true",
         help=(
             "Skip scaffold creation for an existing target project and "
-            "continue patch, validation, and deployment."
+            "continue artifact patching and make validation."
         ),
     )
     return parser
@@ -130,10 +111,6 @@ def main() -> int:
     # 1) requirement 기반 Operator 생성/검증
     # 2) 기존 실행 로그 분석
     # 실제 orchestration은 전용 모듈로 위임해 진입점이 커지지 않도록 한다.
-    if args.profile and args.disable_profile_hints:
-        raise SystemExit(
-            "--profile and --disable-profile-hints cannot be used together."
-        )
     if args.analyze_log and not args.log_dir:
         args.log_dir = args.analyze_log
     if args.log_dir:

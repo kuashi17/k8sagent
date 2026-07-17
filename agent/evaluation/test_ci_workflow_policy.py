@@ -23,12 +23,12 @@ def workflow(name: str) -> dict:
 class CIWorkflowPolicyTest(unittest.TestCase):
     def test_full_compile_matrix_covers_every_kind_case(self) -> None:
         compile_matrix = yaml.safe_load(
-            (ROOT / "evaluation/fixtures/profileless-compile-matrix.yaml").read_text(
+            (ROOT / "evaluation/fixtures/compile-matrix.yaml").read_text(
                 encoding="utf-8"
             )
         )["requirements"]
         kind_matrix = yaml.safe_load(
-            (ROOT / "evaluation/fixtures/profileless-kind-matrix.yaml").read_text(
+            (ROOT / "evaluation/fixtures/kind-matrix.yaml").read_text(
                 encoding="utf-8"
             )
         )["requirements"]

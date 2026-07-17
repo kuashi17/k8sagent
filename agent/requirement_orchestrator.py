@@ -39,7 +39,6 @@ from agent.orchestration_common import (
     fallback_final_result,
     finalize_timings,
     llm_result,
-    load_profile,
     make_agent_log_dir,
     raw_from_exception,
     rule_based_final_result,
@@ -53,34 +52,24 @@ from agent.summary_builder import (
     collect_errors,
     collect_warnings,
 )
-from agent.tool_validator import (
-    normalize_tool_name,
-    validate_llm_output_schema,
-)
+from agent.tool_validator import validate_llm_output_schema
 
 
 def run_requirement_agent(args: argparse.Namespace) -> int:
     total_started = time.perf_counter()
     requirement_path = Path(args.requirement)
     requirement_text = requirement_path.read_text(encoding="utf-8")
-    profile = load_profile(Path(args.profile)) if args.profile else {}
     # 자연어 requirement를 Agent 내부 계약으로 정규화한다.
     # 여기서 API, spec/status, 관리 리소스, 누락 정보, RAG context가 모인다.
     # 이후 단계는 원문 자연어보다 이 context를 기준으로 동작한다.
     context = build_requirement_context(
         requirement_path,
         requirement_text,
-        args.profile,
-        profile,
         args.workspace,
         str(getattr(args, "artifact_dir", "generated") or "generated"),
         perform_retrieval,
         requirement_rag_limit(),
-        allow_profile_hints=not bool(
-            getattr(args, "disable_profile_hints", False)
-        ),
     )
-    context["kindDeploymentRequested"] = bool(args.kind_deploy)
     context["resumeExisting"] = bool(args.resume_existing)
     context["capabilityApproval"] = {
         "proposal": str(getattr(args, "capability_proposal", "") or ""),
@@ -90,10 +79,6 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
 
     print("LLM Agent Orchestrator")
     print(f"Requirement: {context['requirement']}")
-    print(
-        "Profile hint: "
-        f"{context['selectedProfile'].get('path') or '<none>'}"
-    )
     print(
         "Primary intent: "
         f"{context['intentAnalysis'].get('primaryIntent')}"
@@ -128,25 +113,6 @@ def run_requirement_agent(args: argparse.Namespace) -> int:
             total_started,
         )
 
-    if args.kind_deploy:
-        ensure_requested_tool_call(
-            planner_result,
-            "validation",
-            args.mode,
-            (
-                "kind deployment requires make generate, make manifests, "
-                "and make test to pass first."
-            ),
-        )
-        ensure_requested_tool_call(
-            planner_result,
-            "kind_deployment",
-            args.mode,
-            (
-                "User explicitly requested profile-backed kind deployment "
-                "after validation."
-            ),
-        )
     # 검증된 Tool만 정해진 순서로 실행한다. 실패가 발생하면 뒤 단계는
     # 실행하지 않고 failure context와 recovery planning으로 넘어간다.
     execution = execute_planned_tools(
@@ -259,7 +225,6 @@ def finish_clarification_required(
                 "shortSummary", ""
             ),
             "missingInformation": context["missingInformation"],
-            "recommendedProfile": "",
             "plannedSteps": [],
             "toolCalls": [],
             "risks": [],
@@ -503,11 +468,8 @@ def call_requirement_planner(
         "mode": "requirement-planning",
         "requirementText": requirement_text,
         "retrievedDocs": context["retrievedKnowledge"],
-        "profileSummary": context["selectedProfile"],
         "intentAnalysis": context["intentAnalysis"],
-        "profileCandidates": context["profileCandidates"],
         "workflowOptions": {
-            "kindDeploymentRequested": bool(args.kind_deploy),
             "resumeExisting": bool(args.resume_existing),
         },
         "safetyMode": args.mode,
@@ -547,12 +509,9 @@ def call_requirement_planner(
         output, exact_input, raw = plan_requirement_with_llm(
             requirement_text,
             context["retrievedKnowledge"],
-            context["selectedProfile"],
             args.mode,
             context["intentAnalysis"],
-            context["profileCandidates"],
             {
-                "kindDeploymentRequested": bool(args.kind_deploy),
                 "resumeExisting": bool(args.resume_existing),
             },
         )
@@ -621,33 +580,3 @@ def print_planner_cache_status(planner_result: dict[str, Any]) -> None:
     if cache:
         status = "hit" if cache.get("hit") else "miss"
         print(f"Planner cache: {status} ({cache.get('path')})")
-
-
-def ensure_requested_tool_call(
-    planner_result: dict[str, Any],
-    tool: str,
-    agent_mode: str,
-    reason: str,
-) -> None:
-    output = planner_result.get("llmOutput")
-    if not isinstance(output, dict):
-        return
-    calls = output.setdefault("toolCalls", [])
-    if not isinstance(calls, list):
-        return
-    if any(
-        isinstance(item, dict)
-        and normalize_tool_name(str(item.get("tool") or "")) == tool
-        for item in calls
-    ):
-        return
-    calls.append(
-        {
-            "tool": tool,
-            "mode": (
-                "execute" if agent_mode == "execute" else "dry-run"
-            ),
-            "reason": reason,
-            "source": "explicit-user-workflow-option",
-        }
-    )

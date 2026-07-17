@@ -40,19 +40,19 @@ jobs:
       - run: docker info
       - run: python3 -m py_compile $(git ls-files '*.py')
       - run: python3 scripts/run-regression-tests.py --suite full --output-dir evaluation/results/regression/ci-full --history-file .ci-history/full.json
-      - run: test -f evaluation/results/regression/ci-full/profileless-compile/profileless-compile-results.json
-      - run: test -f evaluation/results/regression/ci-full/profileless-kind/profileless-kind-results.json
+      - run: test -f evaluation/results/regression/ci-full/compile-matrix/compile-matrix-results.json
+      - run: test -f evaluation/results/regression/ci-full/kind-matrix/kind-matrix-results.json
       - name: Verify compile and kind reuse contract
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
 
-          path = Path("evaluation/results/regression/ci-full/profileless-kind/profileless-kind-results.json")
+          path = Path("evaluation/results/regression/ci-full/kind-matrix/kind-matrix-results.json")
           payload = json.loads(path.read_text(encoding="utf-8"))
           results = payload.get("results") or []
           if not results or not all(item.get("compileReused") for item in results):
-              raise SystemExit("profileless kind did not reuse every compile result")
+              raise SystemExit("kind matrix did not reuse every compile result")
           print(f"Reused {len(results)} compile results in one kind matrix cluster.")
           PY
       - run: test -f evaluation/results/regression/ci-full/final-evaluation.json
@@ -79,7 +79,7 @@ jobs:
             echo "kind is unavailable; no ephemeral clusters were created."
             exit 0
           fi
-          for cluster in trainingjob-e2e trainingjob-deploy rediscache-e2e rediscache-deploy profileless-matrix; do
+          for cluster in k8sagent-matrix; do
             kind delete cluster --name "$cluster"
           done
 

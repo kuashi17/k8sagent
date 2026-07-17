@@ -8,6 +8,32 @@ from agent.evaluation.capability_matrix import build_capability_matrix
 
 
 class CapabilityMatrixTest(unittest.TestCase):
+    def test_failed_kind_matrix_is_not_capability_evidence(self) -> None:
+        result = build_capability_matrix(
+            {"status": "passed", "requirements": []},
+            {
+                "status": "failed",
+                "results": [
+                    {
+                        "status": "failed",
+                        "deploymentSummary": {
+                            "runtimeEvidence": {
+                                "idempotency": {"status": "not-run"}
+                            }
+                        },
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(result["status"], "not-evaluated")
+        self.assertFalse(result["promotionEligible"])
+        self.assertEqual(result["capabilities"], [])
+        self.assertEqual(
+            result["counts"],
+            {"stable": 0, "beta": 0, "experimental": 0},
+        )
+
     def test_failed_kind_run_is_not_recorded_as_capability_evidence(self) -> None:
         result = build_capability_matrix(
             {
@@ -44,7 +70,7 @@ class CapabilityMatrixTest(unittest.TestCase):
         self.assertEqual(policy["evidence"], [])
         self.assertEqual(
             policy["limitations"],
-            ["No profileless kind evidence is recorded."],
+            ["No kind lifecycle evidence is recorded."],
         )
 
     def test_catalog_alias_is_merged_into_canonical_resource(self) -> None:

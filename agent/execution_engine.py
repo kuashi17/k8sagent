@@ -10,7 +10,7 @@ from typing import Any
 from agent.contracts import ExecutionResult, ToolResult
 from agent.error_taxonomy import normalize_tool_result
 from agent.tool_validator import validate_planned_tool_calls
-from agent.tools import langchain_wrappers as tools
+from agent.tools import tool_runner as tools
 from agent.tools.resource_catalog import load_resource_catalog
 
 
@@ -21,7 +21,6 @@ TOOL_ORDER = {
     "scaffold_runner": 30,
     "artifact_patcher": 40,
     "validation": 50,
-    "kind_deployment": 70,
 }
 
 
@@ -149,8 +148,6 @@ def build_supported_calls(
             or capability_approved
         )
     )
-    selected_profile = context.get("selectedProfile") or {}
-    profile_path = selected_profile.get("path")
     supported_calls: dict[str, dict[str, Any]] = {
         "spec_generator": {
             "mutating": False,
@@ -214,13 +211,11 @@ def build_supported_calls(
             "arguments": {
                 "input": generated["operatorSpec"],
                 "project": context["targetProjectDir"],
-                "profile": profile_path,
                 "execute": mutating_execute,
             },
             "call": lambda: tools.artifact_patcher(
                 generated["operatorSpec"],
                 context["targetProjectDir"],
-                profile_path,
                 execute=mutating_execute,
             ),
         },
@@ -237,13 +232,6 @@ def build_supported_calls(
             ),
         },
     }
-    kind_deployment = selected_profile.get("kindDeployment") or {}
-    if context.get("kindDeploymentRequested") and kind_deployment.get("enabled"):
-        supported_calls["kind_deployment"] = build_kind_deployment_call(
-            context,
-            kind_deployment,
-            mutating_execute,
-        )
     return supported_calls
 
 
@@ -275,78 +263,6 @@ def capability_proposal_is_pending(result: dict[str, Any]) -> bool:
         if isinstance(payload, dict):
             return payload.get("status") == "pending-approval"
     return False
-
-
-def build_kind_deployment_call(
-    context: dict[str, Any],
-    capability: dict[str, Any],
-    execute: bool,
-) -> dict[str, Any]:
-    configured_project = str(capability.get("project") or "")
-    project = (
-        context["targetProjectDir"]
-        if context.get("isolatedOutputs")
-        else configured_project or context["targetProjectDir"]
-    )
-    sample = remap_profile_project_path(
-        str(capability.get("sample") or ""),
-        configured_project,
-        str(project),
-        bool(context.get("isolatedOutputs")),
-    )
-    arguments = {
-        "project": project,
-        "clusterName": capability.get("clusterName"),
-        "image": capability.get("image"),
-        "sample": sample,
-        "namespace": capability.get("namespace"),
-        "deployment": capability.get("deployment"),
-        "validator": capability.get("validator"),
-        "validatorConfig": capability.get("validatorConfig") or {},
-        "execute": execute,
-    }
-    return {
-        "mutating": True,
-        "requiredArgs": [
-            "project",
-            "clusterName",
-            "image",
-            "sample",
-            "namespace",
-            "deployment",
-            "validator",
-            "validatorConfig",
-        ],
-        "arguments": arguments,
-        "call": lambda: tools.kind_deployment_runner(
-            str(project),
-            cluster_name=str(capability.get("clusterName") or ""),
-            image=str(capability.get("image") or ""),
-            sample=sample,
-            namespace=str(capability.get("namespace") or ""),
-            deployment=str(capability.get("deployment") or ""),
-            validator=str(capability.get("validator") or ""),
-            validator_config=capability.get("validatorConfig") or {},
-            execute=execute,
-            skip_prepare_controller=bool(capability.get("skipPrepareController")),
-            skip_prevalidation=bool(capability.get("skipPrevalidation")),
-        ),
-    }
-
-
-def remap_profile_project_path(
-    value: str,
-    configured_project: str,
-    isolated_project: str,
-    isolated_outputs: bool,
-) -> str:
-    if not isolated_outputs or not value or not configured_project:
-        return value
-    try:
-        relative = Path(value).relative_to(Path(configured_project))
-    except ValueError:
-        return value
-    return str(Path(isolated_project) / relative)
 
 
 def apply_resume_policy(

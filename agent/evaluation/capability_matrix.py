@@ -21,6 +21,29 @@ def build_capability_matrix(
     compile_results: dict[str, Any],
     kind_results: dict[str, Any],
 ) -> dict[str, Any]:
+    if (
+        compile_results.get("status") not in (None, "passed")
+        or kind_results.get("status") not in (None, "passed")
+    ):
+        # 일부 또는 전체 lifecycle이 실행되지 않은 결과는 리소스 등급을
+        # 낮추거나 올리는 근거로 사용할 수 없다. 진단 원본만 보존한다.
+        return {
+            "createdAt": datetime.now().astimezone().isoformat(
+                timespec="seconds"
+            ),
+            "status": "not-evaluated",
+            "promotionEligible": False,
+            "reason": (
+                "compile and kind matrices must both pass before capability "
+                "levels are evaluated"
+            ),
+            "capabilities": [],
+            "counts": {
+                "stable": 0,
+                "beta": 0,
+                "experimental": 0,
+            },
+        }
     compile_by_requirement = {
         str(item.get("requirement") or ""): item
         for item in compile_results.get("requirements") or []
@@ -71,6 +94,7 @@ def build_capability_matrix(
     return {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "status": "passed",
+        "promotionEligible": True,
         "capabilities": capabilities,
         "counts": {
             level: sum(item["level"] == level for item in capabilities)
@@ -97,7 +121,7 @@ def limitations(level: str, observations: list[dict[str, Any]]) -> list[str]:
     if level == "stable":
         return []
     if not observations:
-        return ["No profileless kind evidence is recorded."]
+        return ["No kind lifecycle evidence is recorded."]
     missing = set()
     for item in observations:
         for name, value in (item.get("runtimeEvidence") or {}).items():
@@ -120,7 +144,7 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps({"status": result["status"], "counts": result["counts"]}, indent=2))
-    return 0
+    return 0 if result["status"] == "passed" else 1
 
 
 if __name__ == "__main__":

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Run profile-less Agent dry-runs against generic Operator requirements."""
+"""Run Agent planning against the requirement fixture matrix."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,16 +24,11 @@ if str(REPO_ROOT) not in sys.path:
 from agent.evaluation.controller_quality import evaluate_controller_quality
 
 
-DEFAULT_MATRIX = (
-    REPO_ROOT
-    / "evaluation"
-    / "fixtures"
-    / "profileless-agent-matrix.yaml"
-)
+DEFAULT_MATRIX = REPO_ROOT / "evaluation" / "fixtures" / "requirement-matrix.yaml"
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate that the Agent can handle requirements without a profile.")
+    parser = argparse.ArgumentParser(description="Validate requirement-driven Agent planning across the fixture matrix.")
     parser.add_argument("--requirements", nargs="*", default=[])
     parser.add_argument("--matrix", default=str(DEFAULT_MATRIX))
     parser.add_argument("--output-dir", default="")
@@ -44,25 +41,42 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    out_dir = Path(args.output_dir) if args.output_dir else Path("evaluation/results/profileless") / datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = Path(args.output_dir) if args.output_dir else Path("evaluation/results/requirement-matrix") / datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
+    cache_root = REPO_ROOT / ".cache" / "evaluation"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    work_root = Path(
+        tempfile.mkdtemp(
+            prefix="requirement-matrix-",
+            dir=cache_root,
+        )
+    )
     requirements = args.requirements or load_matrix(
         Path(args.matrix)
     )
-    results = [
-        run_requirement(path, args.run_level, args.mode, out_dir, index)
-        for index, path in enumerate(requirements, start=1)
-    ]
+    try:
+        results = [
+            run_requirement(
+                path,
+                args.run_level,
+                args.mode,
+                out_dir,
+                work_root,
+                index,
+            )
+            for index, path in enumerate(requirements, start=1)
+        ]
+    finally:
+        shutil.rmtree(work_root, ignore_errors=True)
     summary = {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "runLevel": args.run_level,
         "mode": args.mode,
-        "profileHintsDisabled": True,
         "status": "passed" if all(item["passed"] for item in results) else "failed",
         "requirements": results,
     }
-    (out_dir / "profileless-results.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-    (out_dir / "profileless-report.md").write_text(render_report(summary), encoding="utf-8")
+    (out_dir / "requirement-matrix-results.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out_dir / "requirement-matrix-report.md").write_text(render_report(summary), encoding="utf-8")
     print(json.dumps({"status": summary["status"], "outputDir": str(out_dir)}, indent=2, ensure_ascii=False))
     return 0 if summary["status"] == "passed" else 1
 
@@ -72,24 +86,26 @@ def run_requirement(
     run_level: str,
     mode: str,
     output_dir: Path,
+    work_root: Path,
     index: int,
 ) -> dict[str, Any]:
     started = time.time()
     run_root = output_dir / "runs" / f"{index:02d}"
     artifact_dir = run_root / "artifacts"
-    workspace = run_root / "workspace"
+    # Agent 경로 정책을 그대로 검증하기 위해 workspace는 저장소 내부에 격리한다.
+    # 결과 JSON과 생성 스펙은 사용자가 지정한 output_dir에 남길 수 있다.
+    workspace = work_root / f"run-{index:02d}"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     workspace.mkdir(parents=True, exist_ok=True)
     command = [
         "python3",
-        "agent/langchain_agent.py",
+        "agent/cli.py",
         "--requirement",
         requirement,
         "--mode",
         mode,
         "--run-level",
         run_level,
-        "--disable-profile-hints",
         "--artifact-dir",
         str(artifact_dir),
         "--workspace",
@@ -100,7 +116,6 @@ def run_requirement(
     result = subprocess.run(command, text=True, capture_output=True, timeout=420)
     log_dir = extract_agent_log_dir(result.stdout)
     summary = read_json(Path(log_dir) / "summary.json") if log_dir else {}
-    selected_profile = summary.get("selectedProfile") or {}
     errors = summary.get("errors") or []
     project_dir = Path(
         summary.get("targetProjectDir")
@@ -119,8 +134,6 @@ def run_requirement(
     passed = (
         result.returncode == 0
         and not errors
-        and selected_profile.get("selectionMode") == "disabled"
-        and not selected_profile.get("path")
         and summary.get("requirementSummary", {}).get("kind")
         and summary.get("validatedToolCalls")
         and not summary.get("rejectedToolCalls")
@@ -133,8 +146,6 @@ def run_requirement(
         "logDir": log_dir,
         "kind": (summary.get("requirementSummary") or {}).get("kind", ""),
         "managedResources": (summary.get("requirementSummary") or {}).get("managedResources", []),
-        "profileSelectionMode": selected_profile.get("selectionMode", ""),
-        "profileHint": selected_profile.get("path", ""),
         "validatedTools": [item.get("tool") for item in summary.get("validatedToolCalls") or []],
         "rejectedCount": len(summary.get("rejectedToolCalls") or []),
         "errors": errors,
@@ -180,15 +191,15 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def render_report(summary: dict[str, Any]) -> str:
     lines = [
-        "# Profile-less Requirement Test Report",
+        "# Requirement Matrix Test Report",
         "",
         f"- Status: `{summary['status']}`",
         f"- Run level: `{summary['runLevel']}`",
         f"- Mode: `{summary['mode']}`",
         f"- Created at: `{summary['createdAt']}`",
         "",
-        "| Requirement | Kind | Managed Resources | Profile Mode | Controller Score | Result |",
-        "|---|---|---|---|---|---|",
+        "| Requirement | Kind | Managed Resources | Controller Score | Result |",
+        "|---|---|---|---|---|",
     ]
     for item in summary["requirements"]:
         lines.append(
@@ -198,23 +209,12 @@ def render_report(summary: dict[str, Any]) -> str:
                     f"`{item['requirement']}`",
                     f"`{item.get('kind') or 'unknown'}`",
                     f"`{', '.join(item.get('managedResources') or []) or 'unknown'}`",
-                    f"`{item.get('profileSelectionMode') or 'unknown'}`",
                     f"`{(item.get('controllerQuality') or {}).get('score', 0)}`",
                     "`passed`" if item.get("passed") else "`failed`",
                 ]
             )
             + " |"
         )
-    lines.extend(
-        [
-            "",
-            (
-                "Profile mode `disabled` means profile discovery and "
-                "selection were both disabled; planning used only the "
-                "requirement and retrieved knowledge."
-            ),
-        ]
-    )
     return "\n".join(lines) + "\n"
 
 

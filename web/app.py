@@ -12,7 +12,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
 from fastapi import FastAPI, Request
 from fastapi.responses import (
     HTMLResponse,
@@ -43,7 +42,6 @@ from web.workflow_service import WorkflowService  # noqa: E402
 
 
 LOG_ROOT = REPO_ROOT / "logs" / "web"
-PROFILE_DIR = REPO_ROOT / "profiles"
 JOB_ROOT = LOG_ROOT / "jobs"
 
 STATE_LABELS = {
@@ -80,7 +78,7 @@ app.mount(
 )
 templates = Jinja2Templates(directory=REPO_ROOT / "web" / "templates")
 jobs = JobManager(REPO_ROOT, JOB_ROOT)
-workflows = WorkflowService(REPO_ROOT, LOG_ROOT, PROFILE_DIR)
+workflows = WorkflowService(REPO_ROOT, LOG_ROOT)
 
 
 @app.on_event("startup")
@@ -128,7 +126,6 @@ async def run_requirement(request: Request) -> HTMLResponse:
         return render_home(
             request,
             requirement_text=str(form.get("requirement_text") or ""),
-            selected_profile=str(form.get("profile") or ""),
             selected_mode=str(form.get("mode") or "dry-run"),
             selected_run_level=str(form.get("run_level") or "fast"),
             form_error=friendly_error(exc),
@@ -223,13 +220,8 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
             "is_kind_validation": is_kind_validation,
             "developer": developer_details(job) if terminal else {},
             "requirement_text": requirement_text,
-            "profiles": list_profiles(),
-            "selected_profile": str(metadata.get("profile") or ""),
             "selected_run_level": str(
                 metadata.get("runLevel") or "fast"
-            ),
-            "selected_kind_deploy": bool(
-                metadata.get("kindDeploy")
             ),
             "selected_resume_existing": bool(
                 metadata.get("resumeExisting")
@@ -266,7 +258,7 @@ async def health() -> JSONResponse:
     return JSONResponse(
         {
             "status": "ok",
-            "service": "kubebuilder-agent-web",
+            "service": "k8sagent-web",
             "executionMode": getattr(jobs, "execution_mode", "embedded"),
             "jobs": counts,
         }
@@ -345,7 +337,6 @@ def render_home(
     request: Request,
     *,
     requirement_text: str | None = None,
-    selected_profile: str = "",
     selected_mode: str = "dry-run",
     selected_run_level: str = "fast",
     form_error: str = "",
@@ -368,14 +359,12 @@ def render_home(
         name="index.html",
         context={
             "request": request,
-            "profiles": list_profiles(),
             "default_requirement": requirement_text
             if requirement_text is not None
             else "",
             "default_log_dir": selected_log,
             "log_options": log_options,
             "log_form_error": log_form_error,
-            "selected_profile": selected_profile,
             "selected_mode": selected_mode,
             "selected_run_level": selected_run_level,
             "form_error": form_error,
@@ -489,22 +478,6 @@ def job_status_payload(job: dict[str, Any]) -> dict[str, Any]:
         "rollbackPolicy": job.get("rollbackPolicy") or {},
         "journeyTimings": job.get("journeyTimings") or {},
     }
-
-
-def list_profiles() -> list[dict[str, str]]:
-    profiles: list[dict[str, str]] = []
-    for path in sorted(PROFILE_DIR.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        profiles.append(
-            {
-                "path": str(path.relative_to(REPO_ROOT)),
-                "name": str(data.get("profileName") or path.stem),
-                "description": compact(
-                    str(data.get("description") or "")
-                ),
-            }
-        )
-    return profiles
 
 
 def friendly_error(exc: Exception) -> str:

@@ -47,7 +47,6 @@ def build_requirement_summary(
     summary = {
         "mode": "requirement-planning",
         "requirement": context["requirement"],
-        "profile": args.profile or "",
         "planner": "llm",
         "llmPlannerUsed": planner_result["llmPlannerUsed"],
         "localLLM": planner_result.get("localLLM") or {},
@@ -59,7 +58,6 @@ def build_requirement_summary(
             args.skip_final_llm_evaluation or args.run_level == "fast"
         ),
         "executeAllowed": bool(args.execute),
-        "kindDeploymentRequested": bool(args.kind_deploy),
         "resumeExisting": bool(args.resume_existing),
         "createdAt": now_iso(),
         "requirementSummary": context["requirementSummary"],
@@ -71,26 +69,6 @@ def build_requirement_summary(
         ),
         "retrievedKnowledge": context["retrievedKnowledge"],
         "retrievalDetails": context.get("retrievalDetails") or {},
-        "selectedProfile": context["selectedProfile"],
-        "profileCandidates": context["profileCandidates"],
-        "profilePolicy": {
-            "role": (
-                "disabled"
-                if context["selectedProfile"].get("selectionMode")
-                == "disabled"
-                else "hint-only"
-            ),
-            "message": (
-                "Automatic profile hints are disabled for this run."
-                if context["selectedProfile"].get("selectionMode")
-                == "disabled"
-                else (
-                    "Profiles are optional hints for defaults, examples, "
-                    "and validation rules. The Agent plans from the current "
-                    "requirement text first."
-                )
-            ),
-        },
         "llmPlan": planner_result.get("llmOutput") or {},
         "llmReasoning": extract_list(
             planner_result.get("llmOutput") or {},

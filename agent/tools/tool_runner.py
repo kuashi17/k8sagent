@@ -1,24 +1,18 @@
 #!/usr/bin/env python3
-"""Tool wrappers used by the LangChain-style Agent orchestrator.
+"""Run the approved Agent tools through stable subprocess boundaries.
 
-The wrappers intentionally call the existing CLI tools with subprocess.
-This keeps the current automation pipeline stable while exposing each step
-as a tool-like function that an Agent planner can select and sequence.
+The planner selects a registered tool name, while this module owns the exact
+CLI command that is executed. Keeping command construction here prevents an
+LLM response from becoming an arbitrary shell command.
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from agent.error_taxonomy import normalize_tool_result
-
-try:  # Optional dependency for future real LangChain Agent execution.
-    from langchain_core.tools import Tool
-except ImportError:  # pragma: no cover - optional dependency is not required for CLI wrapping.
-    Tool = None  # type: ignore[assignment]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -124,7 +118,6 @@ def scaffold_runner(
 def artifact_patcher(
     input_spec: str,
     project: str,
-    profile: str | None = None,
     *,
     execute: bool = False,
 ) -> dict[str, Any]:
@@ -136,61 +129,8 @@ def artifact_patcher(
         "--project",
         project,
     ]
-    if profile:
-        command.extend(["--profile", profile])
     command.append("--execute" if execute else "--dry-run")
     return run_command(command)
-
-
-def kind_deployment_runner(
-    project: str,
-    *,
-    cluster_name: str,
-    image: str,
-    sample: str,
-    namespace: str,
-    deployment: str,
-    validator: str,
-    validator_config: dict[str, Any],
-    execute: bool = False,
-    skip_lifecycle: bool = False,
-    skip_prepare_controller: bool = False,
-    skip_prevalidation: bool = False,
-) -> dict[str, Any]:
-    command = [
-        "python3",
-        "agent/tools/kind_deployment_runner.py",
-        "--project",
-        project,
-        "--cluster-name",
-        cluster_name,
-        "--image",
-        image,
-        "--sample",
-        sample,
-        "--namespace",
-        namespace,
-        "--deployment",
-        deployment,
-        "--validator",
-        validator,
-        "--validator-config",
-        json.dumps(validator_config, ensure_ascii=False),
-    ]
-    if skip_lifecycle:
-        command.append("--skip-lifecycle")
-    if skip_prepare_controller:
-        command.append("--skip-prepare-controller")
-    if skip_prevalidation:
-        command.append("--skip-prevalidation")
-    if not execute:
-        command.append("--dry-run")
-    result = run_command(command)
-    try:
-        result["deploymentSummary"] = json.loads(result.get("stdout") or "{}")
-    except json.JSONDecodeError:
-        result["deploymentSummary"] = {}
-    return normalize_tool_result(result, "kind_deployment")
 
 
 def validation(project: str, targets: list[str] | None = None) -> dict[str, Any]:
@@ -235,38 +175,3 @@ def log_analyzer(log_dir: str, output: str | None = None) -> dict[str, Any]:
     if output:
         command.extend(["--output", output])
     return run_command(command)
-
-
-def as_langchain_tools() -> list[Any]:
-    """Return LangChain Tool objects when langchain-core is installed.
-
-    The current Agent orchestrator calls these Python functions directly.
-    This adapter makes the same wrappers usable by a future LangChain ReAct/tool-calling
-    Agent without changing the existing CLI tools.
-    """
-
-    if Tool is None:
-        return []
-    return [
-        Tool.from_function(
-            name="spec_generator",
-            description="Convert a natural language Operator requirement file into operator-spec.yaml.",
-            func=lambda requirement: spec_generator(requirement),
-        ),
-        Tool.from_function(
-            name="command_planner",
-            description="Create a Kubebuilder command plan from an operator spec path.",
-            func=lambda input_spec: command_planner(input_spec, default_command_plan_path(input_spec)),
-        ),
-        Tool.from_function(
-            name="scaffold_runner_dry_run",
-            description="Show Kubebuilder scaffold commands without executing them.",
-            func=lambda input_spec: scaffold_runner(input_spec),
-        ),
-    ]
-
-
-def default_command_plan_path(input_spec: str) -> str:
-    path = Path(input_spec)
-    name = path.name.replace("-operator-spec.yaml", "-command-plan.md")
-    return str(path.with_name(name))

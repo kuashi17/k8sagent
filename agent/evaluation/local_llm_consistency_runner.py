@@ -66,10 +66,9 @@ def run_case(case: dict[str, Any], runs: int, output_dir: Path) -> dict[str, Any
         run_root = case_root / f"run-{index}"
         command = [
             sys.executable,
-            "agent/langchain_agent.py",
+            "agent/cli.py",
             "--requirement",
             str(case["requirement"]),
-            "--disable-profile-hints",
             "--mode",
             "dry-run",
             "--run-level",

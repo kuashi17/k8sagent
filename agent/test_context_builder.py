@@ -78,8 +78,6 @@ AppService의 status에는 다음 값을 표시해주세요.
         context = build_requirement_context(
             Path("requirements/web-service.txt"),
             REQUIREMENT,
-            None,
-            {},
             "workspace/generated-operators",
             "generated",
             retrieve,
@@ -112,48 +110,28 @@ AppService의 status에는 다음 값을 표시해주세요.
         )
         self.assertEqual(missing_information(summary, text), [])
 
-    def test_profile_kind_project_overrides_inferred_directory(self) -> None:
+    def test_target_project_is_derived_from_requirement_kind(self) -> None:
         target = target_project_dir(
             "workspace/generated-operators",
             "TrainingJob",
-            "trainingjob",
-            {
-                "kindDeployment": {
-                    "project": (
-                        "workspace/generated-operators/"
-                        "trainingjob-operator"
-                    )
-                }
-            },
             "generated/trainingjob-operator-spec.yaml",
-            False,
         )
 
         self.assertEqual(
             target,
-            "workspace/generated-operators/trainingjob-operator",
+            "workspace/generated-operators/training-job-operator",
         )
 
-    def test_profileless_context_disables_automatic_profile_selection(
-        self,
-    ) -> None:
+    def test_context_uses_requirement_without_example_specific_settings(self) -> None:
         context = build_requirement_context(
             Path("requirements/web-service.txt"),
             REQUIREMENT,
-            None,
-            {},
             "workspace/generated-operators",
             "generated",
             lambda query, limit, purpose: {"selectedContext": []},
             2,
-            allow_profile_hints=False,
         )
 
-        self.assertEqual(
-            context["selectedProfile"]["selectionMode"],
-            "disabled",
-        )
-        self.assertEqual(context["selectedProfile"]["path"], "")
         self.assertTrue(
             context["targetProjectDir"].endswith(
                 "web-service-operator"
@@ -166,8 +144,6 @@ AppService의 status에는 다음 값을 표시해주세요.
         context = build_requirement_context(
             Path("logs/web/jobs/job-1/requirement.txt"),
             REQUIREMENT,
-            None,
-            {},
             "logs/web/jobs/job-1/workspace",
             "logs/web/jobs/job-1/artifacts",
             lambda query, limit, purpose: {"selectedContext": []},

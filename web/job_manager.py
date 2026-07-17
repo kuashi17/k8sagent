@@ -48,6 +48,7 @@ class JobManager:
         metadata: dict[str, Any] | None = None,
         input_files: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        # 작업마다 artifacts/workspace/log를 분리해 동시 실행과 재시도 결과가 섞이지 않게 한다.
         job_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex[:8]
         job_dir = self.root / job_id
         job_dir.mkdir(parents=True)
@@ -128,7 +129,7 @@ class JobManager:
                 self.repo_root
                 / str(status.get("jobDir") or "")
                 / "artifacts"
-                / "profileless-kind-results.json"
+                / "kind-matrix-results.json"
             )
         parent_status = None
         parent_summary: dict[str, Any] = {}
@@ -395,7 +396,7 @@ def isolate_job_command(
             "--cluster-name",
             "web-" + Path(job_dir).name[-8:],
         )
-    if job_type != "requirement" or "agent/langchain_agent.py" not in isolated:
+    if job_type != "requirement" or "agent/cli.py" not in isolated:
         return isolated
     isolated = replace_option(
         isolated,
@@ -521,8 +522,7 @@ def rollback_policy(
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     if (
-        (job_type == "requirement" and metadata.get("kindDeploy"))
-        or job_type == "kind-validation"
+        job_type == "kind-validation"
     ):
         return {
             "mode": "manual-approval",

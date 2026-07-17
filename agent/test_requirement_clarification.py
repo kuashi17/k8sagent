@@ -36,11 +36,8 @@ Controller는 Deployment를 생성한다.
             workspace = root / "workspace"
             args = argparse.Namespace(
                 requirement=str(requirement),
-                profile=None,
                 workspace=str(workspace),
                 artifact_dir=str(artifact_dir),
-                disable_profile_hints=True,
-                kind_deploy=False,
                 resume_existing=False,
                 capability_proposal="",
                 capability_approval="",
@@ -107,9 +104,7 @@ status에서는 준비된 replicas 수와 처리 결과를 보고 싶습니다.
             log_dir.mkdir()
             args = argparse.Namespace(
                 requirement=str(requirement),
-                profile=None,
                 workspace=str(root / "workspace"),
-                disable_profile_hints=True,
                 kind_deploy=False,
                 resume_existing=False,
                 capability_proposal="",

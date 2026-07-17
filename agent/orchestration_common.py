@@ -7,8 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from agent.contracts import FinalEvaluation
 from agent.llm.client import config_from_env
 
@@ -204,14 +202,6 @@ def validation_results_from_tool_results(
             elif target == "test":
                 results["makeTest"] = status
     return results
-
-
-def load_profile(path: Path) -> dict[str, Any]:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise SystemExit(f"profile YAML must be a mapping: {path}")
-    data["_profilePath"] = str(path)
-    return data
 
 
 def raw_from_exception(exc: Exception) -> str:

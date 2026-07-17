@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI entry point and generic deployment engine for profile-backed kind runs."""
+"""CLI entry point for requirement-driven kind lifecycle validation."""
 
 from __future__ import annotations
 
@@ -21,26 +21,14 @@ from agent.tools.kind_deployment_validators import create_validator  # noqa: E40
 from agent.error_taxonomy import infer_tool_error  # noqa: E402
 
 
-DEFAULT_PROJECT = REPO_ROOT / "workspace" / "generated-operators" / "app-config-operator"
-DEFAULT_CLUSTER = "appconfig-deploy"
-DEFAULT_IMAGE = "app-config-operator:kind"
-DEFAULT_NAMESPACE = "app-config-operator-system"
-DEFAULT_DEPLOYMENT = "app-config-operator-controller-manager"
-DEFAULT_VALIDATOR = "appconfig-configmap"
-
-
 class KindDeploymentEngine:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.project = resolve_path(args.project)
-        self.sample = resolve_path(args.sample) if args.sample else self.project / "config" / "samples" / "app_v1alpha1_appconfig.yaml"
+        self.sample = resolve_path(args.sample)
         self.timeout_seconds = parse_duration_seconds(args.timeout)
         validator_config = json.loads(args.validator_config) if args.validator_config else {}
         validator_config.setdefault("namespace", args.namespace)
-        if args.sample_name:
-            validator_config.setdefault("sampleName", args.sample_name)
-        if args.configmap_name:
-            validator_config.setdefault("configMapName", args.configmap_name)
         self.validator = create_validator(args.validator, validator_config)
         self.log_dir = REPO_ROOT / "logs" / "kind-deployment" / datetime.now().strftime("%Y%m%d-%H%M%S")
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -51,6 +39,8 @@ class KindDeploymentEngine:
         self.structured_error: dict[str, Any] = {}
 
     def run(self) -> int:
+        # kind 결과는 실제 명령이 통과한 항목만 evidence로 기록한다.
+        # Docker preflight에서 중단되면 lifecycle은 not-run으로 남아 capability 승격에 쓰이지 않는다.
         try:
             self.preflight()
             if self.args.dry_run:
@@ -61,8 +51,6 @@ class KindDeploymentEngine:
                 summary = self.write_summary("succeeded")
                 print(json.dumps(summary, indent=2, ensure_ascii=False))
                 return 0
-            if not self.args.skip_prepare_controller:
-                self.validator.prepare(self)
             if not self.args.skip_prevalidation:
                 self.run_cmd("make-generate", ["make", "generate"], cwd=self.project)
                 self.run_cmd("make-manifests", ["make", "manifests"], cwd=self.project)
@@ -105,12 +93,9 @@ class KindDeploymentEngine:
 
     def planned_steps(self) -> list[dict[str, Any]]:
         validator_steps = self.validator.planned_steps(
-            include_prepare=not self.args.skip_prepare_controller,
             include_lifecycle=not self.args.skip_lifecycle,
         )
         steps = []
-        if not self.args.skip_prepare_controller and validator_steps:
-            steps.append(validator_steps.pop(0))
         if not self.args.skip_prevalidation:
             steps.extend(
                 [
@@ -142,7 +127,9 @@ class KindDeploymentEngine:
             if not shutil.which(binary):
                 raise RuntimeError(f"required binary not found in PATH: {binary}")
         self.failed_step = "docker-info"
-        self.run_cmd("docker-info", ["docker", "info"], timeout=8)
+        # 이미지 빌드 직후 Docker Desktop이 잠시 느려질 수 있어 15초까지
+        # 기다리되, daemon이 없으면 전용 인프라 오류로 즉시 중단한다.
+        self.run_cmd("docker-info", ["docker", "info"], timeout=15)
 
     def ensure_cluster(self) -> None:
         self.failed_step = "ensure-cluster"
@@ -553,21 +540,24 @@ def rel(path: Path) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the generic kind deployment engine with a profile-specific validator.")
-    parser.add_argument("--project", default=str(DEFAULT_PROJECT))
-    parser.add_argument("--cluster-name", default=DEFAULT_CLUSTER)
-    parser.add_argument("--image", default=DEFAULT_IMAGE)
-    parser.add_argument("--sample", default="")
-    parser.add_argument("--namespace", default=DEFAULT_NAMESPACE)
-    parser.add_argument("--deployment", default=DEFAULT_DEPLOYMENT)
-    parser.add_argument("--validator", default=DEFAULT_VALIDATOR)
-    parser.add_argument("--validator-config", default="", help="Validator-specific JSON configuration.")
-    parser.add_argument("--sample-name", default="", help="Deprecated AppConfig validator compatibility option.")
-    parser.add_argument("--configmap-name", default="", help="Deprecated AppConfig validator compatibility option.")
+    parser = argparse.ArgumentParser(
+        description="Validate a generated Operator lifecycle in kind."
+    )
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--cluster-name", required=True)
+    parser.add_argument("--image", required=True)
+    parser.add_argument("--sample", required=True)
+    parser.add_argument("--namespace", required=True)
+    parser.add_argument("--deployment", required=True)
+    parser.add_argument("--validator", default="managed-resources")
+    parser.add_argument(
+        "--validator-config",
+        required=True,
+        help="Lifecycle contract encoded as JSON.",
+    )
     parser.add_argument("--timeout", default="180s")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--skip-lifecycle", action="store_true", help="Skip update, disabled, delete, and restore lifecycle checks.")
-    parser.add_argument("--skip-prepare-controller", action="store_true", help="Use the existing controller source without fixture-specific preparation.")
+    parser.add_argument("--skip-lifecycle", action="store_true", help="Skip update, drift, delete, and restore lifecycle checks.")
     parser.add_argument("--skip-prevalidation", action="store_true", help="Skip make generate/manifests/test because the caller already validated the project.")
     args = parser.parse_args()
     return KindDeploymentEngine(args).run()

@@ -40,7 +40,7 @@ queries:
       - RedisCache
       - StatefulSet
       - Service
-    notes: RedisCache profile/example 문서가 우선되어야 함
+    notes: RedisCache example 문서가 우선되어야 함
 
   - id: invalid-field-type-001
     query: make generate 중 brokenValue notatype 때문에 실패했다

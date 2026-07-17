@@ -15,7 +15,6 @@ LLM_OUTPUT_SCHEMAS = {
     "requirement-planning": {
         "requirementSummary": str,
         "missingInformation": list,
-        "recommendedProfile": str,
         "plannedSteps": list,
         "toolCalls": list,
         "risks": list,

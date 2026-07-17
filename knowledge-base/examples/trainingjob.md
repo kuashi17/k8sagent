@@ -1,6 +1,6 @@
 # TrainingJob Example
 
-TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증 profile이다.
+TrainingJob은 GPU 학습 작업을 Kubernetes Job으로 관리하는 예시다.
 
 요구사항 핵심:
 
@@ -13,4 +13,3 @@ TrainingJob은 GPU 학습 도메인을 대상으로 한 MVP 검증 profile이다
 - `spec.datasetPath`, `spec.outputPath`는 환경변수로 전달한다.
 
 kind 클러스터에는 GPU가 없을 수 있으므로 GPU 부족으로 인한 Pod Pending은 Job spec 검증이 성공했다면 warning으로 처리할 수 있다.
-

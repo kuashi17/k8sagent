@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a profile-less Operator and validate it in kind."""
+"""Generate Operators and validate their lifecycle contracts in kind."""
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agent.evaluation.profile_kind_matrix import parse_summary
+from agent.evaluation.kind_result_parser import parse_summary
 from agent.evaluation.kind_contract_builder import (
     build_validation_contract,
 )
-from agent.evaluation.profileless_compile_runner import (
+from agent.evaluation.compile_matrix_runner import (
     compile_requirement,
 )
 from agent.error_taxonomy import infer_tool_error
@@ -38,7 +38,7 @@ DEFAULT_MATRIX = (
     REPO_ROOT
     / "evaluation"
     / "fixtures"
-    / "profileless-kind-matrix.yaml"
+    / "kind-matrix.yaml"
 )
 
 def main() -> int:
@@ -59,17 +59,17 @@ def main() -> int:
     parser.add_argument(
         "--matrix",
         default=str(DEFAULT_MATRIX),
-        help="YAML fixture listing requirements for generalized E2E.",
+        help="YAML fixture listing requirements for kind lifecycle validation.",
     )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument(
         "--cluster-name",
-        default="profileless-matrix",
+        default="k8sagent-matrix",
     )
     parser.add_argument(
         "--precompiled-results",
         default="",
-        help="Reuse profileless compile results and generated projects.",
+        help="Reuse compile-matrix results and generated projects.",
     )
     args = parser.parse_args()
 
@@ -104,7 +104,6 @@ def main() -> int:
                 timespec="seconds"
             ),
             "status": "failed",
-            "profileUsed": False,
             "results": results,
             "timings": aggregate_kind_timings(
                 results,
@@ -124,7 +123,7 @@ def main() -> int:
         )
         return 1
     work_root = Path(
-        tempfile.mkdtemp(prefix="k8sagent-profileless-kind-")
+        tempfile.mkdtemp(prefix="k8sagent-kind-matrix-")
     )
     try:
         results = [
@@ -149,7 +148,6 @@ def main() -> int:
                 timespec="seconds"
             ),
             "status": status,
-            "profileUsed": False,
             "results": results,
             "timings": aggregate_kind_timings(
                 results,
@@ -193,7 +191,7 @@ def run_requirement(
             compile_result,
             {},
             [],
-            "profile-less compile failed",
+            "compile matrix failed",
             {
                 "caseSeconds": round(
                     time.perf_counter() - case_started,
@@ -265,7 +263,7 @@ def run_requirement(
     return payload
 
 
-def check_docker_available(timeout_seconds: int = 8) -> dict[str, Any]:
+def check_docker_available(timeout_seconds: int = 15) -> dict[str, Any]:
     started = time.perf_counter()
     docker = shutil.which("docker")
     if not docker:
@@ -340,12 +338,12 @@ def docker_preflight_failure_result(
                 "failedStep": "docker-info",
             },
         },
-        "profileless_kind",
+        "kind_deployment",
     )
     deployment = {
         "status": "failed",
         "failedStep": "docker-info",
-        "engine": "profileless-kind-preflight",
+        "engine": "kind-matrix-preflight",
         "checks": {"error": error_text},
         "runtimeEvidence": build_runtime_evidence({}),
         "steps": [docker_check],
@@ -383,10 +381,10 @@ def load_precompiled_results(path: Path) -> dict[str, dict[str, Any]]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(
-            f"failed to load precompiled profileless results: {path}"
+            f"failed to load compile-matrix results: {path}"
         ) from exc
     if payload.get("status") != "passed":
-        raise ValueError("precompiled profileless results did not pass")
+        raise ValueError("precompiled compile-matrix results did not pass")
     results = {
         str(item.get("requirement") or ""): item
         for item in payload.get("requirements") or []
@@ -410,7 +408,7 @@ def build_kind_contract(
     project_dir: Path,
     cluster_name: str,
 ) -> dict[str, Any]:
-    model = normalize_spec(spec, {}, None)
+    model = normalize_spec(spec)
     ir = build_controller_ir(model)
     project_name = str((model.get("project") or {}).get("name") or "")
     api = model["api"]
@@ -434,7 +432,7 @@ def build_kind_contract(
         "project": str(project_dir),
         "clusterName": cluster_name,
         "image": (
-            f"{project_name}:profileless-"
+            f"{project_name}:matrix-"
             f"{project_content_digest(project_dir)}"
         ),
         "sample": str(sample_path),
@@ -489,7 +487,6 @@ def build_kind_command(contract: dict[str, Any]) -> list[str]:
             contract["validatorConfig"],
             ensure_ascii=False,
         ),
-        "--skip-prepare-controller",
         "--skip-prevalidation",
     ]
 
@@ -519,7 +516,6 @@ def result_payload(
         ),
         "status": status,
         "requirement": relative(requirement),
-        "profileUsed": False,
         "compileReused": compile_reused,
         "compile": compile_result,
         "kindCommand": command,
@@ -636,7 +632,7 @@ def deployment_step_category(name: str) -> str:
 
 def write_result(output_dir: Path, payload: dict[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "profileless-kind-results.json").write_text(
+    (output_dir / "kind-matrix-results.json").write_text(
         json.dumps(payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )

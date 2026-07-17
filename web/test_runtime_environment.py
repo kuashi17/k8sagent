@@ -61,7 +61,7 @@ class RuntimeEnvironmentTest(unittest.TestCase):
             self.assertTrue(env["PATH"].startswith(str(wrapper.parent)))
 
     def test_docker_info_timeout_is_short_and_configurable(self) -> None:
-        self.assertEqual(docker_info_timeout({}), 5.0)
+        self.assertEqual(docker_info_timeout({}), 12.0)
         self.assertEqual(
             docker_info_timeout({"K8SAGENT_DOCKER_INFO_TIMEOUT_SECONDS": "2"}),
             2.0,
@@ -76,7 +76,7 @@ class RuntimeEnvironmentTest(unittest.TestCase):
         )
         self.assertEqual(
             docker_info_timeout({"K8SAGENT_DOCKER_INFO_TIMEOUT_SECONDS": "bad"}),
-            5.0,
+            12.0,
         )
 
 

@@ -64,7 +64,6 @@ class ClarificationContext(AgentContract):
 class RequirementPlan(AgentContract):
     requirementSummary: str
     missingInformation: list[Any]
-    recommendedProfile: str
     plannedSteps: list[Any]
     toolCalls: list[PlannedToolCall] = Field(min_length=1)
     risks: list[Any]
@@ -150,7 +149,6 @@ class RecoveryPlan(AgentContract):
 class AgentSummary(AgentContract):
     mode: Literal["requirement-planning"]
     requirement: str
-    profile: str
     planner: str
     llmPlannerUsed: bool
     localLLM: dict[str, Any]

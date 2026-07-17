@@ -1,4 +1,4 @@
-"""Tests for profile-less kind contract generation."""
+"""Tests for kind lifecycle contract generation."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from unittest import mock
 
-from agent.evaluation.profileless_kind_runner import (
+from agent.evaluation.kind_matrix_runner import (
     aggregate_deployment_categories,
     aggregate_kind_timings,
     build_kind_command,
@@ -22,7 +22,7 @@ from agent.evaluation.profileless_kind_runner import (
 )
 
 
-class ProfilelessKindRunnerTest(unittest.TestCase):
+class KindMatrixRunnerTest(unittest.TestCase):
     def test_docker_preflight_timeout_is_structured_as_docker_unavailable(
         self,
     ) -> None:
@@ -58,10 +58,10 @@ class ProfilelessKindRunnerTest(unittest.TestCase):
 
     def test_docker_preflight_uses_short_timeout(self) -> None:
         with mock.patch(
-            "agent.evaluation.profileless_kind_runner.shutil.which",
+            "agent.evaluation.kind_matrix_runner.shutil.which",
             return_value="/usr/bin/docker",
         ), mock.patch(
-            "agent.evaluation.profileless_kind_runner.subprocess.run"
+            "agent.evaluation.kind_matrix_runner.subprocess.run"
         ) as run:
             run.side_effect = subprocess.TimeoutExpired(
                 ["/usr/bin/docker", "info"],
@@ -226,7 +226,7 @@ spec:
             config = build_kind_contract(
                 spec,
                 project,
-                "profileless-test",
+                "matrix-test",
             )["validatorConfig"]
 
         self.assertEqual(
@@ -291,11 +291,10 @@ spec:
             contract = build_kind_contract(
                 spec,
                 project,
-                "profileless-test",
+                "matrix-test",
             )
             config = contract["validatorConfig"]
 
-            self.assertFalse(config.get("profileUsed", False))
             self.assertEqual(config["updateSpec"], {"replicas": 2})
             self.assertEqual(
                 [
@@ -312,9 +311,8 @@ spec:
                 {"sample-app-name"},
             )
             command = build_kind_command(contract)
-            self.assertIn("--skip-prepare-controller", command)
             self.assertIn("--skip-prevalidation", command)
-            self.assertIn(":profileless-", contract["image"])
+            self.assertIn(":matrix-", contract["image"])
 
     def test_namespace_contract_creates_setup_and_retain_rules(
         self,
@@ -368,7 +366,7 @@ spec:
             config = build_kind_contract(
                 spec,
                 project,
-                "profileless-test",
+                "matrix-test",
             )["validatorConfig"]
 
         self.assertEqual(
@@ -380,12 +378,12 @@ spec:
             "retain",
         )
         self.assertEqual(
-            config["updateSpec"]["labels"]["profileless-e2e"],
+            config["updateSpec"]["labels"]["k8sagent-e2e"],
             "updated",
         )
         self.assertEqual(
             config["updateAssertions"][0]["path"],
-            "metadata.labels.profileless-e2e",
+            "metadata.labels.k8sagent-e2e",
         )
         self.assertIn(
             {

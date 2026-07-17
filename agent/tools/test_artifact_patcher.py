@@ -46,7 +46,7 @@ class ArtifactPatcherTest(unittest.TestCase):
             resources[0]["apiGroup"],
             "directory.example.io",
         )
-    def test_requirement_sample_defaults_work_without_profile(self) -> None:
+    def test_requirement_sample_defaults_are_preserved(self) -> None:
         model = normalize_spec(
             {
                 "project": {"name": "access-operator"},
@@ -63,13 +63,11 @@ class ArtifactPatcherTest(unittest.TestCase):
                     {"name": "phase", "type": "string"}
                 ],
                 "sampleDefaults": {"ruleVerbs": ["get"]},
-            },
-            {},
-            None,
+            }
         )
 
         self.assertEqual(
-            model["profile"]["sampleDefaults"],
+            model["sampleDefaults"],
             {"ruleVerbs": ["get"]},
         )
 
@@ -104,6 +102,11 @@ class ArtifactPatcherTest(unittest.TestCase):
             sample_value("int32", "allowedPort"),
             8080,
         )
+        self.assertEqual(sample_value("int32", "port"), 80)
+        self.assertEqual(sample_value("int32", "healthPort"), 80)
+        self.assertEqual(sample_value("string", "healthPath"), "/")
+        self.assertEqual(sample_value("int32", "readinessPort"), 80)
+        self.assertEqual(sample_value("string", "readinessPath"), "/")
         self.assertEqual(
             sample_value("string", "allowedFromNamespace"),
             "default",
@@ -159,9 +162,7 @@ class ArtifactPatcherTest(unittest.TestCase):
                         }
                     ]
                 },
-            },
-            {},
-            None,
+            }
         )
 
         self.assertIn(
@@ -208,7 +209,7 @@ func (r *WidgetReconciler) Reconcile() {}
             patched,
         )
 
-    def test_profile_patch_rejects_remaining_scaffold_todo(self) -> None:
+    def test_controller_patch_rejects_remaining_scaffold_todo(self) -> None:
         model = {
             "api": {"kind": "Widget"},
             "controller": {"managedResources": ["ConfigMap"]},
@@ -239,7 +240,7 @@ func (r *WidgetReconciler) Reconcile() {
         ):
             patch_controller(controller, model)
 
-    def test_profile_patch_allows_implemented_reconcile_with_scaffold_docs(
+    def test_controller_patch_allows_implemented_reconcile_with_scaffold_docs(
         self,
     ) -> None:
         model = {
@@ -270,59 +271,6 @@ func (r *WidgetReconciler) Reconcile() {
         patched = patch_controller(controller, model)
 
         self.assertIn("r.Create()", patched)
-
-    def test_profile_rbac_and_controller_patch_are_idempotent(self) -> None:
-        model = normalize_spec(
-            {
-                "project": {"name": "widget-operator"},
-                "api": {
-                    "kind": "Widget",
-                    "plural": "widgets",
-                    "version": "v1alpha1",
-                    "group": "apps",
-                    "domain": "example.io",
-                },
-                "specFields": [{"name": "enabled", "type": "bool"}],
-                "statusFields": [{"name": "phase", "type": "string"}],
-                "rbac": {"resources": []},
-            },
-            {
-                "artifactPatcher": {
-                    "rbacResources": [
-                        {
-                            "apiGroup": "",
-                            "resource": "secrets",
-                            "verbs": ["get"],
-                        }
-                    ],
-                    "controllerPatches": [
-                        {
-                            "before": "func marker() {}",
-                            "after": "func marker() { /* profile */ }",
-                        }
-                    ],
-                }
-            },
-            "profiles/widget.yaml",
-        )
-        controller = """package controller
-
-type WidgetReconciler struct {
-\tClient any
-}
-
-// +kubebuilder:rbac:groups=apps.example.io,resources=widgets,verbs=get
-
-func marker() {}
-"""
-
-        once = patch_controller(controller, model)
-        twice = patch_controller(once, model)
-
-        self.assertEqual(once, twice)
-        self.assertIn('groups="",resources=secrets,verbs=get', once)
-        self.assertIn("/* profile */", once)
-
 
 if __name__ == "__main__":
     unittest.main()

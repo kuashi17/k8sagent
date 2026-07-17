@@ -51,46 +51,34 @@ def write_unified_evaluation(
 
 
 def build_unified_evaluation(root: Path) -> dict[str, Any]:
-    profileless = read_json(root / "profileless" / "profileless-results.json")
-    profileless_compile = read_json(
-        root
-        / "profileless-compile"
-        / "profileless-compile-results.json"
+    requirements = read_json(
+        root / "requirement-matrix" / "requirement-matrix-results.json"
+    )
+    compile_results = read_json(
+        root / "compile-matrix" / "compile-matrix-results.json"
     )
     rag = read_json(root / "rag-quality.json")
     reliability = read_json(
         root / "reliability" / "reliability-test-results.json"
     )
-    kind_idempotency = read_json(
-        root / "reliability" / "kind-idempotency-results.json"
-    )
-    profile_kind = read_json(
-        root / "profile-kind" / "profile-kind-matrix.json"
-    )
-    profileless_kind = read_json(
-        root
-        / "profileless-kind"
-        / "profileless-kind-results.json"
+    kind_results = read_json(
+        root / "kind-matrix" / "kind-matrix-results.json"
     )
     regression = read_json(root / "regression-summary.json")
     performance = read_json(root / "performance-trend.json")
 
     sections = {
-        "requirementUnderstanding": requirement_section(profileless),
+        "requirementUnderstanding": requirement_section(requirements),
         "ragQuality": rag_section(rag),
         "artifactQuality": artifact_section(
-            profileless_compile or profileless
+            compile_results or requirements
         ),
         "validationSuccess": validation_section(
             regression,
-            profileless_compile or profileless,
+            compile_results or requirements,
         ),
         "safetyReliability": reliability_section(reliability),
-        "e2eSuccess": e2e_section(
-            profile_kind,
-            kind_idempotency,
-            profileless_kind,
-        ),
+        "e2eSuccess": e2e_section(kind_results),
         "latency": latency_section(performance),
     }
     section_scores = [
@@ -104,19 +92,13 @@ def build_unified_evaluation(root: Path) -> dict[str, Any]:
 def requirement_section(data: dict[str, Any]) -> dict[str, Any]:
     items = data.get("requirements") or []
     if not items:
-        return not_run("profileless requirement results are unavailable")
+        return not_run("requirement matrix results are unavailable")
     passed = sum(1 for item in items if item.get("passed"))
     return scored(
         passed,
         len(items),
         requirements=len(items),
         kinds=[item.get("kind") for item in items],
-        profileModes=[
-            item.get("profileSelectionMode") for item in items
-        ],
-        profileHintsDisabled=bool(
-            data.get("profileHintsDisabled")
-        ),
     )
 
 
@@ -162,7 +144,7 @@ def artifact_section(data: dict[str, Any]) -> dict[str, Any]:
 
 def validation_section(
     regression: dict[str, Any],
-    profileless: dict[str, Any],
+    compile_results: dict[str, Any],
 ) -> dict[str, Any]:
     checks = regression.get("checks") or []
     validation_checks = [
@@ -178,7 +160,7 @@ def validation_section(
         }
     ]
     artifact_tests = []
-    for item in profileless.get("requirements") or []:
+    for item in compile_results.get("requirements") or []:
         quality = item.get("controllerQuality") or {}
         test_result = (quality.get("criteria") or {}).get("testsPassed")
         if test_result:
@@ -205,91 +187,31 @@ def reliability_section(data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def e2e_section(
-    profile_kind: dict[str, Any],
-    idempotency: dict[str, Any],
-    profileless_kind: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+def e2e_section(kind_results: dict[str, Any] | None = None) -> dict[str, Any]:
     evidence: list[bool] = []
-    profile_results = [
-        item
-        for item in profile_kind.get("results") or []
-        if item.get("status") != "skipped"
-    ]
-    evidence.extend(item.get("status") == "passed" for item in profile_results)
-    lifecycle_checks = []
-    for item in profile_results:
-        checks = (
-            (item.get("deploymentSummary") or {}).get("checks") or {}
+    lifecycle_checks: list[bool] = []
+    runs = 0
+    if kind_results:
+        results = (
+            kind_results.get("results")
+            or [kind_results]
         )
-        lifecycle = [
-            bool((checks.get("lifecycleIdempotency") or {}).get(
-                "reapplyStable"
-            )),
-            all(
-                assertion.get("passed")
-                for assertion in (
-                    (checks.get("lifecycleUpdate") or {}).get(
-                        "assertions"
-                    )
-                    or []
-                )
-            )
-            if checks.get("lifecycleUpdate")
-            else True,
-            all(
-                result.get("passed")
-                for result in (
-                    (checks.get("lifecycleDelete") or {}).get(
-                        "managedResources"
-                    )
-                    or {}
-                ).values()
-            )
-            if checks.get("lifecycleDelete")
-            else False,
-            bool((checks.get("lifecycleRestore") or {}).get("restored")),
-        ]
-        if checks:
-            lifecycle_checks.extend(lifecycle)
-    evidence.extend(lifecycle_checks)
-    if (
-        idempotency
-        and not idempotency.get("skipped")
-        and idempotency.get("status") != "skipped"
-    ):
-        evidence.extend(
-            [
-                bool(idempotency.get("reapplyIdempotent")),
-                bool(idempotency.get("specChangeIdempotent")),
-            ]
-        )
-    profileless_runs = 0
-    if profileless_kind:
-        profileless_results = (
-            profileless_kind.get("results")
-            or [profileless_kind]
-        )
-        profileless_runs = len(profileless_results)
-        for item in profileless_results:
-            evidence.append(
-                item.get("status") == "passed"
-                and item.get("profileUsed") is False
-            )
+        runs = len(results)
+        for item in results:
+            evidence.append(item.get("status") == "passed")
             checks = (
                 (item.get("deploymentSummary") or {}).get("checks")
                 or {}
             )
-            profileless_lifecycle = lifecycle_evidence(checks)
-            evidence.extend(profileless_lifecycle)
-            lifecycle_checks.extend(profileless_lifecycle)
+            lifecycle = lifecycle_evidence(checks)
+            evidence.extend(lifecycle)
+            lifecycle_checks.extend(lifecycle)
     if not evidence:
         return not_run("kind E2E results are unavailable")
     return scored(
         sum(1 for item in evidence if item),
         len(evidence),
-        profileRuns=len(profile_results),
-        profilelessKindRuns=profileless_runs,
+        kindRuns=runs,
         lifecycleChecks=len(lifecycle_checks),
     )
 

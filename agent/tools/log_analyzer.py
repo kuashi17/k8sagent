@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze scaffold, patch, and e2e execution logs."""
+"""Analyze scaffold, patch, and kind lifecycle execution logs."""
 
 from __future__ import annotations
 
@@ -111,7 +111,14 @@ ERROR_RULES = [
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze generated execution logs and summary.json.")
-    parser.add_argument("--log-dir", required=True, help="Path to a logs/scaffold, logs/patch, or logs/e2e timestamp directory.")
+    parser.add_argument(
+        "--log-dir",
+        required=True,
+        help=(
+            "Path to a logs/scaffold, logs/patch, or "
+            "logs/kind-deployment timestamp directory."
+        ),
+    )
     parser.add_argument("--output", help="Analysis markdown path. Defaults to <log-dir>/analysis.md.")
     args = parser.parse_args()
 
@@ -325,25 +332,13 @@ def recommended_command(summary: dict[str, Any], log_dir: Path) -> str:
     if "projectDir" in summary:
         input_path = summary.get("input")
         project = summary.get("projectDir")
-        profile_path = nested_get(summary, ["profile", "path"])
         if not (input_path and project):
             return insufficient_rerun_info()
         command = ["python3", "agent/tools/artifact_patcher.py", "--input", str(input_path), "--project", str(project)]
-        if profile_path:
-            command.extend(["--profile", str(profile_path)])
         command.append("--execute")
         return shell_join(command)
 
     return insufficient_rerun_info()
-
-
-def nested_get(data: dict[str, Any], keys: list[str]) -> Any:
-    value: Any = data
-    for key in keys:
-        if not isinstance(value, dict):
-            return None
-        value = value.get(key)
-    return value
 
 
 def insufficient_rerun_info() -> str:
