@@ -10,7 +10,8 @@ AI가 만든 답변이나 명령을 그대로 실행하지 않습니다. 필요�
 
 ## k8sagent가 필요한 이유
 
-Kubernetes Operator를 만들려면 CRD 설계, Go 타입, Reconcile 로직, RBAC, 코드 생성, 테스트와 실제 클러스터 검증을 함께 다뤄야 합니다. 처음 만드는 개발자는 요구사항을 코드 구조로 바꾸는 과정과 실패 원인을 찾는 과정에서 많은 시간을 사용합니다.
+Kubernetes Operator를 만들려면 CRD 설계, Go 타입, Reconcile 로직, RBAC, 코드 생성, 테스트와 실제 클러스터 검증을 함께 다뤄야 합니다. 
+처음 만드는 개발자는 요구사항을 코드 구조로 바꾸는 과정과 실패 원인을 찾는 과정에서 많은 시간을 사용합니다.
 
 k8sagent의 대상 사용자는 Operator를 처음 만들거나 비슷한 Controller를 반복해서 작성하는 플랫폼·서비스 개발자입니다.
 
@@ -94,7 +95,8 @@ k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 �
 | Docker | Docker Engine 또는 Docker Desktop | kind 검증을 실행할 때 필요 |
 | Kubernetes 도구 | kubectl, kind, kubebuilder, kustomize | scaffold와 로컬 클러스터 검증 |
 
-`scripts/install-local-tools.sh`는 Go, kind, kubebuilder, kustomize를 저장소의 `.tools/`에 설치합니다. Docker와 kubectl은 운영체제에 맞게 별도로 준비해야 합니다.
+`scripts/install-local-tools.sh`는 Go, kind, kubebuilder, kustomize를 저장소의 `.tools/`에 설치합니다. 
+Docker와 kubectl은 운영체제에 맞게 별도로 준비해야 합니다.
 
 WSL2에서 Docker Desktop을 사용할 때는 WSL integration을 활성화하고 다음 명령이 성공해야 합니다.
 
