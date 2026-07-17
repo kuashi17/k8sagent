@@ -1,188 +1,132 @@
-# 그림 중심 전체 흐름 설명
+# k8sagent 시각적 동작 개요
 
-이 문서는 전체 구조를 처음 이해하기 위한 그림 중심 설명입니다.
-세부 명령어보다 “누가 무엇을 하고, 결과가 어디에 생기는지”를 먼저 잡는 것이 목적입니다.
+이 문서는 k8sagent가 Operator 요구사항을 받아 계획을 만들고, 사용자 승인 후 코드와 검증 근거를 생성하는 과정을 그림으로 설명합니다.
 
-## 1. 이 시스템이 하는 일
+## 전체 흐름
+
+```mermaid
+flowchart TD
+    U["사용자<br/>Custom Resource 이름 · API · 필드 · 관리 동작"] --> UI["Web UI 또는 CLI"]
+    UI --> N["요구사항 정규화<br/>누락 · 모순 · 관리 대상 확인"]
+    N --> Q{"정보가 충분한가?"}
+    Q -->|아니오| C["필요한 정보만 질문<br/>Tool 실행 없이 중단"]
+    Q -->|예| R["RAG 검색<br/>관련 Kubernetes 문서 선택"]
+    R --> L["Local LLM<br/>작업 계획 작성"]
+    L --> P["계획 형식과 허용 작업 검증"]
+    P --> V["사용자에게 계획 · 권한 · 제한사항 표시"]
+    V --> A{"사용자 승인"}
+    A -->|승인 전| V
+    A -->|승인| T["검증된 Tool 실행"]
+    T --> G["Kubebuilder 프로젝트<br/>Controller · CRD · RBAC 생성"]
+    G --> M["make generate<br/>make manifests<br/>make test"]
+    M --> K{"kind 검증 실행?"}
+    K -->|선택 안 함| O["생성 결과와 make 근거 제공"]
+    K -->|사용자 승인| D["로컬 Kubernetes 배포<br/>lifecycle 검증"]
+    D --> O2["코드 · 로그 · runtime evidence 제공"]
+```
+
+사용자는 처음부터 셸 명령이나 Go 코드를 작성하지 않습니다. 먼저 요구사항을 설명하고 Agent가 이해한 계획을 확인합니다. 실제 파일 생성과 Kubernetes 검증은 각각 사용자 승인 이후에만 진행됩니다.
+
+## 구성요소별 책임
 
 ```mermaid
 flowchart LR
-    A["사용자<br/>자연어 요구사항"] --> B["AI Agent"]
-    B --> C["Kubebuilder 자동화 Tool"]
-    C --> D["Operator 프로젝트"]
-    D --> E["검증 로그"]
-    E --> B
-    B --> F["사람이 읽는 리포트"]
+    U["사용자"] --> A["Agent Orchestrator"]
+    A --> R["Requirement Analyzer"]
+    A --> K["RAG"]
+    A --> L["Local LLM"]
+    A --> S["계약·안전 정책"]
+    S --> T["자동화 Tool"]
+    T --> I["Controller IR"]
+    I --> G["생성 코드"]
+    T --> E["make · kind Evidence"]
+    E --> A
+    A --> U
 ```
 
-쉽게 말하면 이렇습니다.
-
-```text
-내가 만들고 싶은 Operator를 글로 쓴다.
-AI Agent가 그 글을 읽고 개발 순서를 만든다.
-자동화 Tool이 실제 Kubebuilder 작업을 수행한다.
-검증 결과와 오류 로그를 다시 AI Agent가 읽는다.
-마지막에 성공 여부와 다음 조치를 설명한다.
-```
-
-## 2. 주요 등장인물
-
-```mermaid
-flowchart TD
-    U["사용자"] --> A["AI Agent"]
-    A --> L["Local LLM<br/>Ollama"]
-    A --> R["RAG 검색<br/>knowledge-base"]
-    A --> W["Tool Wrapper"]
-    W --> T1["spec_generator"]
-    W --> T2["command_planner"]
-    W --> T3["scaffold_runner"]
-    W --> T4["artifact_patcher"]
-    W --> T5["validation"]
-    W --> T6["kind_deployment"]
-    W --> T7["log_analyzer"]
-```
-
-| 구성요소 | 쉽게 말하면 | 실제 역할 |
+| 구성요소 | 담당하는 일 | 담당하지 않는 일 |
 | --- | --- | --- |
-| 사용자 | 만들고 싶은 것을 말하는 사람 | 자연어 요구사항 작성 |
-| AI Agent | 전체 진행 관리자 | LLM, RAG, Tool 실행 순서 관리 |
-| Local LLM | 판단하는 두뇌 | 요구사항 요약, 계획 생성, 결과 설명 |
-| RAG 검색 | 참고 문서 찾기 | Kubebuilder 가이드, 오류 해결 문서 검색 |
-| Tool Wrapper | 안전한 실행 관리자 | 허용된 Tool만 실행 |
-| 자동화 Tool | 실제 작업자 | spec 생성, scaffold, patch, 검증 |
+| Requirement Analyzer | API, spec/status, 관리·관찰 리소스, 삭제 정책 정규화 | 불명확한 값을 임의로 확정하지 않음 |
+| RAG | 로컬 knowledge-base에서 관련 개발·오류 문서 검색 | 검색 문서를 명령처럼 실행하지 않음 |
+| Local LLM | 누락 정보, 위험 요소와 Tool 실행 계획 작성 | 셸 명령과 Go 코드를 직접 실행하지 않음 |
+| 계약·안전 정책 | 계획 형식, Tool 종류, 입력값, 경로와 승인 상태 검사 | 허용되지 않은 작업을 대체 실행하지 않음 |
+| 자동화 Tool | 스펙, Kubebuilder scaffold, Controller, CRD, RBAC 생성과 검증 | LLM의 자유 형식 명령을 실행하지 않음 |
+| Evidence 수집 | make와 kind의 실제 결과, 오류 코드와 lifecycle 상태 기록 | 실행하지 않은 항목을 성공으로 기록하지 않음 |
 
-## 3. 자연어 요구사항이 Operator 프로젝트가 되는 과정
+핵심 경계는 다음과 같습니다.
+
+```text
+operator_spec → controller_ir → generated_code
+```
+
+Local LLM은 어떤 작업이 필요한지 계획하지만, Controller 코드는 구조화된 Operator 스펙과 Controller IR을 기준으로 생성됩니다. 따라서 같은 의미의 요구사항은 가능한 한 동일한 코드 생성 경로를 사용합니다.
+
+## 사용자 승인 단계
+
+```mermaid
+sequenceDiagram
+    participant U as 사용자
+    participant W as Web UI
+    participant A as Agent
+    participant T as Tool
+    participant K as kind
+
+    U->>W: Operator 요구사항 입력
+    W->>A: 계획 요청
+    A-->>W: API · 필드 · 관리 대상 · RBAC · 제한사항
+    W-->>U: 생성 전 계획 표시
+    U->>W: 코드 생성 승인
+    W->>T: scaffold · 코드 생성 · make 검증
+    T-->>W: 파일과 실행 결과
+    W-->>U: 생성 결과 표시
+    U->>W: Kubernetes 검증 승인
+    W->>K: 배포와 lifecycle 검증
+    K-->>W: runtime evidence
+    W-->>U: 검증 결과와 확인 명령
+```
+
+승인은 두 번 분리됩니다.
+
+1. 코드 생성 승인: Kubebuilder 프로젝트와 코드를 만들고 make 검증을 수행합니다.
+2. Kubernetes 검증 승인: Docker/kind 환경에서 Operator를 배포하고 lifecycle을 확인합니다.
+
+## 성공과 실패의 판정
 
 ```mermaid
 flowchart TD
-    A["requirements/appconfig.txt<br/>자연어 요구사항"] --> B["RAG 검색<br/>관련 가이드 찾기"]
-    B --> C["Local LLM Planner<br/>실행 계획 생성"]
-    C --> D["spec_generator<br/>operator-spec.yaml 생성"]
-    D --> E["command_planner<br/>실행 계획 md 생성"]
-    E --> F["scaffold_runner<br/>Kubebuilder 프로젝트 생성"]
-    F --> G["artifact_patcher<br/>API 타입, 샘플, RBAC 보정"]
-    G --> H["validation<br/>make generate/manifests/test"]
-    H --> I["final LLM 평가<br/>성공/실패 설명"]
+    T["Tool 실행 결과"] --> Q{"실제 명령이 성공했는가?"}
+    Q -->|예| E["성공 Evidence 기록"]
+    Q -->|아니오| X["구조화 errorCode와 원본 로그 기록"]
+    X --> I{"인프라 오류인가?"}
+    I -->|예| F["Operator 코드 실패와 분리<br/>환경 복구 방법 안내"]
+    I -->|아니오| R["실패 근거에 맞는 다음 조치 제안"]
+    F --> N["실행하지 않은 lifecycle은 not-run"]
+    R --> H["자동 복구 없이 사용자 확인 대기"]
 ```
 
-각 단계의 결과물은 다음 위치에 생깁니다.
+최종 성공 여부는 Local LLM의 설명이 아니라 실제 Tool의 종료 코드와 검증 결과로 결정합니다. Docker daemon 연결 실패처럼 실행 환경의 문제는 Operator 코드 오류와 분리하며, 실행되지 않은 lifecycle 항목은 Capability 근거로 사용하지 않습니다.
 
-| 단계 | 결과물 |
-| --- | --- |
-| 자연어 요구사항 | `requirements/*.txt` |
-| 구조화 스펙 | `generated/*-operator-spec.yaml` |
-| 실행 계획 | `generated/*-command-plan.md` |
-| Kubebuilder 프로젝트 | `workspace/generated-operators/*` |
-| Agent 리포트 | `logs/agent/<timestamp>/agent-report.md` |
-| Tool 실행 결과 | `logs/agent/<timestamp>/tool-results.json` |
+필수 정보가 없거나 요구사항이 서로 모순되는 경우에도 생성 Tool을 실행하지 않습니다. 이때는 임의 값을 정하거나 근거 없는 오류를 만들지 않고, 사용자가 보완해야 할 내용만 표시합니다.
 
-## 4. dry-run과 execute 차이
+## 생성되는 결과
 
-가장 중요한 안전장치입니다.
-
-```mermaid
-flowchart LR
-    A["Agent 실행"] --> B{"--execute 있음?"}
-    B -->|아니오| C["dry-run<br/>무엇을 할지 보여줌"]
-    B -->|예| D["execute<br/>실제 파일 생성/수정/검증 실행"]
-```
-
-| 모드 | 의미 | 실제 변경 |
+| 실행 방식 | 주요 위치 | 내용 |
 | --- | --- | --- |
-| `--mode dry-run` | 계획과 실행 예정 명령을 확인 | 거의 없음 |
-| `--mode execute --execute` | 실제 scaffold, patch, validation 수행 | 있음 |
+| Web UI | `logs/web/jobs/<job-id>/artifacts/` | Operator 스펙, 계획, Capability 정보 |
+| Web UI | `logs/web/jobs/<job-id>/workspace/` | 생성된 Kubebuilder 프로젝트 |
+| Web UI | `logs/web/jobs/<job-id>/` | 작업 상태, stdout/stderr, 결과 요약 |
+| CLI | `generated/` | Operator 스펙과 계획 |
+| CLI | `workspace/` | 생성된 Kubebuilder 프로젝트 |
+| CLI | `logs/agent/<timestamp>/` | Agent 입력·출력, Tool 결과와 Evidence |
 
-초보자라면 항상 dry-run으로 먼저 확인하는 것이 좋습니다.
+결과 화면에서는 다음 내용을 우선 확인합니다.
 
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/appconfig.txt \
-  --profile profiles/appconfig.yaml \
-  --mode dry-run
-```
+- Agent가 이해한 Custom Resource와 관리 대상
+- 생성된 Controller, API 타입과 RBAC 파일
+- `make generate`, `make manifests`, `make test` 결과
+- kind를 실행했다면 생성·변경·drift 복구·삭제 정책 Evidence
+- 실패했다면 구조화 오류 코드, 실제 실패 단계와 다음 조치
 
-## 5. 성공했을 때 흐름
+## 한 줄 요약
 
-```mermaid
-flowchart TD
-    A["Tool 실행"] --> B{"모든 Tool 성공?"}
-    B -->|예| C["Local LLM 최종 평가"]
-    C --> D["executionDecision: succeeded"]
-    D --> E["agent-report.md 생성"]
-```
-
-성공하면 주로 아래 파일을 보면 됩니다.
-
-```text
-logs/agent/<timestamp>/agent-report.md
-logs/agent/<timestamp>/summary.json
-logs/agent/<timestamp>/final-llm-output.json
-```
-
-## 6. 실패했을 때 흐름
-
-```mermaid
-flowchart TD
-    A["Tool 실행 실패"] --> B["failure-context.json 생성"]
-    B --> C["troubleshooting RAG 검색"]
-    C --> D["Local LLM recovery plan 생성"]
-    D --> E["Recovery Policy Validator 검증"]
-    E --> F["validated-recovery-plan.json"]
-    F --> G["사용자 승인 대기"]
-```
-
-중요한 점:
-
-```text
-실패 복구 계획은 자동 실행하지 않습니다.
-Agent는 무엇을 고쳐야 하는지 제안만 하고,
-실제 수정은 사용자 승인 이후에만 진행합니다.
-```
-
-예를 들어 `brokenValue:notatype` 같은 잘못된 타입이 있으면 다음처럼 판단합니다.
-
-```text
-classification: invalid-field-type
-rootCause: brokenValue field uses unsupported type: notatype
-복구 순서:
-  1. requirement_editor
-  2. spec_generator
-  3. artifact_patcher
-  4. validation
-상태:
-  waiting-for-user-approval
-```
-
-## 7. 지금 바로 이해용으로 실행해볼 명령
-
-가장 안전한 확인 명령입니다.
-
-```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/appconfig.txt \
-  --profile profiles/appconfig.yaml \
-  --mode dry-run
-```
-
-실행 후 이 파일을 보면 됩니다.
-
-```text
-logs/agent/<timestamp>/agent-report.md
-```
-
-이 리포트에서 먼저 볼 부분은 다음입니다.
-
-| 볼 부분 | 의미 |
-| --- | --- |
-| Requirement Summary | 사용자의 요구사항을 AI가 어떻게 이해했는지 |
-| Retrieved Knowledge | 어떤 문서를 참고했는지 |
-| Tool Call Plan From LLM | 어떤 작업 순서로 진행하려는지 |
-| Tool Execution Results | 실제 Tool이 성공했는지 |
-| Beginner Summary | 초보자용 요약 |
-
-## 8. 한 줄 요약
-
-```text
-이 프로젝트는 “Operator 개발 절차를 아는 AI 진행자”와
-“실제 Kubebuilder 작업을 수행하는 자동화 Tool”을 연결한 구조입니다.
-```
+> k8sagent는 Local LLM의 계획 능력과 검증된 코드 생성 Tool을 분리하고, 사용자 승인과 실제 실행 Evidence를 통해 Operator 개발 과정을 안전하게 연결합니다.
