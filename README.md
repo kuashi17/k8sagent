@@ -308,7 +308,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 ### 시작과 운영
 
 - [시각적 전체 흐름](docs/visual-overview.md)
-- [제품 검증 체크리스트](docs/product-validation-checklist.md)
+- [Web UI 동작 확인 체크리스트](docs/product-validation-checklist.md)
 - [문제 해결 가이드](docs/troubleshooting-guide.md)
 
 ### 구조와 계약

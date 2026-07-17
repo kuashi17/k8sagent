@@ -1,247 +1,104 @@
-# Product Validation Checklist
+# Web UI 동작 확인 체크리스트
 
-이 문서는 Web UI와 CLI로 현재 제품 흐름을 확인하기 위한 점검표입니다.
-특정 Operator 예제에 종속되지 않고, 요구사항 입력부터 계획 확인, 코드 생성,
-검증, 실패 처리까지의 사용자 여정을 기준으로 작성했습니다.
+이 문서는 k8sagent의 화면과 사용자 상태 전이를 직접 확인하기 위한 수동 점검표입니다. 코드 회귀는 자동 테스트가 담당하고, 이 문서는 버튼·안내 문구·승인 경계가 실제 사용자 흐름과 일치하는지 확인하는 데 사용합니다.
 
-## 1. 실행 전 환경 확인
+자동 회귀 실행 방법은 README의 [검증](../README.md#검증)을 참고합니다.
 
-### Python 패키지
+## 확인 전 준비
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+- README의 [필수 환경](../README.md#필수-환경)과 [빠른 시작](../README.md#빠른-시작)을 완료합니다.
+- Local LLM이 실행 중인지 확인합니다.
+- kind 검증을 확인할 때만 Docker daemon이 필요합니다.
+- 정상 흐름은 Web UI의 `웹서비스` 예시처럼 검증된 관리 패턴으로 시작합니다.
+- 요구사항을 직접 작성한다면 [Operator 요구사항 작성 가이드](requirement-writing-guide.md)를 참고합니다.
 
-### 로컬 개발 도구
+## 1. 첫 화면
 
-```bash
-./scripts/install-local-tools.sh
-export PATH="$PWD/.tools/bin:$PATH"
-./scripts/check-env.sh
-```
+- [ ] Custom Resource 이름, API, 필드와 관리 동작이 필요하다는 안내를 찾을 수 있다.
+- [ ] `spec`과 `status`의 차이를 예시로 확인할 수 있다.
+- [ ] 예시 버튼을 누르면 textarea에 수정 가능한 요구사항이 입력된다.
+- [ ] 기존 입력이 있을 때 예시로 덮어쓰기 전에 확인 안내가 표시된다.
+- [ ] 첫 버튼이 실제 생성이 아니라 계획을 만드는 단계임을 알 수 있다.
+- [ ] 최근 작업에서 작업 이름과 생성 시각을 구분할 수 있다.
 
-확인 대상:
+## 2. 계획 화면
 
-- Python
-- Go
-- Docker
-- kubectl
-- kind
-- kubebuilder
-- kustomize
-- git
+정보가 충분한 요구사항으로 계획을 만듭니다.
 
-### Docker와 kind
+- [ ] Custom Resource와 관리·관찰 리소스가 요구사항과 일치한다.
+- [ ] 제외하라고 작성한 리소스가 관리 대상에 포함되지 않는다.
+- [ ] spec/status 필드, RBAC 범위와 삭제 방식이 표시된다.
+- [ ] Capability 등급과 현재 검증 수준을 구분할 수 있다.
+- [ ] 코드 생성 전에 사용자가 계획을 승인해야 한다.
+- [ ] 이 단계에서는 Kubebuilder 프로젝트가 생성 완료된 것처럼 표시되지 않는다.
 
-kind 검증을 실행하려면 WSL 터미널에서 Docker daemon에 연결되어야 합니다.
+검증 근거가 부족한 `experimental` 관리 패턴에서는 다음 항목도 확인합니다.
 
-```bash
-docker info
-kind get clusters
-```
+- [ ] 새로운 Custom Resource 이름이 아니라 관리 패턴의 검증 근거가 부족하다는 의미로 설명된다.
+- [ ] 제한사항 확인 체크박스를 선택하기 전에는 생성 승인이 비활성화된다.
+- [ ] 체크 후에만 experimental 코드 생성 버튼을 사용할 수 있다.
 
-Docker가 꺼져 있으면 Web 결과 화면은 `DOCKER_DAEMON_UNAVAILABLE`로
-빠르게 실패해야 하며, lifecycle 항목은 `not-run`으로 남아야 합니다.
+## 3. 정보 보완 상태
 
-### Local LLM
+Custom Resource 이름이나 API를 빼거나, 필드 타입 또는 삭제 방식이 서로 모순되는 요구사항으로 계획을 요청합니다.
 
-기본 설정은 Ollama 호환 Local LLM을 사용합니다.
+- [ ] 상태가 `clarification-required`로 구분된다.
+- [ ] 임의의 이름, 타입이나 삭제 정책을 확정하지 않는다.
+- [ ] 사용자에게 부족하거나 충돌하는 정보만 질문한다.
+- [ ] 생성 Tool과 Kubebuilder workspace가 만들어지지 않는다.
+- [ ] 실행 실패처럼 Recovery 승인 대기 상태를 표시하지 않는다.
+- [ ] 실제로 발생하지 않은 컴파일 오류를 원인으로 제시하지 않는다.
 
-```bash
-ollama pull qwen2.5-coder:3b
-```
+## 4. 코드 생성과 make 검증
 
-Web/CLI 실행 전 다음 환경변수를 필요에 맞게 설정할 수 있습니다.
+계획을 확인하고 코드 생성을 승인합니다.
 
-```bash
-export LOCAL_LLM_BASE_URL=http://localhost:11434/v1
-export LOCAL_LLM_MODEL=qwen2.5-coder:3b
-```
+- [ ] 진행 화면에서 현재 단계와 경과 시간이 계속 갱신된다.
+- [ ] 코드 생성, CRD/RBAC 생성과 make 검증 단계가 구분된다.
+- [ ] `make generate`, `make manifests`, `make test` 결과가 실제 Tool 결과와 일치한다.
+- [ ] 실패한 Tool이 있으면 완료하지 않은 단계를 성공처럼 표시하지 않는다.
+- [ ] 결과 화면의 파일 경로가 해당 Web job의 `artifacts/`와 `workspace/`를 가리킨다.
+- [ ] 먼저 볼 Controller, API 타입과 계획 파일을 구분할 수 있다.
+- [ ] 다음 행동이 코드 확인 또는 Kubernetes 검증 중 하나로 명확하다.
 
-## 2. Web UI 기본 시나리오
+## 5. kind lifecycle 검증
 
-Web 서버를 실행합니다.
+Docker가 준비된 환경에서 Kubernetes 검증을 승인합니다.
 
-```bash
-uvicorn web.app:app --host 0.0.0.0 --port 8000
-```
+- [ ] kind 배포가 코드 생성과 별도 승인 단계로 시작된다.
+- [ ] 진행 화면에 배포와 lifecycle 검증 단계가 표시된다.
+- [ ] 실제로 실행한 생성·변경·drift 복구·삭제 항목만 Evidence로 기록된다.
+- [ ] 읽기 전용 리소스에는 쓰기 권한이나 소유권이 부여되지 않는다.
+- [ ] retain 요구사항에서는 Custom Resource 삭제 후 기존 리소스가 유지된다.
+- [ ] 결과 화면의 kubectl 명령과 복사 버튼이 동작한다.
+- [ ] 검증 성공 시 클러스터 context, namespace와 실제 리소스 이름을 확인할 수 있다.
 
-브라우저에서 접속합니다.
+Docker에 연결할 수 없는 상태를 확인할 때는 다음 결과가 기대됩니다.
 
-```text
-http://localhost:8000
-```
+- [ ] 상태가 `infrastructure-failed`로 표시된다.
+- [ ] 오류 코드가 `DOCKER_DAEMON_UNAVAILABLE`로 분류된다.
+- [ ] Operator 코드 문제가 아니라 실행 환경 문제로 설명된다.
+- [ ] lifecycle 항목은 `not-run`이며 성공 근거로 기록되지 않는다.
+- [ ] 하단에 검증 완료 문구가 표시되지 않는다.
+- [ ] kubectl 명령은 계획된 리소스의 존재 여부를 확인하는 용도로 안내된다.
 
-확인할 사용자 흐름:
+## 6. 실패 로그 분석
 
-1. 요구사항 입력 화면이 열린다.
-2. 예시 버튼을 누르면 textarea에 수정 가능한 요구사항이 채워진다.
-3. `안전하게 계획 만들기`를 누르면 실제 파일 생성 전 계획 화면으로 이동한다.
-4. 필수 정보가 부족하면 생성하지 않고 보완 질문을 보여준다.
-5. 계획 화면에서 관리 리소스, RBAC, 삭제 정책, capability 등급을 확인할 수 있다.
-6. 사용자가 승인해야 코드 생성과 검증이 진행된다.
-7. 생성 후 결과 화면에서 먼저 볼 파일, 검증 결과, kubectl 확인 명령을 볼 수 있다.
-8. kind 검증을 실행하면 create/update/drift/delete/read-only/retain 등 lifecycle evidence가 표시된다.
+- [ ] 완료된 실패 작업을 선택할 수 있다.
+- [ ] 내부 로그 경로보다 작업 이름과 시각이 먼저 표시된다.
+- [ ] 알려진 오류는 구조화 오류 코드와 실제 로그 근거로 설명된다.
+- [ ] 원인을 확정할 수 없을 때도 근거 없는 파일명이나 컴파일 오류를 만들지 않는다.
+- [ ] 복구 계획은 자동 실행되지 않고 사용자가 확인할 다음 조치로 제공된다.
 
-## 3. 대표 요구사항
+## 완료 기준
 
-### Deployment 관리
+수동 확인은 다음 조건을 모두 만족하면 완료로 봅니다.
 
-```text
-CustomerPortal Operator를 만들어 주세요.
-API는 apps.sample.io/v1alpha1입니다.
+- 화면의 단계와 실제 job 상태가 일치한다.
+- 계획, 코드 생성과 kind 검증의 승인 경계가 분리된다.
+- 성공·실패·정보 보완·인프라 실패 문구가 서로 섞이지 않는다.
+- 생성 파일과 검증 근거가 실제 job 산출물에 연결된다.
+- 실행하지 않은 작업은 성공이나 Capability 근거로 표시되지 않는다.
+- 실패 원인과 사용자의 다음 행동이 실제 로그에 근거한다.
 
-spec:
-- image: string
-- replicas: int32
-
-status:
-- phase: string
-- readyReplicas: int32
-- message: string
-
-Controller는 Deployment를 생성하고 image와 replicas 변경을 반영해야 합니다.
-외부에서 Deployment가 변경되면 spec 기준으로 복구해야 합니다.
-CustomerPortal이 삭제되면 Deployment도 함께 삭제해야 합니다.
-```
-
-기대 결과:
-
-- 관리 대상은 Deployment만 표시된다.
-- 검증된 Deployment lifecycle 패턴이면 stable로 표시된다.
-- Service/Pod/Job/PVC가 관리 대상으로 섞이지 않는다.
-- kind 검증 성공 시 drift 복구와 삭제 정책 evidence가 기록된다.
-
-### 읽기 전용 Deployment 관찰
-
-```text
-ExistingDeploymentWatcher Operator를 만들어 주세요.
-API는 monitoring.sample.io/v1alpha1입니다.
-
-spec:
-- deploymentName: string
-- targetNamespace: string
-
-status:
-- phase: string
-- observedDeploymentName: string
-- desiredReplicas: int32
-- readyReplicas: int32
-- message: string
-
-Controller는 기존 Deployment를 읽기만 해야 합니다.
-Deployment를 새로 생성하거나 수정하거나 삭제하면 안 됩니다.
-ExistingDeploymentWatcher가 삭제되어도 기존 Deployment는 유지되어야 합니다.
-```
-
-기대 결과:
-
-- 관리 방식은 read-only로 분류된다.
-- Deployment RBAC는 get/list/watch 중심이어야 한다.
-- create/update/patch/delete 권한은 없어야 한다.
-- 삭제 정책은 retain 또는 ownership none으로 표시된다.
-
-### 검증 증거가 부족한 리소스
-
-```text
-AppAccessPolicy Operator를 만들어 주세요.
-API는 security.sample.io/v1alpha1입니다.
-
-spec:
-- appSelector: map[string]string
-- allowedFromNamespace: string
-- allowedPort: int32
-- protocol: string
-
-status:
-- phase: string
-- networkPolicyName: string
-- message: string
-
-Controller는 NetworkPolicy만 생성하고 갱신해야 합니다.
-Deployment, Pod, Service, Job, PVC는 생성하지 마세요.
-```
-
-기대 결과:
-
-- 관리 대상은 NetworkPolicy만 표시된다.
-- 금지한 Deployment/Pod/Service/Job/PVC가 managed/observed resource에 포함되지 않는다.
-- NetworkPolicy lifecycle evidence가 부족하면 experimental로 표시된다.
-- experimental 확인 체크 전에는 생성 승인이 불가능해야 한다.
-
-## 4. 실패 상태 확인
-
-### Docker 중단
-
-Docker Desktop을 종료한 뒤 kind 검증을 실행합니다.
-
-기대 결과:
-
-- 결과 상태가 infrastructure-failed로 표시된다.
-- errorCode는 `DOCKER_DAEMON_UNAVAILABLE`이어야 한다.
-- Operator 코드 문제가 아니라 환경 문제로 안내해야 한다.
-- lifecycle evidence는 모두 `not-run`이며 capability 승격 근거로 쓰이지 않는다.
-- kubectl 명령은 “일부 생성되었을 수 있는 리소스 확인” 용도로만 표시된다.
-
-### 필수 정보 누락
-
-Kind 또는 API group/version이 없는 요구사항을 입력합니다.
-
-기대 결과:
-
-- 임의 값으로 생성하지 않는다.
-- clarification-required 상태로 멈춘다.
-- 사용자에게 필요한 정보만 질문한다.
-- Tool 실행과 workspace 생성은 일어나지 않는다.
-
-### 모순된 삭제 정책
-
-PVC를 유지하라고 하면서 동시에 삭제하라고 요구합니다.
-
-기대 결과:
-
-- 삭제 정책 모순을 감지한다.
-- retain/delete 중 하나를 임의 선택하지 않는다.
-- 사용자에게 원하는 정책을 확인한다.
-
-## 5. CLI 회귀 확인
-
-빠른 회귀:
-
-```bash
-python3 scripts/run-regression-tests.py \
-  --suite quick \
-  --output-dir evaluation/results/regression/local-quick
-```
-
-Local LLM 포함 회귀:
-
-```bash
-python3 scripts/run-regression-tests.py \
-  --suite standard \
-  --output-dir evaluation/results/regression/local-standard
-```
-
-Docker/kind 포함 회귀:
-
-```bash
-python3 scripts/run-regression-tests.py \
-  --suite full \
-  --output-dir evaluation/results/regression/local-full
-```
-
-회귀 결과는 `evaluation/results/` 아래에 생성되며 git에는 추적하지 않습니다.
-
-## 6. 확인 기준
-
-제품 검증이 성공했다고 판단하는 기준은 다음과 같습니다.
-
-- LLM 계획이 Pydantic 계약 검증을 통과한다.
-- 승인되지 않은 Tool은 실행되지 않는다.
-- 코드 생성 후 `make generate`, `make manifests`, `make test`가 통과한다.
-- kind 검증에서 실제 lifecycle evidence가 기록된다.
-- 실패 시 구조화 errorCode와 다음 조치가 표시된다.
-- 인프라 실패와 Operator 코드 실패가 분리되어 보인다.
-- `not-run` 항목은 성공 evidence로 취급하지 않는다.
+확인 중 발견한 문제는 해당 Web job의 `summary.json`, stdout/stderr와 화면 상태를 함께 비교하면 원인을 구분하기 쉽습니다. Web 작업 산출물은 `logs/web/jobs/<job-id>/` 아래에 저장됩니다.
