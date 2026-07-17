@@ -168,6 +168,8 @@ Web UI에서는 다음 순서로 진행합니다.
 
 안정적인 계획을 위해 다음 네 가지 정보를 작성하는 것을 권장합니다.
 
+필드 타입, 읽기 전용 관찰과 삭제 방식에 대한 자세한 예시는 [Operator 요구사항 작성 가이드](docs/requirement-writing-guide.md)에서 확인할 수 있습니다.
+
 | 정보 | 예시 |
 | --- | --- |
 | Custom Resource 이름과 API | `CustomerPortal`, `apps.sample.io/v1alpha1` |
@@ -306,7 +308,6 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 ### 시작과 운영
 
 - [시각적 전체 흐름](docs/visual-overview.md)
-- [요구사항 작성 가이드](docs/requirement-writing-guide.md)
 - [제품 검증 체크리스트](docs/product-validation-checklist.md)
 - [문제 해결 가이드](docs/troubleshooting-guide.md)
 
