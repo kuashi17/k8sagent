@@ -40,7 +40,6 @@ print_row "----" "------" "--------------"
 check_cmd go go version
 check_cmd kubectl kubectl version --client=true
 check_cmd kind kind version
-check_cmd helm helm version --short
 check_cmd kubebuilder kubebuilder version
 check_cmd kustomize kustomize version
 check_cmd git git --version

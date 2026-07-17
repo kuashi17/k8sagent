@@ -8,7 +8,7 @@ AI가 만든 답변이나 명령을 그대로 실행하지 않습니다. 필요�
 
 ## k8sagent가 필요한 이유
 
-Kubernetes Operator를 만들려면 CRD 설계, Go 타입, Reconcile 로직, RBAC, 코드 생성, 테스트와 실제 클러스터 검증을 함께 다뤄야 합니다. 
+Kubernetes Operator를 만들려면 CRD 설계, Go 타입, Reconcile 로직, RBAC, 코드 생성, 테스트와 실제 클러스터 검증을 함께 다뤄야 합니다.
 처음 만드는 개발자는 요구사항을 코드 구조로 바꾸는 과정과 실패 원인을 찾는 과정에서 많은 시간을 사용합니다.
 
 k8sagent의 대상 사용자는 Operator를 처음 만들거나 비슷한 Controller를 반복해서 작성하는 플랫폼·서비스 개발자입니다.
@@ -86,7 +86,7 @@ flowchart TD
 
 k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 생성기가 아닙니다. 리소스 생성·갱신, 읽기 전용 관찰, 외부 drift 복구, status 반영, 소유권과 삭제 정책 같은 Controller 동작을 조합해 코드를 생성합니다.
 
-아래 목록은 생성 가능한 전체 범위가 아니라, 현재 compile과 kind lifecycle 검증 근거가 확보된 Kubernetes 관리 패턴을 보여줍니다. 
+아래 목록은 생성 가능한 전체 범위가 아니라, 현재 compile과 kind lifecycle 검증 근거가 확보된 Kubernetes 관리 패턴을 보여줍니다.
 지원 수준은 새 Custom Resource 이름이 아니라 관리 리소스와 동작 조합의 검증 결과로 결정합니다.
 
 | 수준 | 현재 리소스 |
@@ -97,7 +97,7 @@ k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 �
 
 처음 보는 Custom Resource 이름이라도 이미 검증된 Deployment 관리 패턴을 사용하면 동일한 근거를 적용할 수 있습니다. 새로운 Kubernetes 리소스는 capability catalog와 Controller IR을 통해 추가할 수 있으며, 검증이 부족한 패턴은 다른 리소스로 임의 대체하지 않고 `experimental` 또는 미지원 상태로 구분합니다.
 
-등급은 생성된 Operator가 운영 환경에 즉시 배포 가능하다는 뜻이 아닙니다. 
+등급은 생성된 Operator가 운영 환경에 즉시 배포 가능하다는 뜻이 아닙니다.
 k8sagent가 해당 관리 패턴에 대해 확보한 compile·kind·drift·RBAC·삭제 검증 수준을 의미합니다. 최신 지원 기준과 제한사항은 [config/capability-support.yaml](config/capability-support.yaml)에서 확인할 수 있습니다.
 
 ## 필수 환경
@@ -111,7 +111,7 @@ k8sagent가 해당 관리 패턴에 대해 확보한 compile·kind·drift·RBAC�
 | Docker | Docker Engine 또는 Docker Desktop | kind 검증을 실행할 때 필요 |
 | Kubernetes 도구 | kubectl, kind, kubebuilder, kustomize | scaffold와 로컬 클러스터 검증 |
 
-`scripts/install-local-tools.sh`는 Go, kind, kubebuilder, kustomize를 저장소의 `.tools/`에 설치합니다. 
+`scripts/install-local-tools.sh`는 Go, kind, kubebuilder, kustomize를 저장소의 `.tools/`에 설치합니다.
 Docker와 kubectl은 운영체제에 맞게 별도로 준비해야 합니다.
 
 WSL2에서 Docker Desktop을 사용할 때는 WSL integration을 활성화하고 다음 명령이 성공해야 합니다.
@@ -246,7 +246,7 @@ python3 scripts/run-regression-tests.py \
   --output-dir evaluation/results/regression/local-full
 ```
 
-2026-07-14 로컬 Quick 기준:
+2026-07-17 로컬 Quick 기준:
 
 - Unit test: 306개 통과, 조건부 제외 1개, 실패 0개
 - 요구사항 의미 일관성: 29/29 시나리오 통과
