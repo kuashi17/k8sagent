@@ -1,150 +1,175 @@
-# Operator Spec Schema
+# Operator 스펙 계약
 
-## Purpose
+## 역할
 
-`operator-spec.yaml`은 자연어 Operator 요구사항을 Kubebuilder 생성 흐름에서 사용할 수 있도록 변환한 중간 스펙입니다.
+`operator-spec.yaml`은 사용자의 요구사항을 Kubebuilder와 Controller 생성 Tool이 사용할 수 있도록 정규화한 중간 계약입니다. 자연어 원문이나 LLM 계획을 코드 생성기가 직접 읽지 않게 하고, 이후 단계의 입력을 이 스펙으로 고정합니다.
 
-현재 스펙은 규칙 기반 parser인 `agent/tools/spec_generator.py`가 생성합니다. 이후 LLM/RAG parser로 교체하더라도 이 YAML 구조를 Agent 내부 계약으로 유지하는 것을 목표로 합니다.
+```text
+사용자 요구사항
+  → operator-spec.yaml
+  → ControllerGenerationIR
+  → Controller · API 타입 · RBAC · CRD
+```
 
-## Top-Level Fields
+현재 스펙은 `agent/tools/spec_generator.py`가 생성합니다. `artifact_patcher.py`는 이 스펙을 내부 모델로 정규화하고, `controller_pipeline.py`는 정규화된 값을 Controller IR로 변환합니다.
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `metadata` | yes | 스펙 생성 정보 |
-| `project` | yes | Kubebuilder 프로젝트 정보 |
-| `api` | yes | Custom Resource API 정보 |
-| `specFields` | yes | CR `spec` 필드 목록 |
-| `statusFields` | yes | CR `status` 필드 목록 |
-| `controller` | no | Reconcile 책임과 리소스 매핑 정보 |
-| `rbac` | no | Controller가 접근해야 하는 Kubernetes 리소스 |
-| `validation` | no | 생성 후 실행할 검증 명령 |
-| `warnings` | no | 추론이 어렵거나 기본값을 사용한 항목 |
-| `errors` | no | 필수 항목 누락 등 변환 실패 사유 |
+## 최상위 구조
 
-## Metadata
+스펙 생성기는 다음 키를 항상 출력합니다. 값이 비어 있거나 유효하지 않으면 `errors`에 원인이 기록되고 다음 생성 단계가 중단됩니다.
+
+| 필드 | 역할 |
+| --- | --- |
+| `metadata` | 입력 파일, 생성 시각과 generator 버전 |
+| `project` | Kubebuilder 프로젝트 이름, domain과 Go module |
+| `api` | Custom Resource의 group, version과 kind |
+| `specFields` | 사용자가 입력할 원하는 상태 필드 |
+| `statusFields` | Controller가 기록할 실제 상태 필드 |
+| `controller` | 관리·관찰 리소스, 매핑과 lifecycle 정책 |
+| `rbac.resources` | Custom Resource와 Kubernetes 리소스 권한 |
+| `validation.commands` | 생성 후 실행할 make 검증 |
+| `sampleDefaults` | 샘플 Custom Resource에 사용할 선택적 기본값 |
+| `warnings` | 생성은 가능하지만 사용자가 확인할 내용 |
+| `errors` | 다음 단계로 진행할 수 없는 계약 오류 |
+
+## Metadata와 Project
 
 ```yaml
 metadata:
-  sourceFile: requirements/my-operator.txt
-  generatedAt: '2026-05-30T21:00:00+09:00'
+  sourceFile: requirements/customer-portal.txt
+  generatedAt: "2026-07-17T10:30:00+09:00"
   generatorVersion: 0.1.0
-```
-
-| Field | Description |
-| --- | --- |
-| `sourceFile` | 입력 요구사항 파일 경로 |
-| `generatedAt` | 스펙 생성 시각 |
-| `generatorVersion` | 사용한 generator 버전 |
-
-## Project
-
-```yaml
 project:
-  name: redis-cache-operator
+  name: customer-portal-operator
   domain: sample.io
-  module: sample.io/redis-cache-operator
+  module: sample.io/customer-portal-operator
 ```
 
-`project.name`과 `project.module`은 기본적으로 `api.kind`와 `project.domain`에서 추론합니다.
+`project.name`과 `project.module`은 Custom Resource kind와 domain에서 생성합니다. 프로젝트 이름은 Kubernetes DNS 이름 길이를 넘지 않도록 필요한 경우 축약됩니다.
 
-## API
+## Custom Resource API
 
 ```yaml
 api:
   domain: sample.io
-  group: cache
+  group: apps
   version: v1alpha1
-  kind: RedisCache
+  kind: CustomerPortal
 ```
 
-`api.group`, `api.version`, `api.kind`는 Kubebuilder `create api` 명령의 핵심 입력입니다.
+사용자가 `apps.sample.io/v1alpha1`처럼 API를 입력하면 다음과 같이 분리합니다.
 
-## Spec Fields
+- group: `apps`
+- domain: `sample.io`
+- version: `v1alpha1`
+
+group, domain, version과 kind는 Kubebuilder API 생성에 필요한 필수 값입니다.
+
+## spec/status 필드
 
 ```yaml
 specFields:
-  - name: size
-    type: int32
-    description: Redis replica 수
   - name: image
     type: string
-    description: Redis container image
-```
-
-지원하는 기본 타입은 `string`, `int32`, `bool`, `[]string`입니다. `int`는 `int32`, `boolean`은 `bool`로 정규화됩니다.
-
-## Status Fields
-
-```yaml
+    description: 실행할 컨테이너 이미지
+    typeInferred: false
+    needsConfirmation: false
 statusFields:
-  - name: phase
-    type: string
-    description: 진행 상태
-  - name: message
-    type: string
-    description: 상태 설명 또는 오류 메시지
+  - name: readyReplicas
+    type: int32
+    description: 준비된 Pod 개수
+    typeInferred: false
+    needsConfirmation: false
 ```
 
-`statusFields`는 Controller가 관찰한 상태를 기록하기 위한 타입 정의와 status 업데이트 로직 생성에 사용됩니다.
+각 필드는 다음 정보를 가집니다.
 
-## Controller
+| 필드 | 의미 |
+| --- | --- |
+| `name` | JSON과 Go struct에서 사용할 필드 이름 |
+| `type` | 정규화된 Go 필드 타입 |
+| `description` | 필드 용도와 생성 코드 주석 |
+| `typeInferred` | 명시적 타입이 없어 이름과 설명에서 제안했는지 여부 |
+| `needsConfirmation` | 실행 전에 정확한 타입을 사용자에게 확인해야 하는지 여부 |
+
+지원 타입:
+
+```text
+string, int32, int64, bool,
+[]string, map[string]string,
+metav1.Time, []metav1.Condition
+```
+
+`int`는 `int32`, `boolean`은 `bool`로 정규화합니다. 타입을 확정할 수 없으면 빈 타입과 `needsConfirmation: true`를 기록하며, `INVALID_FIELD_TYPE` 또는 추가 정보 요청으로 다음 단계 실행을 차단합니다.
+
+## Controller 계약
 
 ```yaml
 controller:
   enabled: true
   managedResources:
-    - StatefulSet
-    - Service
+    - Deployment
   observedResources: []
   resourcePolicies:
-    - kind: StatefulSet
+    - kind: Deployment
       strategy: create-or-update
       ownership: ownerReference
       deletionPolicy: garbage-collect
   responsibilities:
-    - Controller는 RedisCache 변경을 감지한다
-    - Controller는 StatefulSet, Service, PVC를 생성/수정/삭제한다
+    - Deployment를 생성하고 변경을 반영한다
+    - 외부 변경을 CustomerPortal spec 기준으로 복구한다
   fieldMappings:
-    - from: spec.size
-      to: StatefulSet replicas
+    - from: spec.image
+      to: Deployment.container.image
+    - from: spec.replicas
+      to: Deployment.replicas
   statusRules:
-    - status.phase는 StatefulSet readyReplicas와 replicas 비교 결과를 기준으로 갱신한다
+    - Deployment.status.readyReplicas를 status.readyReplicas에 기록한다
 ```
 
-`controller.responsibilities`와 `controller.fieldMappings`는 이후 Controller/Reconcile 코드 생성 단계의 입력입니다.
+| 필드 | 의미 |
+| --- | --- |
+| `managedResources` | Controller가 생성하거나 변경하는 Kubernetes 리소스 |
+| `observedResources` | 생성·변경하지 않고 상태만 읽는 리소스 |
+| `resourcePolicies` | 리소스별 변경, 소유권과 삭제 정책 |
+| `responsibilities` | 요구사항에서 추출한 Controller 책임 |
+| `fieldMappings` | spec 값이 반영될 Kubernetes 필드 |
+| `statusRules` | status 값의 출처와 갱신 규칙 |
 
-`managedResources`는 Controller가 생성하거나 변경하는 리소스입니다. `observedResources`는 상태만 조회하는 리소스이며 RBAC은 `get`, `list`, `watch`로 제한됩니다. `resourcePolicies`는 요구사항별로 `create-or-update`/`read-only`, `ownerReference`/`none`, `garbage-collect`/`retain`을 명시합니다. 리소스 이름이 같더라도 요구사항에 따라 조회 전용 또는 보존 정책을 선택할 수 있습니다.
+리소스 정책 조합:
 
-필드 타입이 자연어에서 제안된 경우 `typeInferred: true`가 기록됩니다. 타입을 안전하게 확정할 수 없으면 `needsConfirmation: true`와 빈 `type`을 기록하고, Agent는 Tool을 실행하기 전에 사용자에게 타입을 질문합니다.
+| 목적 | `strategy` | `ownership` | `deletionPolicy` |
+| --- | --- | --- | --- |
+| 생성하고 함께 삭제 | `create-or-update` | `ownerReference` | `garbage-collect` |
+| 생성하지만 삭제 후 유지 | `create-or-update` | `none` | `retain` |
+| 기존 리소스 읽기 전용 | `read-only` | `none` | `retain` |
 
-## RBAC
+읽기 전용 리소스는 `observedResources`에 기록되고 쓰기 RBAC을 갖지 않습니다. 유지와 함께 삭제처럼 서로 모순되는 정책은 `errors`에 기록합니다.
+
+## RBAC 계약
 
 ```yaml
 rbac:
   resources:
-    - apiGroup: cache.sample.io
-      resource: rediscaches
-      verbs:
-        - get
-        - list
-        - watch
-        - update
-        - patch
+    - apiGroup: apps.sample.io
+      resource: customerportals
+      verbs: [get, list, watch, update, patch]
     - apiGroup: apps
-      resource: statefulsets
-      verbs:
-        - get
-        - list
-        - watch
-        - create
-        - update
-        - patch
-        - delete
+      resource: deployments
+      verbs: [get, list, watch, create, update, patch, delete]
 ```
 
-RBAC는 요구사항에 명시된 리소스 목록과 Controller가 관리하는 Kubernetes 리소스에서 추론합니다.
+RBAC은 관리·관찰 리소스의 동작에서 계산합니다.
 
-## Validation
+- 관리 리소스: 조회와 생성·변경·삭제 권한
+- 관찰 리소스: `get`, `list`, `watch`만 허용
+- Custom Resource status: 내부 정규화 단계에서 status 갱신 권한 보완
+- wildcard 요청: 그대로 사용하지 않고 최소 권한 규칙으로 대체
+
+raw spec은 `rbac.resources`를 사용합니다. Artifact Patcher가 이를 내부 `rbacResources`로 정규화하고 중복 제거와 status 권한 보완을 수행합니다. Controller Renderer는 원본 RBAC 문장을 직접 해석하지 않습니다.
+
+## Validation과 Sample
+
+요구사항에 별도 검증 명령이 없으면 다음 기본값을 적용합니다.
 
 ```yaml
 validation:
@@ -154,79 +179,35 @@ validation:
     - make test
 ```
 
-요구사항에서 검증 명령을 찾지 못하면 기본값으로 `make generate`, `make manifests`, `make test`를 사용하고 `warnings`에 기록합니다.
+실행 엔진은 허용된 make target만 실행합니다. LLM이 임의의 검증 명령을 추가할 수 없습니다.
 
-## Warnings And Errors
+샘플 Custom Resource 값을 명시한 경우 `sampleDefaults`에 저장합니다.
 
 ```yaml
-warnings:
-  - validation.commands were not found; default commands were used.
-errors: []
+sampleDefaults:
+  image: nginx:latest
+  replicas: 2
 ```
 
-`warnings`는 추론은 가능하지만 사용자가 확인해야 하는 항목입니다. `errors`는 필수 항목이 누락되어 다음 생성 단계로 넘기기 어려운 항목입니다.
+값을 작성하지 않으면 Artifact Patcher가 필드 타입과 이름에 맞는 안전한 샘플 값을 생성합니다.
 
-필수 검증 항목은 다음과 같습니다.
-
-- `project.name`
-- `project.domain`
-- `project.module`
-- `api.group`
-- `api.version`
-- `api.kind`
-- `specFields`
-- `statusFields`
-
-## Example
+## Warnings와 Errors
 
 ```yaml
-metadata:
-  sourceFile: requirements/redis-cache.txt
-  generatedAt: '2026-05-30T21:00:00+09:00'
-  generatorVersion: 0.1.0
-project:
-  name: redis-cache-operator
-  domain: sample.io
-  module: sample.io/redis-cache-operator
-api:
-  domain: sample.io
-  group: cache
-  version: v1alpha1
-  kind: RedisCache
-specFields:
-  - name: size
-    type: int32
-    description: Redis replica 수
-statusFields:
-  - name: phase
-    type: string
-    description: 진행 상태
-controller:
-  enabled: true
-  managedResources:
-    - StatefulSet
-  responsibilities:
-    - Controller는 RedisCache 변경을 감지한다
-  fieldMappings:
-    - from: spec.size
-      to: StatefulSet replicas
-  statusRules:
-    - status.phase는 StatefulSet 상태를 기준으로 갱신한다
-rbac:
-  resources:
-    - apiGroup: cache.sample.io
-      resource: rediscaches
-      verbs:
-        - get
-        - list
-        - watch
-        - update
-        - patch
-validation:
-  commands:
-    - make generate
-    - make manifests
-    - make test
 warnings: []
 errors: []
 ```
+
+`warnings`는 일부 정보 추론 실패, 샘플 값 해석 실패, wildcard RBAC 대체처럼 사용자가 확인해야 하지만 계약 파일에는 기록할 수 있는 항목입니다. `errors`는 필수 값 누락, 필드 타입 미확정이나 모순된 lifecycle처럼 다음 생성을 중단해야 하는 항목입니다.
+
+다음 항목은 생성 전에 유효해야 합니다.
+
+- `project.name`, `project.domain`, `project.module`
+- `api.group`, `api.version`, `api.kind`
+- 하나 이상의 `specFields`와 `statusFields`
+- 모든 spec/status 필드의 확정된 타입
+- 서로 충돌하지 않는 리소스 정책
+
+## 생성 경계
+
+이 스펙은 신규 Controller 생성 경로의 기준입니다. 호환용 입력이 사용되면 Artifact Patcher가 먼저 내부 모델로 정규화하며, Controller Renderer는 원본 요구사항이나 이전 설정을 직접 참조하지 않습니다. Capability별 예외는 Renderer가 아니라 Adapter와 Validation Policy에서 처리합니다.
