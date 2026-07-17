@@ -1,5 +1,5 @@
 metadata:
-  name: kubebuilder-agent-rag-evaluation
+  name: k8sagent-rag-evaluation
   version: 0.1.0
   source: internal-authored
   description: Query set for comparing keyword, vector, hybrid, and hybrid-rerank retrieval modes.
