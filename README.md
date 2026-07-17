@@ -315,7 +315,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 
 - [k8sagent 아키텍처](docs/k8sagent-architecture.md)
 - [Operator 스펙 구조](docs/spec-schema.md)
-- [실행 기록과 안전장치](docs/agent-evidence-and-safety.md)
+- [Agent 작업 내역과 안전한 실행](docs/agent-evidence-and-safety.md)
 - [Local LLM 사용 정책](docs/local-model-usage-policy.md)
 - [RAG 평가 구조](docs/rag-evaluation.md)
 
