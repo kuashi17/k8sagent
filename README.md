@@ -72,7 +72,8 @@ flowchart TD
 
 k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 생성기가 아닙니다. 리소스 생성·갱신, 읽기 전용 관찰, 외부 drift 복구, status 반영, 소유권과 삭제 정책 같은 Controller 동작을 조합해 코드를 생성합니다.
 
-아래 목록은 생성 가능한 전체 범위가 아니라, 현재 compile과 kind lifecycle 검증 근거가 확보된 Kubernetes 관리 패턴을 보여줍니다. 지원 수준은 새 Custom Resource 이름이 아니라 관리 리소스와 동작 조합의 검증 결과로 결정합니다.
+아래 목록은 생성 가능한 전체 범위가 아니라, 현재 compile과 kind lifecycle 검증 근거가 확보된 Kubernetes 관리 패턴을 보여줍니다. 
+지원 수준은 새 Custom Resource 이름이 아니라 관리 리소스와 동작 조합의 검증 결과로 결정합니다.
 
 | 수준 | 현재 리소스 |
 | --- | --- |
