@@ -110,23 +110,19 @@ Docker에 연결할 수 없으면 kind 단계는 `DOCKER_DAEMON_UNAVAILABLE`로 
 
 ## 빠른 시작
 
-### 1. Python 환경
+### 1. 환경 준비
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 2. 로컬 개발 도구
-
-```bash
 ./scripts/install-local-tools.sh
 export PATH="$PWD/.tools/bin:$PATH"
 ./scripts/check-env.sh
 ```
 
-### 3. Local LLM
+### 2. Local LLM
 
 ```bash
 ollama pull qwen2.5-coder:3b
@@ -139,7 +135,7 @@ export LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export LOCAL_LLM_MODEL=qwen2.5-coder:3b
 ```
 
-### 4. Web UI
+### 3. Web UI
 
 ```bash
 uvicorn web.app:app --host 0.0.0.0 --port 8000
