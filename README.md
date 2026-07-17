@@ -313,7 +313,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 
 ### 구조와 계약
 
-- [AI Agent 아키텍처](docs/ai-agent-architecture.md)
+- [k8sagent 아키텍처](docs/k8sagent-architecture.md)
 - [Operator 스펙 계약](docs/spec-schema.md)
 - [안전성과 실행 근거](docs/agent-evidence-and-safety.md)
 - [Local LLM 사용 정책](docs/local-model-usage-policy.md)
