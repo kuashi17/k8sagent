@@ -1,126 +1,144 @@
-# Local Model Usage Policy
+# 로컬 AI 모델 선택과 사용 방식
 
-## 목적
+## 핵심 특징
 
-이 프로젝트는 오프라인 또는 내부망 환경에서도 사용할 수 있는 Kubebuilder Operator 개발 Agent를 목표로 한다.
+k8sagent는 기본적으로 Ollama에서 실행되는 로컬 AI 모델을 사용합니다. 사용자가 작성한 Operator 요구사항과 생성 과정의 로그를 외부 AI API에 보내지 않고, 자신의 PC 안에서 처리할 수 있도록 설계했습니다.
 
-LLM은 외부 API가 아니라 Ollama 기반 local provider만 사용한다. 모델은 모든 작업을 직접 수행하는 실행자가 아니라, 요구사항 해석과 판단을 돕는 계획 엔진으로 사용한다.
+이 시스템의 특징은 단순히 모델을 로컬에서 실행하는 데 있지 않습니다. AI 모델의 역할을 **요구사항 해석과 작업 계획**으로 제한하고, 파일 생성·명령 실행·성공 판정은 검증 가능한 코드와 Tool이 담당합니다.
 
-## 역할 분리
-
-```text
-Local LLM
-  -> 요구사항 요약
-  -> 누락 정보 판단
-  -> RAG 문서 근거 연결
-  -> Tool 호출 계획 생성
-  -> 로그 분석 및 recovery plan 초안 생성
-
-Policy / Rule layer
-  -> Tool allowlist 검증
-  -> workspace path 검증
-  -> --execute gate 검증
-  -> make target allowlist 검증
-  -> recovery 자동 실행 차단
-
-Tool wrapper
-  -> 실제 spec 생성
-  -> Kubebuilder scaffold
-  -> artifact patch
-  -> make 검증
-  -> kind 검증
+```mermaid
+flowchart LR
+    U["사용자 요구사항"] --> N["규칙 기반 정규화<br/>필수 정보 확인"]
+    N --> R["로컬 문서 검색<br/>RAG"]
+    R --> L["Local LLM<br/>계획과 설명"]
+    L --> C["계획 형식과<br/>허용 작업 검사"]
+    C --> T["결정론적 Tool<br/>코드 생성과 검증"]
+    T --> E["make · kind<br/>실행 근거"]
+    E --> O["결과와 다음 조치"]
 ```
 
-## 모델 선택 기준
+따라서 모델 응답이 달라지거나 모델을 사용할 수 없는 상황이 실제 명령의 무제한 실행이나 근거 없는 성공 판정으로 이어지지 않습니다.
 
-CPU 환경에서는 모델 크기와 응답 시간이 직접적인 개발 생산성에 영향을 준다.
+## 왜 로컬 모델을 사용하는가
 
-| 모델 예시 | 용도 | 비고 |
-|---|---|---|
-| `qwen2.5-coder:1.5b` | 빠른 실험, dry-run 계획 검증 | 품질보다 속도 우선 |
-| `qwen2.5-coder:3b` | 기본 개발 모델 | 현재 기본값 |
-| `qwen2.5-coder:7b` | 최종 분석, 품질 우선 검증 | CPU에서는 시간이 오래 걸릴 수 있음 |
+| 선택 기준 | k8sagent에서 얻는 효과 |
+| --- | --- |
+| 로컬 처리 | 기본 설정에서는 요구사항, 코드 경로와 실행 로그가 외부 AI 서비스로 전송되지 않음 |
+| 독립적인 실행 | 인터넷 연결이나 외부 API 계정 없이 Ollama가 실행되는 개발 환경에서 사용 가능 |
+| 예측 가능한 비용 | 외부 API 호출량과 요금에 영향을 받지 않고 반복적인 계획·분석 수행 가능 |
+| 실행 통제 | 모델을 셸 실행자가 아닌 제한된 계획 엔진으로 사용해 실제 변경 범위를 코드로 통제 |
+| 교체 가능성 | 공통 Ollama endpoint를 사용하므로 환경변수로 모델을 교체하거나 단계별 모델을 다르게 지정 가능 |
 
-현재 기본값:
+기본 endpoint는 `localhost`입니다. `LOCAL_LLM_BASE_URL`을 다른 서버 주소로 변경하면 입력이 해당 서버로 전달되므로, 데이터 처리 범위도 사용자가 설정한 endpoint를 기준으로 달라집니다.
+
+## `qwen2.5-coder:3b`을 기본값으로 선택한 이유
+
+기본 모델은 `qwen2.5-coder:3b`입니다. 다음 조건을 함께 고려한 현재의 기본 선택입니다.
+
+- Kubernetes, Go, YAML, JSON 등 개발 용어가 포함된 요청을 다루는 코드 특화 모델입니다.
+- 1.5B급보다 구조화된 작업 계획을 만들 수 있는 여유를 확보하면서, 7B급보다 로컬 CPU·메모리 부담을 낮춘 중간 크기입니다.
+- WSL2와 일반 개발 PC에서도 반복 실행할 수 있는 응답 시간과 계획 품질의 균형을 목표로 했습니다.
+- 필요한 출력이 전체 Go 코드가 아니라 제한된 JSON 계획이므로, 더 큰 모델에 모든 실행 책임을 맡길 필요가 없습니다.
+
+이는 모든 환경에서 가장 우수한 모델이라는 의미가 아닙니다. 하드웨어와 요구사항 복잡도에 따라 다른 Ollama 모델로 교체할 수 있으며, 최종 품질은 모델 설명이 아니라 실제 빌드·테스트 결과로 확인합니다.
 
 ```bash
 export LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export LOCAL_LLM_MODEL=qwen2.5-coder:3b
-export LOCAL_LLM_MAX_TOKENS=700
-export AGENT_REQUIREMENT_RAG_LIMIT=2
 ```
 
-## Run Level
-
-Agent는 실행 깊이를 나누어 CPU 환경에서도 사용할 수 있게 한다.
-
-| run-level | LLM planning | Tool 실행 | final LLM evaluation | 용도 |
-|---|---|---|---|---|
-| `fast` | 수행 | 수행 | 생략 | 개발 중 빠른 피드백 |
-| `standard` | 수행 | 수행 | 수행 | 정밀한 최종 LLM 평가 |
-| `full` | 수행 | 수행 | 수행 | 향후 kind/e2e/reliability 포함용 |
-
-예시:
+필요하면 계획, 결과 설명, 복구 계획과 로그 분석에 서로 다른 모델을 지정할 수 있습니다.
 
 ```bash
-python3 agent/langchain_agent.py \
-  --requirement requirements/my-operator.txt \
-  --mode dry-run \
-  --run-level fast
+export LOCAL_LLM_PLANNING_MODEL=qwen2.5-coder:3b
+export LOCAL_LLM_FINAL_MODEL=qwen2.5-coder:3b
+export LOCAL_LLM_RECOVERY_MODEL=qwen2.5-coder:3b
+export LOCAL_LLM_LOG_ANALYSIS_MODEL=qwen2.5-coder:3b
 ```
 
-현재 CLI 기본 run-level은 `fast`다. CPU 환경에서 긴 대기 시간을 줄이기 위해 기본 흐름은 최초 LLM 계획과 Tool dry-run 중심으로 동작하고, Tool 결과를 다시 LLM에 보내는 최종 평가는 `--run-level standard`에서 수행한다.
+## 모델을 사용하는 단계
 
-## Cache 정책
+| 단계 | 모델의 역할 | 보호 장치 |
+| --- | --- | --- |
+| 요구사항 계획 | 정규화된 API·필드·동작과 RAG 문서를 바탕으로 누락 정보, 위험과 Tool 순서를 제안 | 필수 정보는 모델 호출 전에도 규칙으로 확인하고, 출력 형식을 검사 |
+| 최종 결과 설명 | `standard`와 `full` 실행에서 실제 Tool 결과를 읽고 사용자용 설명을 구성 | 성공 여부는 Tool exit code와 검증 결과가 우선하며, 모델 실패 시 규칙 기반 결과 사용 |
+| 실패 로그 분석 | 규칙만으로 분류되지 않은 로그의 원인과 다음 조치를 보완 | 알려진 오류 코드는 모델을 호출하지 않고 Error Registry로 처리 |
+| 복구 계획 | 실제 실패 로그와 관련 문서를 바탕으로 수정 방향을 제안 | 복구 작업은 검증 후에도 자동 실행하지 않음 |
+| RAG 재정렬 | 선택 옵션 사용 시 검색 문서의 관련도 순서를 보완 | timeout이나 응답 오류 시 기존 검색 점수로 복귀 |
 
-같은 requirement, profile, RAG 문서, local model 조합은 동일한 LLM planning 결과를 재사용할 수 있다.
+`fast` 실행은 요구사항 계획에는 모델을 사용하지만 최종 결과 설명은 규칙 기반으로 생성합니다. `standard`와 `full`은 실제 Tool 결과를 모델이 한 번 더 정리하되, 그 설명이 실행 증거를 덮어쓰지는 못합니다.
 
-기본적으로 requirement planning cache는 활성화된다.
+## 모델에 맡기지 않는 작업
+
+다음 작업은 Local LLM이 직접 수행하지 않습니다.
+
+- 임의의 셸 명령, `kubectl`, `make`, `docker`, `kind` 실행
+- Go Controller 코드와 RBAC 파일의 자유 형식 생성
+- 파일을 쓸 경로와 실행 모드의 최종 결정
+- 빌드, 테스트와 Kubernetes lifecycle의 성공 판정
+- 실패 후 복구 Tool의 자동 실행
+- 과거 오류를 자동으로 학습하거나 지식 문서에 추가하는 작업
+
+실제 코드는 `operator_spec → controller_ir → generated_code` 흐름으로 생성합니다. 모델은 등록된 Tool 이름과 입력값을 포함한 계획만 제안하며, 시스템은 허용된 Tool·경로·모드인지 다시 확인합니다.
+
+## 응답 일관성과 실행 안정성
+
+작은 로컬 모델을 안정적으로 사용하기 위해 다음 장치를 적용합니다.
+
+1. 모델 응답은 자유 문장이 아니라 JSON 객체로 요청합니다.
+2. 기본 temperature를 `0`으로 설정해 같은 입력의 표현 편차를 줄입니다.
+3. 요구사항, 검색 문서와 실행 결과를 필요한 범위로 줄여 모델 입력을 구성합니다.
+4. 계획에 필수 항목이 빠지면 잘못된 부분을 알려 한 번만 형식 수정을 요청합니다.
+5. 수정 후에도 형식이 맞지 않으면 Tool을 실행하지 않고 실패로 처리합니다.
+6. 단계별 timeout과 최대 출력 길이를 분리해 로그 분석 같은 보조 작업이 전체 흐름을 오래 막지 않게 합니다.
+7. 동일한 계획은 cache로 재사용하되 prompt, 출력 구조, Tool 정의 또는 모델이 바뀌면 기존 cache를 무효화합니다.
+
+계획 cache는 기본적으로 다음 위치에 저장됩니다.
 
 ```text
 .cache/agent/llm-plans/<hash>.json
 ```
 
-제어 옵션:
-
 ```bash
---no-cache       # cache 사용 안 함
---refresh-cache  # 기존 cache 무시하고 새 LLM planning 결과 저장
+--no-cache       # cache를 사용하지 않고 매번 모델 호출
+--refresh-cache  # 기존 결과를 무시하고 새 계획 저장
 ```
 
-캐시는 다음 입력을 기준으로 계산한다.
+cache는 반복 실행 시간을 줄이기 위한 장치이며 학습이나 장기 기억이 아닙니다. 이전 오류와 사용자 입력이 자동으로 다음 요청의 모델 지식이 되지는 않습니다.
 
-- requirement text
-- selected RAG documents
-- profile summary
-- requirement intent analysis
-- profile candidates
-- safety mode
-- local LLM base URL
-- local LLM model
-- cache schema version
+## 모델 장애 시 동작
 
-첫 cache miss 실행은 로컬 모델 속도에 따라 오래 걸릴 수 있다. 같은 입력의 두 번째 실행부터는 `Planner cache: hit`로 표시되고, 일반적으로 수 초 내 dry-run 피드백을 받을 수 있다.
+Local LLM 연결 실패를 Operator 코드 실패로 취급하지 않습니다.
 
-## 안전 원칙
+| 상황 | 동작 |
+| --- | --- |
+| 최초 요구사항 계획에서 모델 연결 실패 | `OLLAMA_UNAVAILABLE` 등 인프라 오류로 중단하고 Tool을 실행하지 않음 |
+| 최종 결과 설명 실패 | 실제 Tool 결과로 규칙 기반 요약을 생성하며 성공·실패 근거는 유지 |
+| 알려진 실행 오류 | 모델 없이 Error Registry의 오류 코드, 사용자 메시지와 다음 조치 사용 |
+| 알 수 없는 로그 분석 실패 | 확인된 로그 근거만 표시하고 임의 원인을 만들지 않음 |
+| 선택적 RAG 재정렬 실패 | keyword/vector 검색 점수 기반 순서로 복귀 |
 
-- LLM은 직접 `kubectl`, `make`, `docker`, `kind`, shell command를 실행하지 않는다.
-- LLM은 Tool 호출 계획만 생성한다.
-- 실제 실행은 Tool wrapper가 담당한다.
-- Tool wrapper는 allowlist와 인자 검증을 통과해야 한다.
-- `--execute`가 없으면 변경 Tool은 dry-run으로 강제된다.
-- recovery Tool은 항상 사용자 승인 전에는 실행되지 않는다.
+이 구조는 모델을 사용할 수 있을 때는 자연어 이해와 설명의 장점을 활용하고, 사용할 수 없을 때도 이미 확보된 실행 결과를 왜곡하지 않도록 합니다.
 
-## 확인 파일
+## 확인할 수 있는 실행 기록
 
-Agent 실행 후 다음 파일로 모델 사용과 성능을 확인한다.
+Agent 작업 디렉터리에는 사용한 모델과 입력·출력, cache 여부와 단계별 시간이 기록됩니다.
 
-| 파일 | 설명 |
-|---|---|
-| `llm-input.json` | LLM에 전달된 입력 |
-| `llm-output.json` | LLM이 생성한 계획 |
-| `llm-raw-output.txt` | 모델 원문 응답 |
-| `planner-cache.json` | cache hit/path 정보 |
-| `timings.json` | RAG, LLM planning, Tool 실행, final evaluation 소요 시간 |
-| `safety-evaluation.json` | Tool 실행 안전 정책 평가 |
-| `evidence-trace.json` | RAG/LLM/Tool 근거 흐름 |
+| 파일 | 확인 내용 |
+| --- | --- |
+| `llm-input.json` | 모델에 전달한 구조화 입력 |
+| `llm-output.json` | 형식 검사를 거친 작업 계획 |
+| `llm-raw-output.txt` | 모델의 원문 응답 |
+| `planner-cache.json` | cache 사용 여부와 식별 정보 |
+| `timings.json` | RAG, 모델 계획, Tool 실행과 결과 설명 소요 시간 |
+| `safety-evaluation.json` | 계획된 Tool이 실행 조건을 통과했는지 여부 |
+| `evidence-trace.json` | 검색 문서, 모델 판단과 실제 Tool 결과의 연결 관계 |
+
+이 기록을 통해 “AI가 그렇게 판단했다”는 설명에 그치지 않고, 어떤 입력과 근거를 사용했고 실제 실행 결과가 무엇인지 분리해 확인할 수 있습니다.
+
+## 현재 제한사항
+
+- 로컬 모델의 응답 시간은 CPU, 메모리와 모델 로딩 상태에 영향을 받습니다.
+- 모든 자연어 표현을 정확하게 이해하는 것은 아니므로 API, 필드 타입, 관리 대상과 삭제 방식이 명확할수록 안정적입니다.
+- 기본 모델 선택은 구조와 실행 경계를 전제로 한 실용적인 기본값이며, 대규모 모델과의 품질 우위를 의미하지 않습니다.
+- Local LLM은 자동 학습하지 않습니다. 반복되는 오류를 제품 지식으로 반영하려면 검토 후 Error Registry, knowledge-base 또는 회귀 fixture를 수정해야 합니다.
