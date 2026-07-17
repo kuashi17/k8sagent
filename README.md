@@ -67,15 +67,19 @@ flowchart TD
 | 안전한 실패 | 필수 정보가 없거나 모순되면 Tool을 실행하지 않고 필요한 질문을 반환 |
 | 근거 기반 복구 | 실제 오류 코드와 로그가 있을 때만 복구 계획을 제안하며 자동 실행하지 않음 |
 
-## 지원 범위
+## 현재 검증된 관리 패턴과 확장 방식
 
-지원 수준은 새 Custom Resource 이름이 아니라, Controller가 관리하는 Kubernetes 리소스와 lifecycle 패턴의 검증 근거로 결정합니다.
+k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 생성기가 아닙니다. 리소스 생성·갱신, 읽기 전용 관찰, 외부 drift 복구, status 반영, 소유권과 삭제 정책 같은 Controller 동작을 조합해 코드를 생성합니다.
+
+아래 목록은 생성 가능한 전체 범위가 아니라, 현재 compile과 kind lifecycle 검증 근거가 확보된 Kubernetes 관리 패턴을 보여줍니다. 지원 수준은 새 Custom Resource 이름이 아니라 관리 리소스와 동작 조합의 검증 결과로 결정합니다.
 
 | 수준 | 현재 리소스 |
 | --- | --- |
 | 검증 충분 `stable` | ConfigMap, Secret, CronJob, Deployment, StatefulSet, Service, Namespace, DaemonSet, Job |
 | 일부 검증 `beta` | PersistentVolumeClaim, ServiceAccount, Role, ClusterRole |
 | 검증 근거 부족 `experimental` | NetworkPolicy, HorizontalPodAutoscaler, Pod |
+
+처음 보는 Custom Resource 이름이라도 이미 검증된 Deployment 관리 패턴을 사용하면 동일한 근거를 적용할 수 있습니다. 새로운 Kubernetes 리소스는 capability catalog와 Controller IR을 통해 추가할 수 있으며, 검증이 부족한 패턴은 다른 리소스로 임의 대체하지 않고 `experimental` 또는 미지원 상태로 구분합니다.
 
 등급은 생성된 Operator가 운영 환경에 즉시 배포 가능하다는 뜻이 아닙니다. k8sagent가 해당 관리 패턴에 대해 확보한 compile·kind·drift·RBAC·삭제 검증 수준을 의미합니다. 최신 계약과 제한사항은 [config/capability-support.yaml](config/capability-support.yaml)에서 확인할 수 있습니다.
 
