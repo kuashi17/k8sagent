@@ -224,7 +224,7 @@ python3 agent/langchain_agent.py \
 
 | Suite | 포함 범위 | 필요한 환경 |
 | --- | --- | --- |
-| `quick` | Unit, RAG 품질, 자연어 응답 일관성, 안전 정책 | Python |
+| `quick` | Unit, RAG 품질, 요구사항 의미 일관성, 안전 정책 | Python |
 | `standard` | Quick + 실제 Local LLM Agent 실행 | Python, Ollama |
 | `full` | Standard + scaffold compile + Docker/kind lifecycle | Python, Ollama, Go, Docker, Kubernetes 도구 |
 
@@ -247,17 +247,22 @@ python3 scripts/run-regression-tests.py \
 
 2026-07-14 로컬 Quick 기준:
 
-- Unit test 307개 중 306개 통과
-- Git에 추적하지 않는 로컬 생성 fixture 확인 1개는 의도적으로 skip
-- Response consistency 29/29 통과
-- RAG quality gate 통과
-- 안전성·신뢰성 fast gate 통과
+- Unit test: 306개 통과, 조건부 제외 1개, 실패 0개
+- 요구사항 의미 일관성: 29/29 시나리오 통과
+- RAG 검색 품질 기준 통과
+- Tool 실행 안전성과 오류 처리 정책 통과
 
-CI 정책:
+Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코드 회귀 검사입니다.
 
-- Pull Request: [quick.yml](.github/workflows/quick.yml)
-- main 및 정기 Local LLM 확인: [standard.yml](.github/workflows/standard.yml)
-- Docker/kind 통합 확인: [full.yml](.github/workflows/full.yml)
+### GitHub Actions 자동 검증
+
+검증 비용과 필요한 실행 환경에 따라 자동화 범위를 나눕니다.
+
+| 실행 시점 | Workflow | 목적 |
+| --- | --- | --- |
+| Pull Request 생성·변경 | [quick.yml](.github/workflows/quick.yml) | 병합 전에 빠른 회귀 검사 수행 |
+| `main` 반영 및 주간 정기 실행 | [standard.yml](.github/workflows/standard.yml) | Local LLM을 포함한 실제 Agent 흐름 확인 |
+| Docker/kind 통합 확인이 필요할 때 수동 실행 | [full.yml](.github/workflows/full.yml) | compile과 Kubernetes lifecycle 전체 검증 |
 
 검증 결과는 `evaluation/results/`에 생성되며 Git에는 누적하지 않습니다.
 
