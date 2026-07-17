@@ -68,8 +68,9 @@ flowchart TD
 
 ## Local LLM 선택과 역할
 
-기본 모델은 Ollama에서 실행하는 `qwen2.5-coder:3b`입니다. Kubernetes와 Go 개발 용어, JSON 형태의 작업 계획을 다루는 데 적합한 코드 특화 모델이면서, 7B급 모델보다 로컬 CPU·메모리 부담을 낮출 수 있는 중간 크기라는 점을 고려했습니다.
-요구사항과 생성 로그를 외부 API로 보내지 않고 로컬에서 처리할 수 있다는 점도 선택 이유입니다.
+기본 Local LLM 계열은 Ollama에서 실행하는 Qwen Coder입니다. Kubernetes와 Go 개발 용어, JSON 형태의 작업 계획을 다루는 코드 특화 모델 계열이며, 요구사항과 생성 로그를 기본적으로 외부 API에 보내지 않고 로컬에서 처리할 수 있다는 점을 고려했습니다.
+
+모델 크기는 실행 장비에 맞춰 선택합니다. 현재 개발 환경의 기본값은 노트북 자원을 고려한 `qwen2.5-coder:3b`이고, CPU·메모리 여유가 있는 환경에서는 `qwen2.5-coder:7b` 등 더 큰 모델로 교체할 수 있습니다. 모델 크기와 관계없이 실제 코드 생성과 성공 판정은 검증된 Tool 결과가 담당합니다.
 
 | 사용 단계 | 모델의 역할 |
 | --- | --- |
@@ -316,7 +317,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 - [k8sagent 아키텍처](docs/k8sagent-architecture.md)
 - [Operator 스펙 구조](docs/spec-schema.md)
 - [Agent 작업 내역과 안전한 실행](docs/agent-evidence-and-safety.md)
-- [로컬 AI 모델 선택과 사용 방식](docs/local-model-usage-policy.md)
+- [Local LLM 선택과 사용 방식](docs/local-model-usage-policy.md)
 - [RAG 평가 구조](docs/rag-evaluation.md)
 
 ### 품질과 현재 범위

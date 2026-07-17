@@ -1,8 +1,8 @@
-# 로컬 AI 모델 선택과 사용 방식
+# Local LLM 선택과 사용 방식
 
 ## 핵심 특징
 
-k8sagent는 기본적으로 Ollama에서 실행되는 로컬 AI 모델을 사용합니다. 사용자가 작성한 Operator 요구사항과 생성 과정의 로그를 외부 AI API에 보내지 않고, 자신의 PC 안에서 처리할 수 있도록 설계했습니다.
+k8sagent는 기본적으로 Ollama에서 실행되는 Local LLM을 사용합니다. 사용자가 작성한 Operator 요구사항과 생성 과정의 로그를 외부 AI API에 보내지 않고, 자신의 PC 안에서 처리할 수 있도록 설계했습니다.
 
 이 시스템의 특징은 단순히 모델을 로컬에서 실행하는 데 있지 않습니다. AI 모델의 역할을 **요구사항 해석과 작업 계획**으로 제한하고, 파일 생성·명령 실행·성공 판정은 검증 가능한 코드와 Tool이 담당합니다.
 
@@ -31,30 +31,31 @@ flowchart LR
 
 기본 endpoint는 `localhost`입니다. `LOCAL_LLM_BASE_URL`을 다른 서버 주소로 변경하면 입력이 해당 서버로 전달되므로, 데이터 처리 범위도 사용자가 설정한 endpoint를 기준으로 달라집니다.
 
-## `qwen2.5-coder:3b`을 기본값으로 선택한 이유
+## Qwen 모델 계열을 선택한 이유
 
-기본 모델은 `qwen2.5-coder:3b`입니다. 다음 조건을 함께 고려한 현재의 기본 선택입니다.
+이 프로젝트는 기본 Local LLM 계열로 Qwen Coder를 선택했습니다. 다음 조건을 고려한 선택입니다.
 
-- Kubernetes, Go, YAML, JSON 등 개발 용어가 포함된 요청을 다루는 코드 특화 모델입니다.
-- 1.5B급보다 구조화된 작업 계획을 만들 수 있는 여유를 확보하면서, 7B급보다 로컬 CPU·메모리 부담을 낮춘 중간 크기입니다.
-- WSL2와 일반 개발 PC에서도 반복 실행할 수 있는 응답 시간과 계획 품질의 균형을 목표로 했습니다.
-- 필요한 출력이 전체 Go 코드가 아니라 제한된 JSON 계획이므로, 더 큰 모델에 모든 실행 책임을 맡길 필요가 없습니다.
+- Kubernetes, Go, YAML, JSON 등 개발 용어가 포함된 요청을 다루는 코드 특화 모델 계열입니다.
+- 여러 모델 크기를 제공하므로 실행 장비의 CPU·메모리와 원하는 응답 품질에 맞춰 선택할 수 있습니다.
+- Ollama에서 로컬로 구동하고 동일한 API 방식으로 모델 크기를 변경할 수 있습니다.
+- k8sagent는 전체 Go 코드를 모델에 맡기지 않고 구조화된 계획만 요청하므로, 모델 크기와 실제 코드 생성의 안전성을 분리할 수 있습니다.
 
-이는 모든 환경에서 가장 우수한 모델이라는 의미가 아닙니다. 하드웨어와 요구사항 복잡도에 따라 다른 Ollama 모델로 교체할 수 있으며, 최종 품질은 모델 설명이 아니라 실제 빌드·테스트 결과로 확인합니다.
+모델 크기는 제품 구조가 아니라 실행 환경에 따른 설정입니다. 현재 개발 환경에서는 노트북 자원을 고려해 `qwen2.5-coder:3b`을 기본값으로 사용합니다. CPU·메모리 여유가 있는 환경에서는 `qwen2.5-coder:7b`처럼 더 큰 모델을 선택할 수 있고, 빠른 응답이 더 중요한 환경에서는 더 작은 모델을 사용할 수 있습니다.
+
+더 큰 모델이 항상 최종 Operator 품질을 보장하는 것은 아닙니다. 모델은 계획을 제안하고, 최종 품질은 동일하게 실제 빌드·테스트와 Kubernetes 검증 결과로 확인합니다.
 
 ```bash
 export LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export LOCAL_LLM_MODEL=qwen2.5-coder:3b
 ```
 
-필요하면 계획, 결과 설명, 복구 계획과 로그 분석에 서로 다른 모델을 지정할 수 있습니다.
+장비 사양에 맞춰 모델만 변경할 수 있습니다.
 
 ```bash
-export LOCAL_LLM_PLANNING_MODEL=qwen2.5-coder:3b
-export LOCAL_LLM_FINAL_MODEL=qwen2.5-coder:3b
-export LOCAL_LLM_RECOVERY_MODEL=qwen2.5-coder:3b
-export LOCAL_LLM_LOG_ANALYSIS_MODEL=qwen2.5-coder:3b
+export LOCAL_LLM_MODEL=qwen2.5-coder:7b
 ```
+
+필요하면 `LOCAL_LLM_PLANNING_MODEL`, `LOCAL_LLM_FINAL_MODEL`, `LOCAL_LLM_RECOVERY_MODEL`, `LOCAL_LLM_LOG_ANALYSIS_MODEL`로 단계별 모델도 다르게 지정할 수 있습니다.
 
 ## 모델을 사용하는 단계
 
@@ -140,5 +141,5 @@ Agent 작업 디렉터리에는 사용한 모델과 입력·출력, cache 여부
 
 - 로컬 모델의 응답 시간은 CPU, 메모리와 모델 로딩 상태에 영향을 받습니다.
 - 모든 자연어 표현을 정확하게 이해하는 것은 아니므로 API, 필드 타입, 관리 대상과 삭제 방식이 명확할수록 안정적입니다.
-- 기본 모델 선택은 구조와 실행 경계를 전제로 한 실용적인 기본값이며, 대규모 모델과의 품질 우위를 의미하지 않습니다.
+- 현재 기본 모델 크기는 개발 장비를 고려한 설정이며, 특정 크기의 모델이 다른 모델보다 항상 우수하다는 의미가 아닙니다.
 - Local LLM은 자동 학습하지 않습니다. 반복되는 오류를 제품 지식으로 반영하려면 검토 후 Error Registry, knowledge-base 또는 회귀 fixture를 수정해야 합니다.
