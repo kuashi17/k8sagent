@@ -298,7 +298,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 - API 정보, 필드 타입, 관리 대상이나 삭제 정책이 불명확하면 추가 정보를 요청합니다.
 - `experimental` 패턴은 실제 kind 근거가 부족하므로 생성 코드와 RBAC을 검토해야 합니다.
 - Docker와 kind 결과는 로컬 컨테이너 환경과 네트워크 상태의 영향을 받습니다.
-- LLM planning은 cache와 1회 schema repair를 사용하지만, 최종 판정은 Tool 결과를 우선합니다.
+- AI가 작성한 계획은 실행 전에 형식을 확인하며, 성공 여부는 AI의 설명이 아니라 실제 빌드·테스트와 Kubernetes 검증 결과로 판단합니다.
 - 복구 계획은 자동으로 실행하지 않습니다.
 
 ## 상세 문서
