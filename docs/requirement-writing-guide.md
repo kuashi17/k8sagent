@@ -1,322 +1,173 @@
-# Requirement Writing Guide
+# Operator 요구사항 작성 가이드
 
-## 목적
+이 문서는 k8sagent가 일관된 Operator 계획을 만들 수 있도록 요구사항에 포함할 정보를 설명합니다. Kubernetes와 Kubebuilder의 모든 용어를 알 필요는 없지만, 아래 네 가지 정보는 가능한 한 명확하게 작성하는 것이 좋습니다.
 
-이 문서는 사용자가 Operator 요구사항을 자연어로 작성할 때 어떤 내용을 포함해야 하는지 안내합니다.
+## 필요한 정보 4가지
 
-목표는 사용자가 Kubebuilder, CRD, Reconcile, RBAC 용어를 완벽히 몰라도 AI Agent가 구조화 스펙으로 변환할 수 있을 만큼 충분한 정보를 제공하도록 돕는 것입니다.
+| 정보 | 필요한 이유 | 간단한 예 |
+| --- | --- | --- |
+| Custom Resource 이름과 API | 생성할 CRD와 Go API 패키지를 결정 | `CustomerPortal`, `apps.sample.io/v1alpha1` |
+| spec/status 필드와 타입 | 사용자가 입력할 값과 Controller가 기록할 상태를 정의 | `image: string`, `readyReplicas: int32` |
+| 관리 대상과 동작 | Reconcile 코드와 필요한 권한을 결정 | Deployment 생성·변경·drift 복구 |
+| 삭제 방식 | Custom Resource 삭제 후 하위 리소스 처리 방법을 결정 | Deployment도 함께 삭제, 기존 PVC는 유지 |
 
-## 작성 흐름
+요구사항은 자유로운 문장으로 작성할 수 있습니다. 다만 이름, 타입과 관리 대상이 빠지면 Agent가 임의로 확정하지 않고 코드 생성 전에 필요한 내용을 질문합니다.
 
-요구사항은 다음 순서로 작성합니다.
+## 1. Custom Resource 이름과 API
 
-```text
-관리 목적
--> API 메타정보
--> 사용자가 입력할 값
--> 사용자가 보고 싶은 상태
--> Controller가 관리할 Kubernetes 리소스
--> spec 값과 리소스 필드 매핑
--> status 갱신 기준
--> 삭제/정리 정책
--> 검증 명령
-```
-
-## 1. 리소스 목적 작성
-
-Operator가 무엇을 관리하는지 먼저 씁니다.
-
-좋은 예:
+Custom Resource 이름은 사용자가 `kubectl`로 생성하고 조회할 리소스의 종류입니다.
 
 ```text
-RedisCache라는 Kubernetes Custom Resource를 관리하는 Operator를 만들고 싶다.
-이 Operator의 목적은 Redis 캐시 인스턴스를 Kubernetes에서 선언적으로 생성하고 상태를 확인하는 것이다.
+Custom Resource 이름은 CustomerPortal입니다.
+API는 apps.sample.io/v1alpha1입니다.
 ```
 
-부족한 예:
+`apps.sample.io/v1alpha1`은 이 Custom Resource를 Kubernetes에서 구분하기 위한 API 주소입니다.
+
+- `apps`: API group
+- `sample.io`: 프로젝트나 조직을 구분하는 domain
+- `v1alpha1`: API version
+
+예제의 `sample.io`는 실제 프로젝트에서 사용하는 고유한 domain으로 바꿀 수 있습니다. Custom Resource 이름은 `CustomerPortal`, `ScheduledTask`처럼 CamelCase로 작성하는 것을 권장합니다.
+
+## 2. spec과 status 필드
+
+`spec`은 사용자가 원하는 상태를 입력하는 곳이고, `status`는 Controller가 확인한 실제 상태를 기록하는 곳입니다.
 
 ```text
-Redis Operator를 만들고 싶다.
+spec:
+- image: string
+- replicas: int32
+
+status:
+- phase: string
+- readyReplicas: int32
+- message: string
 ```
 
-부족한 이유:
+자주 사용하는 타입은 다음과 같습니다.
 
-- 어떤 Custom Resource 이름을 쓸지 불명확합니다.
-- Redis를 어떤 Kubernetes 리소스로 만들지 추론하기 어렵습니다.
-
-## 2. API 메타정보 작성
-
-domain, group, version, kind를 명확히 씁니다.
-
-좋은 예:
-
-```text
-domain은 sample.io, group은 cache, version은 v1alpha1, kind는 RedisCache로 한다.
-```
-
-주의사항:
-
-- `domain`은 DNS domain 형식으로 씁니다. 예: `sample.io`, `ai.sample.io`
-- `group`은 영문 소문자, 숫자, `-`만 사용합니다. 예: `cache`, `ml`, `backup`
-- `version`은 Kubernetes API version 형식으로 씁니다. 예: `v1alpha1`, `v1beta1`, `v1`
-- `kind`는 CamelCase로 씁니다. 예: `RedisCache`, `TrainingJob`
-
-## 3. spec 필드 작성
-
-`spec`은 사용자가 Custom Resource를 만들 때 입력하는 원하는 상태입니다.
-
-형식:
-
-```text
-- [fieldName]:[type] - [description]
-```
-
-예:
-
-```text
-spec에는 다음 필드를 포함한다.
-- size:int32 - Redis replica 수
-- image:string - Redis container image
-- storageSize:string - 각 Redis Pod가 사용할 PVC storage 요청량
-```
-
-자주 쓰는 타입:
-
-| 타입 | 의미 |
+| 타입 | 입력 예 |
 | --- | --- |
-| `string` | 문자열 |
-| `int32` | 정수 |
-| `bool` | true/false |
-| `[]string` | 문자열 목록 |
+| `string` | 이미지, 이름, 경로 |
+| `int32`, `int64` | replicas, port, 보관 일수 |
+| `bool` | 기능 활성화 여부 |
+| `[]string` | 명령어나 이름 목록 |
+| `map[string]string` | label, ConfigMap data |
+| `metav1.Time` | 마지막 실행 시각 |
 
-주의사항:
+필드 이름만 있고 타입이 없으면 Agent가 일반적인 타입을 제안할 수 있지만, 실행 전 사용자 확인이 필요할 수 있습니다. `숫자 타입`, `사용자 정의 타입`처럼 범위가 불명확한 표현은 정확한 타입을 다시 질문합니다.
 
-- 필드 타입을 생략하지 않습니다.
-- `size`, `image`, `storageSize`처럼 JSON field name으로 쓸 수 있는 이름을 사용합니다.
-- 한 필드에 여러 의미를 섞지 않습니다.
+## 3. 관리 대상과 동작
 
-## 4. status 필드 작성
-
-`status`는 Controller가 관찰한 현재 상태입니다.
-
-예:
+Controller가 어떤 Kubernetes 리소스를 다루고 무엇을 해야 하는지 작성합니다.
 
 ```text
-status에는 다음 필드를 포함한다.
-- phase:string - 진행 상태
-- readyReplicas:int32 - 준비된 replica 수
-- message:string - 상태 설명 또는 오류 메시지
+Controller는 Deployment를 생성하고 관리합니다.
+spec.image와 spec.replicas 변경을 Deployment에 반영합니다.
+Deployment가 직접 수정되면 Custom Resource의 spec 기준으로 복구합니다.
 ```
 
-좋은 status 필드는 사용자가 `kubectl get -o yaml`로 봤을 때 현재 상황을 이해하게 해줍니다.
+가능하면 다음 내용을 구분해 작성합니다.
 
-자주 쓰는 status:
+- 생성·변경할 리소스: `Deployment`, `Service`, `ConfigMap`, `Job` 등
+- 읽기만 할 리소스: 기존 Deployment나 Job이 만든 Pod 등
+- 변경 반영: 어떤 spec 필드를 어느 리소스에 반영할지
+- status 출처: 어떤 리소스의 상태를 어떤 status 필드에 기록할지
+- 외부 변경 복구: 직접 수정된 관리 리소스를 spec 기준으로 되돌릴지
 
-| 필드 | 의미 |
-| --- | --- |
-| `phase` | Pending, Progressing, Ready, Failed 같은 상태 |
-| `message` | 상태 설명 또는 오류 메시지 |
-| `readyReplicas` | 준비된 replica 수 |
-| `jobName` | 생성된 Job 이름 |
-| `podName` | 관련 Pod 이름 |
-| `lastRunTime` | 마지막 실행 시간 |
-
-## 5. Controller가 관리할 리소스 작성
-
-Controller가 어떤 Kubernetes 리소스를 만들거나 관리해야 하는지 씁니다.
-
-예:
+읽기 전용 요구사항은 쓰기 동작과 명확히 구분합니다.
 
 ```text
-Controller는 RedisCache 변경을 감지한다.
-Controller는 StatefulSet, Service, PVC를 생성/수정/삭제한다.
+기존 Deployment를 읽기만 합니다.
+Deployment를 생성하거나 수정하거나 삭제하면 안 됩니다.
+Deployment의 replicas와 readyReplicas를 Custom Resource status에 기록합니다.
 ```
 
-다른 예:
+특정 리소스를 제외해야 한다면 명시적으로 작성할 수 있습니다.
 
 ```text
-Controller는 TrainingJob 변경을 감지한다.
-Controller는 Kubernetes Job과 관련 Pod 상태를 관리한다.
+NetworkPolicy만 관리합니다.
+Deployment, Service와 Pod는 생성하지 마세요.
 ```
 
-주의사항:
+k8sagent는 제외된 리소스를 다른 관리 대상으로 임의 선택하지 않습니다. 요청한 Kubernetes 리소스가 지원되지 않으면 비슷한 리소스로 대체하지 않고 제한사항이나 추가 확인이 필요하다고 안내합니다.
 
-- `리소스를 만든다`고만 쓰지 말고 구체적인 Kubernetes 리소스 이름을 씁니다.
-- 예: `Deployment`, `StatefulSet`, `Service`, `Job`, `CronJob`, `ConfigMap`, `Secret`, `PVC`
+## 4. 삭제 방식
 
-## 6. spec-to-resource 매핑 작성
+Custom Resource를 삭제할 때 관리 리소스를 함께 삭제할지 유지할지 작성합니다.
 
-사용자가 입력한 spec 값이 생성 리소스의 어디에 반영되는지 씁니다.
-
-예:
+함께 삭제하는 예:
 
 ```text
-Controller는 다음 규칙에 따라 spec 값을 관리 리소스에 반영한다.
-- spec.size -> StatefulSet replicas
-- spec.image -> StatefulSet container image
-- spec.storageSize -> StatefulSet volumeClaimTemplates storage request
+CustomerPortal이 삭제되면 생성한 Deployment도 함께 삭제합니다.
 ```
 
-TrainingJob 예:
+기존 리소스를 유지하는 예:
 
 ```text
-- spec.image -> Job container image
-- spec.gpuCount -> Job container resources.limits["nvidia.com/gpu"]
-- spec.pvcName -> Job Pod volume PVC claimName
-- spec.datasetPath -> Job container environment variable DATASET_PATH
-- spec.outputPath -> Job container environment variable OUTPUT_PATH
+DeploymentHealth가 삭제되어도 관찰하던 기존 Deployment는 유지합니다.
 ```
-
-이 정보가 있어야 AI Agent가 Controller 코드를 생성할 수 있습니다.
-
-## 7. status 갱신 기준 작성
-
-Controller가 어떤 기준으로 status를 채워야 하는지 씁니다.
-
-예:
 
 ```text
-Controller는 StatefulSet 상태를 조회하여 status를 갱신한다.
-- status.phase는 StatefulSet readyReplicas와 replicas 비교 결과를 기준으로 갱신한다.
-- status.readyReplicas는 StatefulSet status.readyReplicas 값으로 갱신한다.
-- status.message는 현재 준비 상태 또는 오류 내용을 기준으로 갱신한다.
+DataVolume이 삭제되어도 데이터 보호를 위해 PVC는 유지합니다.
 ```
 
-부족한 예:
+`유지해야 한다`와 `함께 삭제해야 한다`처럼 서로 반대되는 요구사항을 동시에 작성하면 Agent는 어느 쪽도 임의 선택하지 않고 삭제 방식을 다시 질문합니다.
+
+## 정확도를 높이는 선택 정보
+
+다음 내용은 필수는 아니지만 복잡한 Controller를 만들 때 도움이 됩니다.
+
+- spec 필드가 관리 리소스의 어느 값에 반영되는지
+- status 필드가 어떤 Kubernetes 상태에서 계산되는지
+- 읽기 전용 관찰 리소스와 직접 관리 리소스의 구분
+- 외부 변경을 복구해야 하는 필드
+- 변경할 수 없는 필드가 있을 때 원하는 처리 방법
+- 생성하지 않아야 하는 Kubernetes 리소스
+
+RBAC verb, Kubebuilder 명령, workspace 경로는 직접 작성하지 않아도 됩니다. k8sagent가 관리·관찰 동작을 기준으로 최소 권한을 계산하고, 생성 후 `make generate`, `make manifests`, `make test`를 수행합니다.
+
+## 완성 예시
 
 ```text
-status를 갱신한다.
+CustomerPortal Operator를 만들어 주세요.
+API는 apps.sample.io/v1alpha1입니다.
+
+spec:
+- image: string
+- replicas: int32
+
+status:
+- phase: string
+- readyReplicas: int32
+- message: string
+
+Controller는 Deployment를 생성하고 관리합니다.
+spec.image와 spec.replicas 변경을 Deployment에 반영합니다.
+Deployment가 직접 수정되면 CustomerPortal spec 기준으로 복구합니다.
+Deployment의 status.readyReplicas를 CustomerPortal의 status.readyReplicas에 기록합니다.
+CustomerPortal이 삭제되면 생성한 Deployment도 함께 삭제합니다.
+Service와 Pod는 직접 생성하지 마세요.
 ```
 
-부족한 이유:
+이 요구사항에서 Agent는 다음 내용을 확인할 수 있습니다.
 
-- 어떤 리소스를 조회해야 하는지 알 수 없습니다.
-- 어떤 조건에서 Ready/Failed가 되는지 알 수 없습니다.
+- Custom Resource: `CustomerPortal`
+- API: `apps.sample.io/v1alpha1`
+- 입력 필드와 상태 필드
+- 관리 대상: `Deployment`
+- 동작: 생성, 변경 반영, drift 복구, status 갱신
+- 삭제 정책: 생성한 Deployment 함께 삭제
+- 제외 대상: `Service`, `Pod`
 
-## 8. 삭제/정리 정책 작성
+## 계획 생성 전 확인
 
-Custom Resource가 삭제될 때 하위 리소스를 어떻게 정리할지 씁니다.
+- [ ] Custom Resource 이름과 API를 작성했는가?
+- [ ] spec/status 필드에 타입을 작성했는가?
+- [ ] 생성·변경할 리소스와 읽기만 할 리소스를 구분했는가?
+- [ ] spec 변경과 외부 drift를 어떻게 처리할지 작성했는가?
+- [ ] 삭제 시 관리 리소스를 삭제할지 유지할지 작성했는가?
+- [ ] 서로 모순되는 요구사항이 없는가?
 
-예:
-
-```text
-RedisCache가 삭제되면 ownerReference에 따라 StatefulSet, Service, PVC를 정리한다.
-```
-
-또는:
-
-```text
-외부 리소스 정리가 필요하므로 finalizer를 사용한다.
-```
-
-기준:
-
-- Kubernetes 내부 리소스만 정리하면 보통 `ownerReference`를 우선 고려합니다.
-- 외부 API, 외부 저장소, 클라우드 리소스 정리가 필요하면 `finalizer`가 필요할 수 있습니다.
-
-## 9. RBAC 권한 범위 작성
-
-관리 대상 리소스를 쓰면 Agent가 RBAC를 추론할 수 있습니다.
-
-예:
-
-```text
-필요한 RBAC 권한은 다음 리소스에 대해 추론한다.
-- cache.sample.io/rediscaches
-- apps/statefulsets
-- core/services
-- core/pods
-- core/persistentvolumeclaims
-```
-
-주의사항:
-
-- Controller가 조회만 하는 리소스와 생성/수정/삭제하는 리소스를 구분하면 더 좋습니다.
-- 처음에는 `get/list/watch/create/update/patch/delete` 범위로 시작하고, 이후 줄일 수 있습니다.
-
-## 10. 검증 명령 작성
-
-기본 검증 명령은 다음을 사용합니다.
-
-```text
-검증 명령은 다음을 사용한다.
-- make generate
-- make manifests
-- make test
-```
-
-kind 클러스터까지 확인하려면 다음 흐름을 추가할 수 있습니다.
-
-```text
-- make install
-- kubectl apply -f config/samples/<sample>.yaml
-- kubectl get <custom-resource>
-- kubectl get <managed-resource>
-```
-
-## workspace 경로 이해하기
-
-`project.workspace`는 스펙에 기록되는 기본 프로젝트 경로입니다.
-
-실제 scaffold 실행에서는 `scaffold_runner.py --workspace` 값을 "생성 위치의 상위 폴더"로 사용할 수 있습니다. 이 경우 최종 생성 위치는 `--workspace` 아래에 프로젝트 디렉터리명을 붙인 경로가 됩니다.
-
-예:
-
-```text
-Spec-defined workspace: workspace/app-config-operator
-Scaffold workspace parent: workspace/generated-operators
-Final target project directory: workspace/generated-operators/app-config-operator
-```
-
-초보자는 command plan과 scaffold dry-run에 표시되는 `Final target project directory` 또는 `Target project directory`를 실제 생성될 디렉터리로 보면 됩니다.
-
-## 구조화 스펙 변환 기준
-
-| 요구사항 표현 | 구조화 스펙 |
-| --- | --- |
-| 리소스 목적 | `controller.responsibilities` 참고 정보 |
-| domain | `project.domain`, `api.domain` |
-| group | `api.group` |
-| version | `api.version` |
-| kind | `api.kind` |
-| spec 필드 | `specFields` |
-| status 필드 | `statusFields` |
-| 변경 감지 대상 | `controller.responsibilities` |
-| 관리 대상 리소스 | `controller.managedResources`, `rbac.resources` |
-| spec-to-resource 매핑 | `controller.fieldMappings` |
-| status 갱신 기준 | `controller.statusRules` |
-| 검증 명령 | `validation.commands` |
-| 샘플 CR | `sample` |
-
-## 작성 체크리스트
-
-- [ ] Operator가 관리할 대상과 목적을 썼다.
-- [ ] domain, group, version, kind를 명확히 썼다.
-- [ ] spec 필드마다 타입과 설명을 썼다.
-- [ ] status 필드마다 타입과 설명을 썼다.
-- [ ] Controller가 관리할 Kubernetes 리소스를 명확히 썼다.
-- [ ] spec 값이 리소스에 어떻게 반영되는지 썼다.
-- [ ] status 갱신 기준을 썼다.
-- [ ] 삭제 시 하위 리소스 정리 방식을 썼다.
-- [ ] RBAC 추론에 필요한 리소스 목록을 썼다.
-- [ ] 검증 명령을 썼다.
-
-## 처음 작성할 때의 권장 범위
-
-처음에는 너무 많은 기능을 넣지 않습니다.
-
-권장:
-
-- 하나의 Custom Resource
-- 하나 또는 두 개의 핵심 Kubernetes 리소스
-- 명확한 spec 필드
-- 단순한 status 갱신
-- ownerReference 기반 정리
-
-나중에 추가:
-
-- Webhook validation/defaulting
-- 복잡한 finalizer
-- 외부 API 연계
-- 여러 리소스 간 복잡한 상태 전이
-- 외부 CI/CD나 배포 시스템 연계
+정보가 부족하거나 모순되는 경우 k8sagent는 생성 Tool을 실행하지 않습니다. 사용자가 필요한 내용을 보완한 뒤 다시 계획을 만들 수 있도록 구체적인 질문을 표시합니다.
