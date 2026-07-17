@@ -312,13 +312,16 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 - [Web UI 동작 확인 체크리스트](docs/product-validation-checklist.md)
 - [문제 해결 가이드](docs/troubleshooting-guide.md)
 
-### 구조와 데이터 형식
+### AI와 Agent 설계
 
 - [k8sagent 아키텍처](docs/k8sagent-architecture.md)
-- [Operator 스펙 구조](docs/spec-schema.md)
-- [Agent 작업 내역과 안전한 실행](docs/agent-evidence-and-safety.md)
 - [Local LLM 선택과 사용 방식](docs/local-model-usage-policy.md)
 - [RAG 검색 구조와 검증 결과](docs/rag-evaluation.md)
+- [Agent 작업 내역과 안전한 실행](docs/agent-evidence-and-safety.md)
+
+### 데이터 구조
+
+- [Operator 스펙 구조](docs/spec-schema.md)
 
 ### 품질과 현재 범위
 
