@@ -97,7 +97,7 @@ k8sagent는 특정 Custom Resource 이름이나 준비된 예시에 종속된 �
 처음 보는 Custom Resource 이름이라도 이미 검증된 Deployment 관리 패턴을 사용하면 동일한 근거를 적용할 수 있습니다. 새로운 Kubernetes 리소스는 capability catalog와 Controller IR을 통해 추가할 수 있으며, 검증이 부족한 패턴은 다른 리소스로 임의 대체하지 않고 `experimental` 또는 미지원 상태로 구분합니다.
 
 등급은 생성된 Operator가 운영 환경에 즉시 배포 가능하다는 뜻이 아닙니다. 
-k8sagent가 해당 관리 패턴에 대해 확보한 compile·kind·drift·RBAC·삭제 검증 수준을 의미합니다. 최신 계약과 제한사항은 [config/capability-support.yaml](config/capability-support.yaml)에서 확인할 수 있습니다.
+k8sagent가 해당 관리 패턴에 대해 확보한 compile·kind·drift·RBAC·삭제 검증 수준을 의미합니다. 최신 지원 기준과 제한사항은 [config/capability-support.yaml](config/capability-support.yaml)에서 확인할 수 있습니다.
 
 ## 필수 환경
 
@@ -261,7 +261,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 | 경로 | 역할 |
 | --- | --- |
 | `web/` | FastAPI UI, 비동기 작업, 진행 상태와 결과 표현 |
-| `agent/` | 요구사항 분석, 계획, 계약 검증, 실행, 결과와 복구 흐름 |
+| `agent/` | 요구사항 분석, 계획, 데이터 형식 검증, 실행, 결과와 복구 흐름 |
 | `agent/llm/` | Ollama 호환 Local LLM client와 planner |
 | `agent/rag/` | Markdown 로딩, keyword/vector 검색과 reranking |
 | `agent/tools/` | 스펙, scaffold, IR, Controller, RBAC, kind 검증 Tool |
@@ -270,7 +270,7 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 | `requirements/` | 회귀 검증에 사용하는 자연어 요구사항 fixture |
 | `evaluation/` | RAG, 일관성, compile, kind와 통합 결과 검증 |
 | `scripts/` | 환경 설치·확인 및 회귀 실행 진입점 |
-| `docs/` | 상세 아키텍처, 계약, 품질과 사용 가이드 |
+| `docs/` | 상세 아키텍처, 데이터 구조, 품질과 사용 가이드 |
 
 주요 실행 진입점:
 
@@ -311,10 +311,10 @@ Quick은 실제 Local LLM 호출과 Docker/kind 실행을 제외한 핵심 코�
 - [Web UI 동작 확인 체크리스트](docs/product-validation-checklist.md)
 - [문제 해결 가이드](docs/troubleshooting-guide.md)
 
-### 구조와 계약
+### 구조와 데이터 형식
 
 - [k8sagent 아키텍처](docs/k8sagent-architecture.md)
-- [Operator 스펙 계약](docs/spec-schema.md)
+- [Operator 스펙 구조](docs/spec-schema.md)
 - [안전성과 실행 근거](docs/agent-evidence-and-safety.md)
 - [Local LLM 사용 정책](docs/local-model-usage-policy.md)
 - [RAG 평가 구조](docs/rag-evaluation.md)

@@ -1,8 +1,8 @@
-# Operator 스펙 계약
+# Operator 스펙 구조
 
 ## 역할
 
-`operator-spec.yaml`은 사용자의 요구사항을 Kubebuilder와 Controller 생성 Tool이 사용할 수 있도록 정규화한 중간 계약입니다. 자연어 원문이나 LLM 계획을 코드 생성기가 직접 읽지 않게 하고, 이후 단계의 입력을 이 스펙으로 고정합니다.
+`operator-spec.yaml`은 사용자의 요구사항을 Kubebuilder와 Controller 생성 Tool이 사용할 수 있도록 정규화한 중간 데이터 구조입니다. 자연어 원문이나 LLM 계획을 코드 생성기가 직접 읽지 않게 하고, 이후 단계의 입력 형식을 이 스펙으로 고정합니다.
 
 ```text
 사용자 요구사항
@@ -29,7 +29,7 @@
 | `validation.commands` | 생성 후 실행할 make 검증 |
 | `sampleDefaults` | 샘플 Custom Resource에 사용할 선택적 기본값 |
 | `warnings` | 생성은 가능하지만 사용자가 확인할 내용 |
-| `errors` | 다음 단계로 진행할 수 없는 계약 오류 |
+| `errors` | 다음 단계로 진행할 수 없는 형식 또는 필수 정보 오류 |
 
 ## Metadata와 Project
 
@@ -101,7 +101,7 @@ metav1.Time, []metav1.Condition
 
 `int`는 `int32`, `boolean`은 `bool`로 정규화합니다. 타입을 확정할 수 없으면 빈 타입과 `needsConfirmation: true`를 기록하며, `INVALID_FIELD_TYPE` 또는 추가 정보 요청으로 다음 단계 실행을 차단합니다.
 
-## Controller 계약
+## Controller 구조
 
 ```yaml
 controller:
@@ -145,7 +145,7 @@ controller:
 
 읽기 전용 리소스는 `observedResources`에 기록되고 쓰기 RBAC을 갖지 않습니다. 유지와 함께 삭제처럼 서로 모순되는 정책은 `errors`에 기록합니다.
 
-## RBAC 계약
+## RBAC 구조
 
 ```yaml
 rbac:
@@ -198,7 +198,7 @@ warnings: []
 errors: []
 ```
 
-`warnings`는 일부 정보 추론 실패, 샘플 값 해석 실패, wildcard RBAC 대체처럼 사용자가 확인해야 하지만 계약 파일에는 기록할 수 있는 항목입니다. `errors`는 필수 값 누락, 필드 타입 미확정이나 모순된 lifecycle처럼 다음 생성을 중단해야 하는 항목입니다.
+`warnings`는 일부 정보 추론 실패, 샘플 값 해석 실패, wildcard RBAC 대체처럼 사용자가 확인해야 하지만 스펙 파일에는 기록할 수 있는 항목입니다. `errors`는 필수 값 누락, 필드 타입 미확정이나 모순된 lifecycle처럼 다음 생성을 중단해야 하는 항목입니다.
 
 다음 항목은 생성 전에 유효해야 합니다.
 
